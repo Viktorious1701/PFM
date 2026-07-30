@@ -146,6 +146,8 @@ Supporting documents live in `docs/`: `traceability.md` (master matrix), `00-fou
 - Later stories: stop after Spec+Design, after Quality, and after Verification.
 - More gates on request; never fewer without being asked.
 
+**A gate closes when the user reviews the artifact and commits it — not when the AI declares the step done.** The AI's job at a gate is to produce the artifact, run the checklist, paste the evidence, suggest a commit message, and stop.
+
 ### Traceability
 
 `docs/traceability.md` is the master matrix: **SRS/SDS story → AC → TC → pytest node id → status**. Updated at step 3 (TC ids) and step 4 (pytest node ids). A story is done when every AC resolves through it to a passing test. Nothing else counts as done.
@@ -193,23 +195,38 @@ Full rules with stable IDs live in [`constitution.md`](constitution.md). The ess
 - **Config** `pydantic-settings` in `app/core/config.py`, grown per story — a story adds only the settings its spec justifies. Secrets from `.env` (gitignored); `.env.example` documents every key.
 - **Secrets** never log or return a raw token, password, or hash. Invitation tokens are stored hashed.
 - **Tests** named for what they prove, each carrying its `TC-xx` id in a docstring. A test that cannot fail is not a test.
-- **Commits** one per step gate, so `git log` reads as the cycle:
-  ```
-  docs(spec):   US-02-01 login — AC-01..05
-  docs(design): US-02-01 plan + ADR-0002 JWT session
-  docs(test):   US-02-01 test_cases TC-0201-01..12
-  test:         US-02-01 failing tests from TC plan
-  feat:         US-02-01 login endpoint — TC-0201-* green
-  docs(verify): US-02-01 verification report
-  ```
+### Git — never write history
+
+**The AI never runs `git commit`, `git push`, `git add`, `git reset`, `git rebase`, or `git tag`.** Git history belongs to the user.
+
+At each gate, instead:
+1. Leave the work in the working tree, **unstaged**.
+2. Print a **suggested** commit message in a fenced block, ready to copy.
+3. Notify the user the step is done, with its gate record and pasted verification output.
+
+Read-only git is fine and encouraged for reporting state: `git status`, `git log`, `git diff`, `git show`.
+
+The only exception is an explicit instruction in the user's current message ("commit this", "push it"). Approval to commit once never carries to the next step.
+
+Suggested message format — one per step gate, so the history reads as the cycle:
+
+```
+docs(spec):   US-02-01 login — AC-01..05
+docs(design): US-02-01 plan + ADR-0002 JWT session
+docs(test):   US-02-01 test_cases TC-0201-01..12
+test:         US-02-01 failing tests from TC plan
+feat:         US-02-01 login endpoint — TC-0201-* green
+docs(verify): US-02-01 verification report
+```
 
 ---
 
 ## 5. Current state and boundaries
 
-- **Round 1 scope:** US-02-01 login, then US-01-01 invite, US-01-02 activate, US-01-03 list users. **Out of scope:** everything else, including Features 03–11 and SRS §6 Feature-10/11 placeholders.
-- **Backend only.** No `mobile/` code until Feature-01 is verified. React Native/Expo analysis lives in `docs/mobile-readiness.md`; SDS §4.3.1 is the target design.
-- **`spike/`** holds the discarded implementation-first attempt. Reference only — never edit it, never import from it.
+- **Round 1 scope:** UM-US-01 invite (specified first), UM-US-02 activate, UM-US-03 list users, plus SS-US-01 login — which must be *implemented* first, since the others need an authenticated ADMIN. **Out of scope:** everything else, including Features 03–11 and SRS §6 Feature-10/11 placeholders.
+- **Backend first.** `mobile/` is a skeleton only — folders, config and placeholder files, no screens and no network — until Feature-01 is verified. Analysis in `docs/mobile-readiness.md`; SDS §4.3.1 is the target design.
+- **The discarded implementation-first attempt has been deleted.** Its lessons — 6 verified environment findings and the full list of ways it contradicted the SDS — are in `docs/00-foundation/spike-notes.md`. The code itself remains recoverable with `git show 56768c8` if a detail is ever needed; do not restore it, and never import from it.
+- **Artifacts are tracked in git.** `specs/` and `docs/` are the deliverable, not scratch space. `.gitignore` excludes only `.venv`, `__pycache__`, `*.db`, `.env` and tool caches.
 - Dev DB is SQLite; PostgreSQL is the deployment target (SDS §4.5).
 
 ## 6. Honesty rules
@@ -218,3 +235,4 @@ Full rules with stable IDs live in [`constitution.md`](constitution.md). The ess
 - Never write "tests pass" without having run them and pasted the output.
 - State skipped, blocked, or deviating work in the same message, not later.
 - Do not write documentation that retroactively justifies code already written.
+- **Never imply work is saved to git history when it only exists in the working tree.** Say "written, uncommitted" and name the files.

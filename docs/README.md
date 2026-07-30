@@ -49,9 +49,11 @@ docs/02-design/adr/       architecture decision records
 docs/05-verification/     evidence and verification reports
 docs/06-defects/          defect records
 docs/mobile-readiness.md  React Native round: what blocks it, how it will ship
-backend/                  the application
-spike/                    discarded first attempt — reference only, never edit
+backend/                  the API
+mobile/                   React Native skeleton — no screens until Feature-01 is verified
 ```
+
+Everything above is tracked in git. `.gitignore` excludes only `.venv`, `__pycache__`, `*.db`, `.env` and tool caches — the artifacts are the deliverable, so they carry history like any other source file.
 
 ## Round 1 order
 

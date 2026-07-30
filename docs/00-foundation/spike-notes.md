@@ -1,6 +1,8 @@
 # Spike post-mortem
 
-**Date:** 2026-07-30 · **Outcome:** discarded, parked in `spike/`
+**Date:** 2026-07-30 · **Outcome:** discarded and deleted from the working tree. Recoverable with `git show 56768c8` if a detail is ever needed.
+
+> This document is the surviving record. Everything below was extracted before the code was removed, so nothing of value depended on keeping 1,746 lines of rejected implementation in the repository.
 
 ## What happened
 
@@ -42,7 +44,7 @@ Beyond the process failure, the spike also **contradicted `SDS.md`**, which the 
 Verified infrastructure only, because it was genuinely exercised:
 
 - `pyproject.toml`, `uv.lock`, `.python-version` — dependency resolution proven
-- `alembic.ini`, `migrations/env.py`, `migrations/script.py.mako` — migration harness proven (the spike's own migration was parked with the model it encoded, since schema must follow the approved domain model)
+- `alembic.ini`, `migrations/env.py`, `migrations/script.py.mako` — migration harness proven. The spike's own migration was **discarded along with the model it encoded**, because a schema must follow the approved domain model rather than precede it. The real migration is written at UM-US-01's Implement step (task `T-03`).
 - `app/core/clock.py` — see finding 4
 - `app/db/base.py`, `app/db/session.py` — engine and session wiring
 - `app/core/config.py`, `app/core/errors.py`, `app/main.py` — trimmed to foundation; each story adds only what its spec justifies
