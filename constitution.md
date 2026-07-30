@@ -4,7 +4,11 @@ Stable, citable rules for the PFM codebase. `aif-review-checklist.md` references
 
 Every rule has a permanent ID. Cite them in `plan.md`, in review findings, and in ADRs. Never renumber — supersede instead.
 
-**Source of authority:** `SDS.md` §4.7 (architecture principles), §6.1 (API standards), §7 (security), §8 (NFR), §12 (naming, DoD). Where this file and the SDS disagree, the SDS wins and this file gets corrected.
+**Source of authority:** `SRS.md` v2.0.0 is the requirements baseline. `SDS.md` v1.1.0 supplies the technical rules cited here — §4.7 (architecture principles), §6.1 (API standards), §7 (security), §8 (NFR), §12 (naming, DoD).
+
+Precedence: **SRS → SDS → this file.** Where this file and the SDS disagree, the SDS wins and this file gets corrected; where the SDS and the SRS disagree, the SRS wins and the SDS gets corrected (see `docs/00-foundation/srs-sds-alignment.md`).
+
+**NFR ids** are the SRS §3 scheme, which SDS §8.1 was renumbered to match. `NFR-04` means Security & Token Enforcement in both documents.
 
 ---
 
@@ -45,7 +49,7 @@ Every rule has a permanent ID. Cite them in `plan.md`, in review findings, and i
 - **NC-02** SQLAlchemy models `UserModel`-style per SDS §2.1; Pydantic DTOs `UserRead` / `UserCreate` / `InviteCreate` / `UserActivate`; tables lowercase plural snake_case (`users`, `invitations`).
 - **NC-03** API paths lowercase hyphenated nouns. No verbs except for explicit state transitions permitted by API-05.
 - **NC-04** Columns snake_case; foreign keys `<entity>_id`; timestamps `created_at` / `updated_at` / `expires_at`.
-- **NC-05** Enum values are `UPPER_SNAKE_CASE` strings in the database and serialise as the same literal in JSON (`"PENDING_INVITATION"`). Human-friendly labels are a client concern.
+- **NC-05** Enum values are `UPPER_SNAKE_CASE` strings in the database and serialise as the same literal in JSON (`"PENDING"`, `"ACTIVE"`, `"SUPERSEDED"`). Human-friendly labels are a client concern.
 - **NC-06** Service methods are concise within their context: `InvitationService.create`, not `create_invitation`.
 - **NC-07** Parameters holding collections are plural (`user_ids`, `roles`).
 
@@ -107,6 +111,7 @@ Every rule has a permanent ID. Cite them in `plan.md`, in review findings, and i
 - **TST-06** Tests are deterministic. Time comes from the patched clock seam; no reliance on ordering, sleeps, or network.
 - **TST-07** SMTP is mocked by default. A live-delivery test exists but is marked `@pytest.mark.smtp` and excluded from the default run.
 - **TST-08** Each test creates the data it needs. No dependence on seeded rows or on another test having run.
+- **TST-09** Artifacts conform to `artifact-templates/`: section order, heading style, ID schemes (`AC`/`EC`/`FR`/`BR`/`SC`/`QF`/`TC`/`T`), and status vocabularies. One file per epic; stories appended, never split into separate files.
 
 ## DOD — Definition of Done
 

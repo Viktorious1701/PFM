@@ -40,7 +40,9 @@ aif-review-checklist.md   gate review checklist    (user-owned, read-only)
 CLAUDE.md                 operating rules
 constitution.md           project rules with stable IDs (AR/API/NC/VL/SEC/LA/PF/TST/DOD/ENV)
 
-specs/<feature>/<story>/  spec.md · plan.md · test_cases.md · tasks.md
+artifact-templates/       canonical artifact shapes  (user-owned, read-only)
+specs/<NNN>-<epic>/       spec.md · plan.md · test_cases.md · tasks.md
+                          ONE folder per epic; every story appended into the same files
 docs/traceability.md      master matrix: story → AC → TC → pytest node id → status
 docs/00-foundation/       environment record, spike post-mortem
 docs/02-design/adr/       architecture decision records
@@ -53,16 +55,16 @@ spike/                    discarded first attempt — reference only, never edit
 
 ## Round 1 order
 
-Login comes first because the other three stories all require an authenticated caller, and invite-only registration cannot bootstrap itself.
+Specification order follows the epics. Implementation order differs, because invite requires an authenticated ADMIN and invite-only registration cannot bootstrap itself.
 
-| # | Story | SRS | SDS |
-| :-- | :-- | :-- | :-- |
-| 1 | Login | US-02-01 | SS-US-01 |
-| 2 | Invite a user via email (ADMIN) | US-01-01 | UM-US-01 |
-| 3 | Activate user account | US-01-02 | UM-US-02 |
-| 4 | List users (ADMIN) | US-01-03 | UM-US-03 |
+| Story | SRS | SDS | Epic file | Specified | Implemented |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| Invite a user via email (ADMIN) | US-01-01 | UM-US-01 | `001-user-onboarding` | 1st | after login |
+| Activate user account | US-01-02 | UM-US-02 | `001-user-onboarding` | 2nd | 3rd |
+| List users (ADMIN) | US-01-03 | UM-US-03 | `001-user-onboarding` | 3rd | 4th |
+| Login | US-02-01 | SS-US-01 | `002-system-security` | with invite's design | 1st |
 
-Backend only. Mobile is a separate round, gated on Feature-01 being verified.
+Backend only. Mobile is a skeleton this round — folders and config, no screens and no network — and becomes real work only after Feature-01 is verified.
 
 ## Reading a traceability row
 

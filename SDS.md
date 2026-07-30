@@ -1,7 +1,8 @@
 # Software Design Specification (SDS)
 ## Personal Finance Management (PFM) System
-**Document Version:** 1.0.0  
+**Document Version:** 1.1.0  
 **Status:** Approved for Implementation  
+**Aligned to:** SRS v2.0.0 (see §1.6 Revision History)  
 
 ---
 
@@ -12,11 +13,16 @@
   - [1.3 Assumptions and Constraints](#13-assumptions-and-constraints)
   - [1.4 Definitions and Acronyms](#14-definitions-and-acronyms)
   - [1.5 Related Documents](#15-related-documents)
+    - [1.5.1 Story ID Map (SDS ↔ SRS)](#151-story-id-map-sds--srs)
+  - [1.6 Revision History](#16-revision-history)
 - [2. Technical Domain Model](#2-technical-domain-model)
   - [2.1 Domain Layer Traceability](#21-domain-layer-traceability)
   - [2.2 Domain Object](#22-domain-object)
   - [2.3 Domain Object Relationships](#23-domain-object-relationships)
   - [2.4 Domain Object State Transition Diagram](#24-domain-object-state-transition-diagram)
+    - [2.4.1 User Account State](#241-user-account-state)
+    - [2.4.2 Invitation State](#242-invitation-state)
+    - [2.4.3 Budget Monitoring State](#243-budget-monitoring-state)
 - [3. UI Design](#3-ui-design)
   - [3.1 UI/UX Principles](#31-uiux-principles)
   - [3.2 Wireframes - UI/UX](#32-wireframes---uiux)
@@ -105,7 +111,39 @@ This document specifies the initial **Core Technology Stack** and system archite
 * **DAO:** Data Access Object / Repository Pattern
 
 ### 1.5 Related Documents
-* Personal Finance Management System Requirements Specification (SRS) v2.0.0.
+* Personal Finance Management System Requirements Specification (SRS) v2.0.0 — **the authoritative requirements baseline.** Where this SDS and the SRS disagree, the SRS wins and this document is corrected.
+* `constitution.md` — project rules with stable IDs (AR/API/NC/VL/SEC/LA/PF/TST/DOD/ENV) derived from this document.
+* `docs/00-foundation/srs-sds-alignment.md` — audit trail of every alignment edit applied to this document.
+
+#### 1.5.1 Story ID Map (SDS ↔ SRS)
+
+This SDS numbers stories by functional area; the SRS numbers them by feature. They
+refer to the same stories. Always cite both.
+
+| SDS code | SRS id | Story | MVP |
+| :--- | :--- | :--- | :-: |
+| SS-US-01 | US-02-01 | Login | ✔ |
+| SS-US-02 | US-02-02 | Logout | ✔ |
+| UM-US-01 | US-01-01 | Invite a user via email (ADMIN) | ✔ |
+| UM-US-02 | US-01-02 | Activate user account | ✔ |
+| UM-US-03 | US-01-03 | List users (ADMIN) | ✔ |
+| UM-US-04 | — | View a user profile | SDS-only |
+| UM-US-05 | — | Update a user | SDS-only |
+| WM-US-01…05 | US-03-01…03 | Wallet management | ✔ (partial) |
+| CM-US-01…05 | US-04-01 | Category management | ✔ (partial) |
+| BM-US-01…05 | US-05-01 | Budget management | ✔ (partial) |
+| TM-US-01…05 | US-06-01…03 | Transaction management | ✔ (partial) |
+| FR-US-01…02 | US-07-01 | Financial reporting | ✔ (partial) |
+| NM-US-01…03 | US-08-01 | Notifications | ✔ (partial) |
+| DB-US-01 | Feature-09 | Overview dashboard | ✔ |
+| DC-US-01…02 | — | Data configuration | SDS-only |
+
+### 1.6 Revision History
+
+| Version | Change |
+| :--- | :--- |
+| 1.0.0 | Initial design specification. |
+| **1.1.0** | **Aligned to SRS v2.0.0.** User status `PENDING_INVITATION` → `PENDING` (§2.4.1, §5.1.1, §6.4.1, §7.1.2). `EXPIRED` removed from the user state machine and moved to a new invitation state machine (§2.4.1, §2.4.2) because SRS US-01-02 requires an expired token to leave the account `PENDING`. NFR matrix renumbered to the SRS §3 scheme, resolving an id collision where SDS `NFR-02` meant Security while SRS `NFR-02` means Availability (§8.1). Story ID map added (§1.5.1). SRS feature references annotated on §5 headings. Backend package layout corrected to the real repository structure (§4.3.2). Full audit trail in `docs/00-foundation/srs-sds-alignment.md`. |
 
 ---
 
@@ -185,17 +223,38 @@ classDiagram
 
 #### 2.4.1 User Account State
 
+Aligned to SRS §6 US-01-01/US-01-02, which name the invited state `PENDING` and
+require that an expired token leave the account *unchanged*: "the account status
+remains `PENDING`". Token expiry is therefore a property of the **invitation**,
+not of the user — see §2.4.2.
+
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING_INVITATION : Admin sends invitation email
-    PENDING_INVITATION --> EXPIRED : Current Time > TTL
-    PENDING_INVITATION --> ACTIVE : User clicks link & sets password
-    EXPIRED --> PENDING_INVITATION : Admin resends invitation
+    [*] --> PENDING : Admin sends invitation email
+    PENDING --> ACTIVE : User opens link & sets password
     ACTIVE --> DEACTIVATED : Admin disables account
     DEACTIVATED --> ACTIVE : Admin reactivates account
 ```
 
-#### 2.4.2 Budget Monitoring State
+#### 2.4.2 Invitation State
+
+An expired or superseded invitation never alters the user's own status. Re-inviting
+a `PENDING` address supersedes the outstanding invitation and issues a new token
+with a fresh TTL.
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING : Token generated with TTL
+    PENDING --> ACCEPTED : User activates within TTL
+    PENDING --> EXPIRED : Current Time > expires_at
+    PENDING --> SUPERSEDED : Admin re-invites the same email
+    EXPIRED --> SUPERSEDED : Admin re-invites the same email
+```
+
+`EXPIRED` is **derived** from `expires_at` on every read, never written by a
+background job — there is no sweeper in the MVP.
+
+#### 2.4.3 Budget Monitoring State
 
 ```mermaid
 stateDiagram-v2
@@ -282,17 +341,23 @@ graph TD
 * **Deep Linking:** `Expo Linking` to capture activation URLs (`app://activate?token=XYZ`).
 
 #### 4.3.2 Backend Architecture (FastAPI Service Layer)
-Uses a **3-Layer Modular Monolith Architecture**:
+Uses a **3-Layer Modular Monolith Architecture**. The layer names below are
+normative (constitution AR-01…AR-03); the concrete paths reflect the actual
+repository, where the backend is rooted at `backend/` and the importable package
+is `app/` rather than `src/`:
 
 ```text
-src/
-├── api/             # FastAPI Routers (Controllers/Endpoints)
-├── services/        # Business logic & Domain rules
-├── repositories/    # Database queries (SQLAlchemy 2.0 ORM)
-├── models/          # SQLAlchemy database models
-├── schemas/         # Pydantic v2 DTO request/response contracts
-├── core/            # Security, JWT, SMTP mailer, config (pydantic-settings)
-└── main.py          # FastAPI application entry point
+backend/
+├── app/
+│   ├── api/v1/          # FastAPI Routers (Controllers/Endpoints)
+│   ├── services/        # Business logic & Domain rules
+│   ├── repositories/    # Database queries (SQLAlchemy 2.0 ORM)
+│   ├── models/          # SQLAlchemy database models
+│   ├── schemas/         # Pydantic v2 DTO request/response contracts
+│   ├── core/            # Security, JWT, clock, config (pydantic-settings), errors
+│   └── main.py          # FastAPI application factory + entry point
+├── migrations/          # Alembic revisions
+└── tests/               # pytest: unit/ and integration/
 ```
 
 #### 4.3.3 Data Design
@@ -413,13 +478,13 @@ sequenceDiagram
 
 ## 5. Product Features and User Story Specification
 
-### 5.1 System Security (SS)
+### 5.1 System Security (SS) — *SRS §6 Feature-02*
 
 #### 5.1.1 SS-US-01: Login
 * **Goal:** Authenticate active users and return a JWT access token.
 * **Acceptance Criteria:**
   1. Validates email and password against stored database hashes.
-  2. Rejects authentication if user status is `PENDING_INVITATION`.
+  2. Rejects authentication if user status is `PENDING` (SRS §6 US-02-01: "Reject login for PENDING (unactivated) user").
   3. Returns a signed JWT token upon success.
 
 #### 5.1.2 SS-US-02: Logout (All)
@@ -427,7 +492,7 @@ sequenceDiagram
 
 ---
 
-### 5.2 User Management (UM)
+### 5.2 User Management (UM) — *SRS §6 Feature-01*
 
 #### 5.2.1 UM-US-01: Invite a User via Email (ADMIN)
 * **Goal:** Send an activation link with a secure token and TTL to a target email address.
@@ -454,7 +519,7 @@ sequenceDiagram
 
 ---
 
-### 5.3 Wallet Management (WM)
+### 5.3 Wallet Management (WM) — *SRS §6 Feature-03*
 
 #### 5.3.1 WM-US-01: Create a Wallet (USER)
 * **Goal:** Establish monetary containers (e.g., Checking, Cash, Credit Card).
@@ -474,7 +539,7 @@ sequenceDiagram
 
 ---
 
-### 5.4 Category Management (CM)
+### 5.4 Category Management (CM) — *SRS §6 Feature-04*
 
 #### 5.4.1 CM-US-01: Create a Category (USER)
 * **Goal:** Define custom categories for classifying income and expense transactions.
@@ -493,7 +558,7 @@ sequenceDiagram
 
 ---
 
-### 5.5 Budget Management (BM)
+### 5.5 Budget Management (BM) — *SRS §6 Feature-05*
 
 #### 5.5.1 BM-US-01: Create a Budget for a Wallet (USER)
 * **Goal:** Assign a spending limit to a category and wallet over a monthly period.
@@ -512,7 +577,7 @@ sequenceDiagram
 
 ---
 
-### 5.6 Transaction Management (TM)
+### 5.6 Transaction Management (TM) — *SRS §6 Feature-06*
 
 #### 5.6.1 TM-US-01: Create a Transaction for a Wallet (USER)
 * **Goal:** Log an income or expense transaction and atomically update wallet balances.
@@ -531,7 +596,7 @@ sequenceDiagram
 
 ---
 
-### 5.7 Financial Reporting (FR)
+### 5.7 Financial Reporting (FR) — *SRS §6 Feature-07*
 
 #### 5.7.1 FR-US-01: View Summary Report (USER)
 * **Goal:** Display monthly income, total expenses, net savings, and top spending categories.
@@ -541,7 +606,7 @@ sequenceDiagram
 
 ---
 
-### 5.8 Notification Management (NM)
+### 5.8 Notification Management (NM) — *SRS §6 Feature-08*
 
 #### 5.8.1 NM-US-01: List Notifications (USER)
 * **Goal:** View system alerts, invitation notifications, and budget warning triggers.
@@ -554,14 +619,14 @@ sequenceDiagram
 
 ---
 
-### 5.9 Dashboard (DB)
+### 5.9 Dashboard (DB) — *SRS §6 Feature-09*
 
 #### 5.9.1 DB-US-01: View Overview Dashboard Widgets (USER)
 * **Goal:** Display aggregated summary widgets (total balance, budget health bars, recent activity).
 
 ---
 
-### 5.10 Data Configuration (DC)
+### 5.10 Data Configuration (DC) — *no SRS feature; SDS-only*
 
 #### 5.10.1 DC-US-01: Config Values for Currency & Exchange Rates (ADMIN)
 * **Goal:** Configure system-wide default currency and exchange rate constants.
@@ -616,7 +681,7 @@ sequenceDiagram
 {
   "id": "e3a89047-bf1b-4f81-8b38-8c114fef6f82",
   "email": "family.member@gmail.com",
-  "status": "PENDING_INVITATION",
+  "status": "PENDING",
   "message": "Invitation dispatched successfully."
 }
 ```
@@ -672,7 +737,7 @@ Standard JSON Error Structure:
 Ensure only verified, authenticated users can access financial data, while completely preventing unverified/fake registration attempts.
 
 #### 7.1.2 Identity Model
-User identity is bound to a verified email address with status tracking (`PENDING_INVITATION`, `ACTIVE`, `DEACTIVATED`).
+User identity is bound to a verified email address with status tracking (`PENDING`, `ACTIVE`, `DEACTIVATED`). Invitation lifecycle state is tracked separately on the invitation record (§2.4.2).
 
 #### 7.1.3 Authentication Mechanism
 JWT-based Bearer token authentication signed via HMAC-SHA256 (`HS256`).
@@ -726,12 +791,18 @@ Environment variables managed via `pydantic-settings` loaded from isolated `.env
 
 ### 8.1 NFR Verification Matrix
 
-| NFR ID | Attribute | Specification Metric | Verification Method |
+IDs match `SRS.md` §3 exactly, so a citation such as "NFR-04" means the same thing
+in both documents. UXR rows match SRS §4.
+
+| ID | Attribute | Specification Metric | Verification Method |
 | :--- | :--- | :--- | :--- |
-| **NFR-01** | Performance | API latency < 300ms (p95) | `pytest` + `httpx` benchmark testing |
-| **NFR-02** | Security | 0 unhashed passwords in DB | Code review + DB audit verification |
-| **NFR-03** | Reliability | Balance consistency in concurrent writes | Atomic DB SQL transaction unit tests |
-| **NFR-04** | Usability | Transaction entry in < 3 taps | UI UX stopwatch validation testing |
+| **NFR-01** | Performance | API latency < 300ms (p95) on primary read/write operations | `pytest` + `httpx` benchmark testing |
+| **NFR-02** | Availability | 99.0% uptime excluding scheduled maintenance | Uptime monitoring on the deployed environment |
+| **NFR-03** | Scalability | Controller / Service / Data layers remain separable | Design review against constitution AR-01…AR-03 |
+| **NFR-04** | Security & Token Enforcement | 0 unhashed passwords in DB; invitation tokens ≥128 bits entropy; TTL strictly enforced | Code review + DB audit; token entropy and TTL-boundary tests |
+| **NFR-05** | Data Integrity & Monetary Precision | `DECIMAL(15,2)` throughout; balance updates inside ACID transactions | Atomic DB transaction tests; schema inspection |
+| **NFR-06** | Privacy | Every query on user-owned data is scoped by `user_id` | Repository code review + cross-user access tests |
+| **UXR-01** | Low-Friction Entry | Transaction entry in < 3 taps | UI/UX stopwatch validation testing |
 
 ---
 

@@ -3,6 +3,29 @@
 > Use this after Claude produces an artifact at each step.
 > Your job is to catch what Claude gets wrong (not follow `constitution.md`) — **not to redo the work**.
 
+## Adaptations for the PFM project
+
+This project has no Jira, and its stack differs from the one this checklist was written against. Two adaptations, recorded so nothing looks silently dropped:
+
+**1. Ticket tracking removed.** Every `Jira & Git` block became a `Git` block: ticket-state checks are gone, gate-ordering and commit discipline stay. Bug tickets became defect records in `docs/06-defects/DEF-NNN-<slug>.md`, linked from the verification report. Progress lives in the session task list and git history.
+
+**2. Stack-inapplicable items — mark `N/A (stack)`, do not silently skip.** The intent still maps:
+
+| Written for | Applies here as |
+| :-- | :-- |
+| Java / Spring / Maven (`mvnw`, `@Transactional`, `@PreAuthorize`) | Python / FastAPI / `uv` (`uv run pytest`, explicit commit boundary, role dependency) |
+| Flyway migrations (`V5__*.sql`) | Alembic revisions (`migrations/versions/`) |
+| Playwright E2E + Testcontainers | `pytest` + `httpx`; E2E deferred until the mobile round |
+| Next.js / shadcn/ui / Zod / Lucide | React Native + Expo — **deferred**, `mobile/` is a skeleton only |
+| `/speckit.analyze`, `/model`, `/entity` prompts | not installed; the equivalent is a Gaps & Decisions pass in `plan.md` |
+| Element IDs for frontend selectors | `N/A (mobile deferred)` until screens exist |
+| Vietnamese UI labels, `Business Unit`/`Employee` domain terms | not applicable; PFM's domain is `User`/`Invitation`/`Wallet`/`Category`/`Budget`/`Transaction` |
+
+Everything else applies as written.
+
+---
+
+- [Adaptations for the PFM project](#adaptations-for-the-pfm-project)
 - [Process Notes](#process-notes)
 - [Step 1 — Spec Step · BA Reviews](#step-1--spec-step--ba-reviews)
 - [Step 2 — Design Step · SE Reviews](#step-2--design-step--se-reviews)
@@ -27,7 +50,7 @@
 - [ ] If implementation diverges from `plan.md`, the plan is redefined first — never deviate silently and patch the plan afterward
 - [ ] Diagrams, ERDs, and sequence diagrams are produced in the **Design step** — not introduced or altered during Implementation
 - [ ] `spec.md` / `plan.md` are the artifacts under review here and do **not** need to match `SDS.md` / `SRS.md` verbatim — if `SDS.md` / `SRS.md` violate RESTful API or sequence-diagram principles, that violation is not propagated into `spec.md` / `plan.md`
-- [ ] Step 6 Verification is carried out directly on the existing Jira Story/US ticket — no separate verification ticket is created
+- [ ] Step 6 Verification is recorded against the US itself — no separate verification artifact is created
 
 ---
 
@@ -36,9 +59,9 @@
 **Artifacts:** `spec.md` in `specs/[feature-id]-[slug]/` (ex: `specs/001-system-security/`)  + SRS §7 update     
 
 
-### Jira & Git
-- [ ] Spec Step task ticket exists in Jira, is **In Progress**, in **active Sprint**, **assigned to the right person** and **blocks** the Jira Story ticket
-- [ ] Branch is checked out: `feature/bee-NNN-xx-us-NN-spec-step` (ex: `feature/bee-123-ss-us-01-spec-step`)
+### Git
+- [ ] Working on the Spec step for exactly one US; the story is recorded in the session task list
+- [ ] Commit lands at the gate with a `docs(spec):` message naming the US and its AC range
 
 ### SRS §7 Entry
 - [ ] Story statement is under the correct Feature section (`§7.x`)
@@ -67,9 +90,9 @@
 
 **Artifacts:** `plan.md` in `specs/[feature-id]-[slug]/` (ex: `specs/001-system-security/`) + SDS §5 update
 
-### Jira & Git
-- [ ] Design Step task ticket exists in Jira, is **In Progress**, in **active Sprint**, **assigned to the right person** and **blocks** the Jira Story ticket
-- [ ] Branch is checked out: `feature/bee-NNN-xx-us-NN-design-step` (ex: `feature/bee-124-ss-us-01-design-step`)
+### Git
+- [ ] The Spec gate for this US is closed before Design starts
+- [ ] Commit lands at the gate with a `docs(design):` message naming the US and any ADRs
 
 ### Pre-flight Gaps
 - [ ] Claude flagged zero spec gaps — or flagged gaps were resolved before `plan.md` was reviewed
@@ -137,9 +160,9 @@
 
 **Artifacts:** `test_cases.md` + `test_[feature-id].spec.ts` (ex: `test_001-system-security.spec.ts`) in `specs/[feature-id-slug]`
 
-### Jira & Git
-- [ ] Quality Step task ticket exists in Jira, is **In Progress**, in **active Sprint**, **assigned to the right person**  and **blocks** the Jira Story ticket
-- [ ] Branch is checked out: `feature/bee-NNN-xx-us-NN-quality-step` (ex: `feature/bee-125-ss-us-01-quality-step`)
+### Git
+- [ ] The Design gate for this US is closed before Quality starts
+- [ ] Commit lands at the gate with a `docs(test):` message naming the US and its TC range
 
 ### `test_cases.md` — Coverage
 - [ ] At least **one test case per acceptance criterion** in `spec.md`
@@ -176,9 +199,9 @@
 
 **Artifacts:** `tasks.md`, code diff, pre- and post-`/speckit.analyze` reports
 
-### Jira & Git
-- [ ] Implementation Step task ticket exists in Jira, is **In Progress**, in **active Sprint**, **assigned to the right person** and **blocks** the Jira Story ticket
-- [ ] Branch is checked out: `feature/bee-NNN-xx-us-NN-implementation-step` (ex: `feature/bee-126-ss-us-01-implementation-step`)
+### Git
+- [ ] The Quality gate for this US is closed before Implementation starts
+- [ ] Tests commit (`test:`) precedes the implementation commit (`feat:`), so the red-then-green order is visible in history
 
 ### Pre-implementation (`/speckit.analyze` report)
 - [ ] **All Critical and High findings resolved** before `/speckit.implement` was run
@@ -265,8 +288,8 @@
 - [ ] Frontend is reachable at `[Test Env URL]:3001`
 
 ### Handoff
-- [ ] Deployment Step task ticket is transitioned to **Done** in Jira
-- [ ] Test Env URL is confirmed and communicated to QC so they can begin Step 6
+- [ ] Deployment step marked complete in the session task list
+- [ ] The running base URL is recorded in the evidence file so Step 6 can begin
 
 ---
 
@@ -275,9 +298,8 @@
 **Artifact:** Verification report + Playwright report
 
 ### Pre-flight
-- [ ] Deployment Step ticket is **Done** in Jira before starting
-- [ ] Jira Story transitioned to **In Review**
-- [ ] Branch is checked out: `feature/bee-NNN-xx-us-NN-verification-step` (ex: `feature/bee-127-ss-us-01-verification-step`)
+- [ ] The Deploy step is complete, with pasted evidence, before Verification starts
+- [ ] Every TC for this US has a recorded result before the story is called done
 
 ### Playwright Run
 - [ ] Test run targets the correct spec file and filters to the correct US tag
@@ -289,13 +311,14 @@
 - [ ] Playwright report is saved to `automation-test/[feature-id-slug]/index.html` (ex: `automation-test/001-system-security/index.html`)
 
 ### On Failure
-- [ ] A Bug ticket is raised with: summary, type=Bug, parent=Jira Epic
-- [ ] A comment linking to the Bug ticket is added to the Jira Story
-- [ ] Jira Story remains **In Review** until the bug is fixed and re-verified
+- [ ] A defect record is written to `docs/06-defects/DEF-NNN-<slug>.md` with: summary, reproduction, expected vs actual, the TC that caught it
+- [ ] The defect is linked from the verification report
+- [ ] The story stays open until the defect is fixed and re-verified
 
 ### On Full Pass
 - [ ] All automated and manual checks are PASS
-- [ ] Jira Story transitioned to **Done**
+- [ ] `docs/traceability.md` shows every AC resolving to a passing test with a real pytest node id
+- [ ] Story marked complete in the session task list
 
 ---
 
@@ -343,16 +366,13 @@
    - Inconsistencies found across documents: a story marked `(ADMIN)` in SRS but `(Admin, HR)` in SDS, or `(All)` missing from dashboard and notification stories.
    - These mismatches are not caught when each document is reviewed in isolation.
 
-7. **Jira Ticket Linkage**
-   - Confirm a Jira ticket for this step has been created under the correct Epic, and linked correctly to the US ticket.
-
-8. **Full Scenario Coverage**
+7. **Full Scenario Coverage**
    - Make sure ACs cover full scenarios, including happy cases and edge cases like validation error, access denied, and similar boundary conditions.
 
-9. **AC Clarity**
+8. **AC Clarity**
    - The ACs must be clear and detailed enough to ensure a shared understanding among all team members and prevent any confusion.
 
-10. **Constitution Compliance**
+9. **Constitution Compliance**
     - Verify that ACs comply with and reference `constitution.md` as required.
 
 ### Design Step (SE)
@@ -377,27 +397,22 @@
    - Pre-flight verification fails with a false `STOP` because the file lookup uses a relative path instead of the correct absolute path under `grm/`.
    - This blocks the step unnecessarily and wastes reviewer time.
 
-4. **Jira Ticket Linkage and Link Direction**
-   - Confirm a Jira ticket for this step has been created under the correct Epic, and linked correctly to the US ticket.
-   - When creating the Jira task link, `inwardIssue` and `outwardIssue` are frequently swapped.
-   - Result: the Story shows "is blocked by Task" instead of "Task blocks Story".
-
-5. **Spec Readiness Check**
+4. **Spec Readiness Check**
    - Verify the targeted US exists in `spec.md` and that all requirements are clear, complete, and unambiguous before proceeding.
 
-6. **Gap References to ACs**
+5. **Gap References to ACs**
    - Ensure that found gaps and open tasks reference the specific ACs in `spec.md`.
 
-7. **Sequence Diagram Coverage**
+6. **Sequence Diagram Coverage**
    - Ensure that any available sequence diagrams cover the main flow as well as key error scenarios.
 
-8. **SDS §5 Sub-section Structure**
+7. **SDS §5 Sub-section Structure**
    - Ensure that SDS §5 sub-section contains only the Purpose, removing Scope, Preconditions, Functional Design, and Flows if they are present.
 
-9. **Plan Link Placement**
+8. **Plan Link Placement**
    - Make sure the Plan link is added only once on the SDS feature header and is not duplicated for second or subsequent USs.
 
-10. **Use `/model` over `/entity`**
+9. **Use `/model` over `/entity`**
     - Prefer the `/model` prompt over `/entity` when generating technical design — it produces clearer separation between conceptual and technical domain objects.
 
 ### Quality Step (QC)
@@ -461,22 +476,19 @@
    - Pre-implementation analysis is skipped, so gaps between `spec.md`, `plan.md`, and `tasks.md` are only discovered mid-implementation.
    - Running `/speckit.analyze` before writing any code surfaces these gaps early and prevents rework.
 
-7. **Jira Ticket Linkage**
-   - Confirm a Jira ticket for this step has been created under the correct Epic, and linked correctly to the US ticket.
-
-8. **Task Coverage Verification**
+7. **Task Coverage Verification**
    - Ensure the work breakdown in `tasks.md` covers all ACs and that all tasks have been fully implemented, not just marked as Done.
 
-9. **Integration Test Coverage**
+8. **Integration Test Coverage**
    - Make sure integration tests have been created for every new endpoint, covering all happy-case scenarios.
 
-10. **Flyway Migration Immutability**
+9. **Flyway Migration Immutability**
     - Prevent making changes to existing Flyway migration files, especially after the application has been deployed to PROD.
 
-11. **Code Quality Review**
+10. **Code Quality Review**
     - Recheck code changes, run unit tests, and then provide clear instructions to AI to improve quality (algorithm, UI/UX, code structure, naming, etc.) or fix any identified issues.
 
-12. **SDS §6.3 API Index Update**
+11. **SDS §6.3 API Index Update**
     - Check and update SDS §6.3 API index if there are new endpoints.
 
 ### Deployment Step (SE)
@@ -497,23 +509,20 @@
    - Reviewers cannot determine whether the deployment itself succeeded.
    - The report must clearly distinguish failures within the US scope from pre-existing failures in other modules.
 
-4. **Jira Ticket Linkage**
-   - Confirm a Jira ticket for this step has been created under the correct Epic, and linked correctly to the US ticket.
-
-5. **Branch and Commit Verification**
+4. **Branch and Commit Verification**
    - Recheck and confirm that the app repo on the remote host is correctly set to the intended branch and commit.
 
-6. **Application Rebuild Verification**
+5. **Application Rebuild Verification**
    - Verify that the application has been rebuilt and starts successfully on the remote host without any errors.
 
-7. **Error Isolation**
+6. **Error Isolation**
    - If there is any error, do not execute any commands that may affect other apps on the remote host.
 
-8. **Post-deployment Reachability**
+7. **Post-deployment Reachability**
    - Confirm both backend and frontend are reachable after deployment and fixes.
 
-9. **Ticket Status Update**
-   - Update the ticket description to include deployment status, any failed tests with reasons, and the confirmed Test Environment URL.
+8. **Evidence File Update**
+   - Record deployment status, any failed tests with reasons, and the confirmed base URL in the step's evidence file.
 
 ### Verification Step (QC)
 
@@ -543,11 +552,29 @@
 4. **Perform Final Regression Run**
    - Execute the full test suite again after all corrections have been completed.
    - Verify the final execution status and generate the final test report.
-   - Log confirmed defects in Jira with evidence.
+   - Log confirmed defects in `docs/06-defects/` with evidence.
 
 5. **Analyze Automation Code Changes**
    - Ask the AI to summarize all code changes made during the execution and debugging process.
    - Identify the root causes that required modifications to the original generated automation code.
    - Refine the prompt if necessary to reduce similar issues in future automation generation.
 
-*Reference: [aif-sdlc.md](aif-sdlc.md) · [constitution.md](constitution.md)*
+---
+
+## Gate Record
+
+Claude must paste one of these when claiming a step gate. A gate claimed without it is not a gate.
+
+```markdown
+### Gate: <US id> — Step <n> <Step name>
+Checklist run: <date>
+Sections passed: <list the sections reviewed>
+N/A (stack): <items marked inapplicable, with the mapping used>
+Waived: <item> — <reason>
+Blocking issues: none | <list>
+Evidence: <pasted command output, or "documents only">
+```
+
+---
+
+*Reference: [constitution.md](constitution.md) · [CLAUDE.md](CLAUDE.md) · [artifact-templates/](artifact-templates/)*

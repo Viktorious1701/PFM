@@ -12,9 +12,40 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 | :-- | :-- | :-- |
 | `SRS.md` v2.0.0 | the user | **Read-only. Never edit.** Requirements baseline: FR, NFR, UXR, BF, Features 01–11 with Gherkin. |
 | `SDS.md` v1.0.0 | the user | **Read-only. Never edit.** Technical baseline: domain model, ERD, architecture, API design, security design. |
-| `aif-review-checklist.md` | the user | **Read-only. Never edit.** Run before claiming any step gate. |
-| `constitution.md` | AI + user | Project rules with stable IDs (AR/API/NC/VL/LA/PF/SEC/DOD), derived from the SDS. |
+| `aif-review-checklist.md` | the user | Run before claiming any step gate. Edited once to remove Jira and record stack adaptations; otherwise treat as the user's. |
+| `artifact-templates/*.md` | the user | **Read-only. Never edit. Never split.** The canonical shape of every artifact — see §1.1. |
+| `constitution.md` | AI + user | Project rules with stable IDs (AR/API/NC/VL/LA/PF/SEC/TST/DOD/ENV), derived from the SDS. |
 | `specs/**`, `docs/**` | AI + user | Working artifacts. Design output goes here — **never** into `SDS.md`. |
+
+`SDS.md` was aligned to `SRS.md` on 2026-07-30 and bumped to v1.1.0. The full audit trail is `docs/00-foundation/srs-sds-alignment.md`. **`SRS.md` now wins any remaining disagreement.**
+
+## 1.1 Artifact rules
+
+1. **One file per epic — never split.** Artifacts live at `specs/<NNN>-<epic-slug>/{spec.md, plan.md, test_cases.md}`. Every story in that epic is appended to the **same** file as a new `## <CODE>-US-NN` section. Never create a markdown file per story. This is how the checklist's "spec.md contains exactly one US" is satisfied: it means *specify one story per step*, not one file per story.
+2. **Read `artifact-templates/` before writing or updating any artifact.** Match the template's section order, heading style, ID schemes, and status vocabulary. `spec-templates.md` → `spec.md`, `plan-templates.md` → `plan.md`, `test-case-templates.md` → `test_cases.md`.
+3. **No Jira.** Never emit `> **Jira Story:**` or `> **Jira Epic:**` lines, and never check ticket state.
+4. **Append, never renumber.** `TC-NN` runs continuously across an epic file; a new story continues from the last one. Existing AC/EC/FR/BR/TC entries are never renumbered or rewritten.
+
+### ID schemes
+
+| Prefix | Meaning | Artifact |
+| :-- | :-- | :-- |
+| `AC-NN` | Acceptance criterion (Given/When/Then) | spec.md |
+| `EC-NN` | Edge case | spec.md |
+| `FR-NN` / `BR-NN` | Functional requirement / business rule | spec.md |
+| `SC-NN` | Success criterion | spec.md |
+| `A1` / `R1` / `G1` | Gap or decision: assumption / refactor / open gap | plan.md |
+| `T-NN` | Open implementation task | plan.md |
+| `QF-NN` | Quality finding | test_cases.md |
+| `TC-NN` | Test case | test_cases.md |
+
+### Status vocabularies
+
+- Gaps & Decisions → `✅ Resolved`
+- Constitution notes → `Required` · `N/A` · `Required (exempt)` · `Required (spec-stricter)`
+- Element IDs → `Missing` · `Present` · `N/A (mobile deferred)`
+- AC classification → `[BOTH]` · `[API]` · `[UI]`
+- Test type → `integration` · `e2e` · `unit`
 
 ### They are references, not contracts
 
@@ -32,8 +63,9 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 
 | Topic | Ruling | Source |
 | :-- | :-- | :-- |
-| User status values | `PENDING_INVITATION` / `ACTIVE` / `DEACTIVATED`. **SDS wins** over the SRS's `PENDING`. `EXPIRED` is *derived* from `expires_at`, never stored. | SDS §2.4.1, §7.1.2 |
-| Invitation storage | **Separate `invitations` table** per the SDS ERD — not columns on `users`. Inviting creates a `users` row (`PENDING_INVITATION`) *and* an `invitations` row. | SDS §2.1, §4.3.3 |
+| User status values | **`PENDING`** / `ACTIVE` / `DEACTIVATED`. **SRS wins**; SDS was corrected. | SRS §6 US-01-01; SDS §2.4.1 v1.1.0 |
+| Invitation status | Separate lifecycle on the invitation record: `PENDING` → `ACCEPTED` / `EXPIRED` / `SUPERSEDED`. `EXPIRED` is *derived* from `expires_at`, never written. An expired token leaves the **user** `PENDING`. | SRS §6 US-01-02; SDS §2.4.2 |
+| Invitation storage | **Separate `invitations` table** per the SDS ERD — not columns on `users`. Inviting creates a `users` row (`PENDING`) *and* an `invitations` row, in one transaction. | SDS §2.1, §4.3.3 |
 | Roles | `users.role` = `ADMIN` \| `USER`, enforced now. Invite and list-users are ADMIN-only. | SDS §5.2.1, §5.2.3 |
 | Error shape | Flat: `{"error_code", "message", "details"}` — **not** nested under `"error"`. | SDS §6.6 |
 | Dev database | SQLite locally (Docker unreachable in this WSL2 setup); PostgreSQL is the target. One `DATABASE_URL` change. ADR required. | SDS §4.1 vs environment |
@@ -43,14 +75,16 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 
 The two documents number the same stories differently. Always cite both.
 
-| SRS | SDS | Story | Round 1 |
-| :-- | :-- | :-- | :-- |
-| US-02-01 | SS-US-01 | Login | ✔ step 1 |
-| US-01-01 | UM-US-01 | Invite a user via email (ADMIN) | ✔ step 2 |
-| US-01-02 | UM-US-02 | Activate user account | ✔ step 3 |
-| US-01-03 | UM-US-03 | List users (ADMIN) | ✔ step 4 |
-| US-02-02 | SS-US-02 | Logout | deferred |
-| — | UM-US-04/05 | View profile / update user | deferred |
+| SRS | SDS | Story | Epic file | Order |
+| :-- | :-- | :-- | :-- | :-- |
+| US-01-01 | UM-US-01 | Invite a user via email (ADMIN) | `specs/001-user-onboarding/` | **1st** |
+| US-01-02 | UM-US-02 | Activate user account | `specs/001-user-onboarding/` | 2nd |
+| US-01-03 | UM-US-03 | List users (ADMIN) | `specs/001-user-onboarding/` | 3rd |
+| US-02-01 | SS-US-01 | Login | `specs/002-system-security/` | before implementing US-01-01 |
+| US-02-02 | SS-US-02 | Logout | `specs/002-system-security/` | deferred |
+| — | UM-US-04/05, DC-US-01/02 | SDS-only stories | — | out of MVP scope |
+
+Note the split between *specification* order and *implementation* order: UM-US-01 is specified first because it is the first story of the first epic, but it **cannot be implemented** until login (US-02-01, a different epic) exists, since its ACs require an authenticated ADMIN. That dependency belongs in the spec's *Assumptions & Dependencies* section.
 
 ### The scope rule ("cut to the current story")
 
@@ -90,23 +124,25 @@ Diagrams, ERDs and sequence diagrams belong to the **Design** step. They are not
 
 ### Artifact layout
 
-One folder per story, so "exactly one US per `spec.md`" holds:
+One folder per **epic**, three files, all stories of that epic inside them (§1.1 rule 1):
 
 ```
 specs/
-├── 001-user-onboarding/              Feature-01 / UM
-│   ├── us-01-01-invite-user/         spec.md  plan.md  test_cases.md  tasks.md
-│   ├── us-01-02-activate-account/
-│   └── us-01-03-list-users/
-└── 002-system-security/              Feature-02 / SS
-    └── us-02-01-login/
+├── 001-user-onboarding/          Feature-01 / UM
+│   ├── spec.md                   ## UM-US-01, then ## UM-US-02, ## UM-US-03 appended
+│   ├── plan.md                   same story sections, design detail
+│   ├── test_cases.md             TC-NN continuous across all three stories
+│   └── tasks.md                  written at the Implement step
+└── 002-system-security/          Feature-02 / SS
+    ├── spec.md                   ## SS-US-01, ## SS-US-02
+    └── …
 ```
 
 Supporting documents live in `docs/`: `traceability.md` (master matrix), `00-foundation/`, `02-design/adr/`, `05-verification/`, `06-defects/`, `mobile-readiness.md`.
 
 ### Gate cadence
 
-- **US-02-01 (login)** — the first story through the cycle: stop at **every** step gate.
+- **UM-US-01 (invite)** — the first story through the cycle: stop at **every** step gate.
 - Later stories: stop after Spec+Design, after Quality, and after Verification.
 - More gates on request; never fewer without being asked.
 
@@ -118,7 +154,7 @@ Supporting documents live in `docs/`: `traceability.md` (master matrix), `00-fou
 
 Before claiming **any** gate, run the artifact through `aif-review-checklist.md` and record the result using its gate-record template. A gate claimed without the checklist is not a gate.
 
-Items in that checklist covering Jira tickets, branch naming (`feature/bee-NNN-…`), Java/Spring/Flyway, Playwright, shadcn/ui and Testcontainers are **N/A for this project** — mark them so explicitly rather than silently skipping. Their intent maps here as: task tracking → the session task list; Flyway → Alembic; Playwright/Testcontainers → `pytest` + `httpx`.
+The checklist's own *Adaptations for the PFM project* section lists what was removed (ticket tracking) and how stack-specific items map here (Flyway → Alembic, Playwright/Testcontainers → `pytest` + `httpx`, Next.js/shadcn → React Native, deferred). Mark inapplicable items `N/A (stack)` explicitly — never skip them silently.
 
 ---
 
