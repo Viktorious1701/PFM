@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Environment / secrets — never commit real credentials
+.env
+.env.local
+*.pem
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Test / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node / React Native (future mobile round)
+node_modules/
+.expo/
+dist/
+
+# Editors & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
