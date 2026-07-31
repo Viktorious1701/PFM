@@ -1,0 +1,101 @@
+/**
+ * Error envelope handling.
+ *
+ * The backend returns ONE flat shape for every failure, validation included
+ * (SDS §6.6, constitution API-02):
+ *
+ *     { "error_code": "USER_EMAIL_ALREADY_ACTIVE", "message": "…", "details": {} }
+ *
+ * It is NOT nested under an "error" key. Parsing anything else here would put a
+ * bug in the client the day the backend lands, so this module is written to the
+ * documented contract rather than to whatever a mock happens to emit.
+ */
+
+/** Error codes this client knows how to react to. */
+export const ErrorCode = {
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  USER_EMAIL_ALREADY_ACTIVE: 'USER_EMAIL_ALREADY_ACTIVE',
+  NOT_AUTHENTICATED: 'NOT_AUTHENTICATED',
+  FORBIDDEN: 'FORBIDDEN',
+  EMAIL_DELIVERY_FAILED: 'EMAIL_DELIVERY_FAILED',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  /** Client-side only: the request never reached the server. */
+  NETWORK_ERROR: 'NETWORK_ERROR',
+} as const;
+
+export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode] | string;
+
+export type ErrorEnvelope = {
+  error_code: string;
+  message: string;
+  details?: Record<string, unknown>;
+};
+
+export class ApiError extends Error {
+  readonly code: ErrorCodeValue;
+  readonly status: number;
+  readonly details: Record<string, unknown>;
+
+  constructor(code: ErrorCodeValue, message: string, status: number, details = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.status = status;
+    this.details = details;
+  }
+
+  /** True when the caller's credentials are absent, invalid, or expired. */
+  get isUnauthenticated(): boolean {
+    return this.status === 401 || this.code === ErrorCode.NOT_AUTHENTICATED;
+  }
+}
+
+function isEnvelope(value: unknown): value is ErrorEnvelope {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as ErrorEnvelope).error_code === 'string' &&
+    typeof (value as ErrorEnvelope).message === 'string'
+  );
+}
+
+/** Normalise any thrown value into an ApiError. Never throws. */
+export function toApiError(err: unknown): ApiError {
+  if (err instanceof ApiError) return err;
+
+  // Axios-shaped error, without importing axios types here.
+  const response = (err as { response?: { status?: number; data?: unknown } })?.response;
+
+  if (response && isEnvelope(response.data)) {
+    const { error_code, message, details } = response.data;
+    return new ApiError(error_code, message, response.status ?? 500, details ?? {});
+  }
+
+  if (response) {
+    return new ApiError(
+      ErrorCode.INTERNAL_ERROR,
+      'The server returned an unexpected response.',
+      response.status ?? 500,
+    );
+  }
+
+  return new ApiError(
+    ErrorCode.NETWORK_ERROR,
+    'Could not reach the server. Check your connection and try again.',
+    0,
+  );
+}
+
+/**
+ * Field-level messages from a 422, for rendering inline on the offending input.
+ * The backend groups validation errors under `details` (constitution VL-02).
+ */
+export function fieldErrors(err: ApiError): Record<string, string> {
+  const out: Record<string, string> = {};
+  const raw = err.details;
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string') out[key] = value;
+    else if (Array.isArray(value) && typeof value[0] === 'string') out[key] = value[0];
+  }
+  return out;
+}
