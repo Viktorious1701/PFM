@@ -2,7 +2,7 @@
 
 Personal & Family Finance Management (PFM). This file is the operating contract for AI-assisted work here. Read it before touching anything.
 
-The purpose of this project is to practise the **AIF-SDLC cycle**, where documents drive code. Producing implementation before its spec/design/test artifacts exist defeats the point and has already been rejected once — see `docs/00-foundation/spike-notes.md`.
+The purpose of this project is to practise the **AIF-SDLC cycle**, where documents drive code. Producing implementation before its spec/design/test artifacts exist defeats the point, and has already been rejected once here — an implementation-first spike was built and then deleted rather than retrofitted with documentation.
 
 ---
 
@@ -15,13 +15,35 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 | `aif-review-checklist.md` | the user | Run before claiming any step gate. Edited once to remove Jira and record stack adaptations; otherwise treat as the user's. |
 | `artifact-templates/*.md` | the user | **Read-only. Never edit. Never split.** The canonical shape of every artifact — see §1.1. |
 | `constitution.md` | AI + user | Project rules with stable IDs (AR/API/NC/VL/LA/PF/SEC/TST/DOD/ENV), derived from the SDS. |
-| `specs/**`, `docs/**` | AI + user | Working artifacts. Design output goes here — **never** into `SDS.md`. |
+| `specs/**` | AI + user | The working artifacts, and the only ones. Design output goes here — **never** into `SDS.md`. |
 
-`SDS.md` was aligned to `SRS.md` on 2026-07-30 and bumped to v1.1.0. The full audit trail is `docs/00-foundation/srs-sds-alignment.md`. **`SRS.md` now wins any remaining disagreement.**
+`SDS.md` was aligned to `SRS.md` on 2026-07-30 and bumped to v1.1.0. **`SRS.md` now wins any remaining disagreement** — the rulings that came out of that alignment are in *Resolved contradictions* below.
 
 ## 1.1 Artifact rules
 
-1. **One file per epic — never split.** Artifacts live at `specs/<NNN>-<epic-slug>/{spec.md, plan.md, test_cases.md}`. Every story in that epic is appended to the **same** file as a new `## <CODE>-US-NN` section. Never create a markdown file per story. This is how the checklist's "spec.md contains exactly one US" is satisfied: it means *specify one story per step*, not one file per story.
+0. **Three files per epic. Nothing else.** The complete deliverable for an epic is:
+
+   ```
+   specs/<NNN>-<epic-slug>/
+   ├── spec.md         what and why      (step 1)
+   ├── plan.md         how               (step 2)
+   └── test_cases.md   proof             (steps 3 and 6)
+   ```
+
+   **Do not create any other document.** No ADRs, no traceability matrix, no `tasks.md`, no verification report, no defect record, no readiness analysis, no summary or index file. Each of those existed and was removed because it duplicated content one of the three files already carries:
+
+   | Instead of a separate… | Write it in |
+   | :-- | :-- |
+   | ADR / deviation record | `plan.md` → *Gaps & Decisions (Resolved)* |
+   | traceability matrix | `test_cases.md` → *Coverage Matrix* |
+   | `tasks.md` | `plan.md` → *Open tasks* (`T-NN`) |
+   | verification report / defect record | `test_cases.md` → result against each `TC-NN` |
+
+   A fourth artifact — the **automation test file** — is a known gap. It is not designed yet, and step 4 currently writes tests into `backend/tests/`. Do not invent a location or format for it; raise it as its own decision.
+
+   If a piece of information genuinely fits none of the three files, that is a finding to raise — not licence to add a fourth.
+
+1. **One file per epic — never split.** Every story in an epic is appended to the **same** three files as a new `## <CODE>-US-NN` section. Never create a markdown file per story. This is how the checklist's "spec.md contains exactly one US" is satisfied: it means *specify one story per step*, not one file per story.
 2. **Read `artifact-templates/` before writing or updating any artifact.** Match the template's section order, heading style, ID schemes, and status vocabulary. `spec-templates.md` → `spec.md`, `plan-templates.md` → `plan.md`, `test-case-templates.md` → `test_cases.md`.
 3. **No Jira.** Never emit `> **Jira Story:**` or `> **Jira Epic:**` lines, and never check ticket state.
 4. **Append, never renumber.** `TC-NN` runs continuously across an epic file; a new story continues from the last one. Existing AC/EC/FR/BR/TC entries are never renumbered or rewritten.
@@ -51,7 +73,7 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 
 `SRS.md` and `SDS.md` were written before the code existed and they leave things open — and in places they contradict each other.
 
-- **Deviate freely** where implementation reality demands it, then record it as an ADR in `docs/02-design/adr/` and list it in the story's `spec.md` *Deviations* section.
+- **Deviate freely** where implementation reality demands it, then record it in the story's `plan.md` *Gaps & Decisions (Resolved)* table — one row, with the rationale — and list it in the story's `spec.md` *Deviations* section. No separate ADR file (§1.1 rule 0).
 - **Stop and ask the user** only when a change would genuinely *break* one of them:
   - contradicts the domain model (`SDS.md` §2) or ERD (§4.3.3),
   - changes a published endpoint contract (`SDS.md` §6),
@@ -68,8 +90,8 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 | Invitation storage | **Separate `invitations` table** per the SDS ERD — not columns on `users`. Inviting creates a `users` row (`PENDING`) *and* an `invitations` row, in one transaction. | SDS §2.1, §4.3.3 |
 | Roles | `users.role` = `ADMIN` \| `USER`, enforced now. Invite and list-users are ADMIN-only. | SDS §5.2.1, §5.2.3 |
 | Error shape | Flat: `{"error_code", "message", "details"}` — **not** nested under `"error"`. | SDS §6.6 |
-| Dev database | SQLite locally (Docker unreachable in this WSL2 setup); PostgreSQL is the target. One `DATABASE_URL` change. ADR required. | SDS §4.1 vs environment |
-| Invitation token at rest | Stored **hashed** (SHA-256); the raw token exists only in the email. Deviates from SDS §4.3.3's plain `token UK`. ADR required. | security deviation |
+| Dev database | SQLite locally (Docker unreachable in this WSL2 setup); PostgreSQL is the target. One `DATABASE_URL` change. Record in `plan.md` *Gaps & Decisions*. | SDS §4.1 vs environment |
+| Invitation token at rest | Stored **hashed** (SHA-256); the raw token exists only in the email. Deviates from SDS §4.3.3's plain `token UK`. Record in `plan.md` *Gaps & Decisions*. | security deviation |
 
 ### Story ID map
 
@@ -112,11 +134,11 @@ Six steps per story, in **strict order, none skipped or reordered**. Each produc
 | # | Step | Reviewer | Artifacts | Definition of done |
 | :-- | :-- | :-- | :-- | :-- |
 | 1 | **Spec** | BA | `spec.md` | Story statement (As a / I want / So that), ACs traced to SRS+SDS, every AC a testable observable outcome. No endpoint paths, DB fields, or tech names — those belong to `plan.md`. Exactly one US per file. Stable IDs (`AC-01`, `BR-01`, `EC-01`). |
-| 2 | **Design** | SE | `plan.md` + ADRs | Sequence diagram, layer assignment, DTOs, API contract, error codes. Every AC addressed. Constitution rules checked explicitly. No gaps left ambiguous — if there are, go back to Spec rather than patching forward. |
+| 2 | **Design** | SE | `plan.md` | Sequence diagram, layer assignment, DTOs, API contract, error codes. Every AC addressed. Constitution rules checked explicitly. Deviations recorded in *Gaps & Decisions*. No gaps left ambiguous — if there are, go back to Spec rather than patching forward. |
 | 3 | **Quality** | QC | `test_cases.md` | ≥1 test case per AC, in Given/When/Then, with US + AC reference + type. Unhappy paths and edge cases covered. TC numbers sequential, appended never rewritten. **Written before test code.** |
-| 4 | **Implement** | SE | `tasks.md` + code | Tasks ordered migration → model → repository → service → router. Tests written from `test_cases.md` and seen failing first, then code until green. `pytest` green, `ruff` + `mypy` clean, coverage > 80%. |
-| 5 | **Deploy** | SE | evidence | App actually runs; `/health` 200; curl/Postman walkthrough executed with **real pasted output**, including a genuine Gmail delivery. |
-| 6 | **Verification** | QC | verification report | Every TC given a result (PASS/FAIL/BLOCKED). Failures reproduced manually, root-caused, logged in `docs/06-defects/`, fixed, re-verified. |
+| 4 | **Implement** | SE | code | Work the `T-NN` tasks already listed in `plan.md`, ordered migration → model → repository → service → router. Tests written from `test_cases.md` and seen failing first, then code until green. `pytest` green, `ruff` + `mypy` clean, coverage > 80%. |
+| 5 | **Deploy** | SE | evidence in the message | App actually runs; `/health` 200; curl/Postman walkthrough executed with **real pasted output**, including a genuine Gmail delivery. Pasted into the gate message, not into a file. |
+| 6 | **Verification** | QC | `test_cases.md` results | Every `TC-NN` given a result (PASS/FAIL/BLOCKED) **in `test_cases.md` itself**. Failures reproduced manually, root-caused, fixed, re-verified — the root cause recorded against its TC, not in a separate defect file. |
 
 **If implementation diverges from `plan.md`, redefine the plan first** — never deviate silently and patch the document afterwards.
 
@@ -131,14 +153,13 @@ specs/
 ├── 001-user-onboarding/          Feature-01 / UM
 │   ├── spec.md                   ## UM-US-01, then ## UM-US-02, ## UM-US-03 appended
 │   ├── plan.md                   same story sections, design detail
-│   ├── test_cases.md             TC-NN continuous across all three stories
-│   └── tasks.md                  written at the Implement step
+│   └── test_cases.md             TC-NN continuous across all three stories
 └── 002-system-security/          Feature-02 / SS
     ├── spec.md                   ## SS-US-01, ## SS-US-02
     └── …
 ```
 
-Supporting documents live in `docs/`: `traceability.md` (master matrix), `00-foundation/`, `02-design/adr/`, `05-verification/`, `06-defects/`, `mobile-readiness.md`.
+That is the whole artifact tree. `specs/` is the deliverable; there is no supporting-documents directory (§1.1 rule 0).
 
 ### Gate cadence
 
@@ -150,7 +171,9 @@ Supporting documents live in `docs/`: `traceability.md` (master matrix), `00-fou
 
 ### Traceability
 
-`docs/traceability.md` is the master matrix: **SRS/SDS story → AC → TC → pytest node id → status**. Updated at step 3 (TC ids) and step 4 (pytest node ids). A story is done when every AC resolves through it to a passing test. Nothing else counts as done.
+The **Coverage Matrix inside `test_cases.md`** is the traceability record: **story → AC/EC → TC → pytest node id → status**. Filled at step 3 (TC ids) and extended at step 4 (pytest node ids). There is no separate matrix file.
+
+A story is done when every AC resolves through that matrix to a passing test. Nothing else counts as done.
 
 ### Review checklist
 
@@ -212,21 +235,23 @@ Suggested message format — one per step gate, so the history reads as the cycl
 
 ```
 docs(spec):   US-02-01 login — AC-01..05
-docs(design): US-02-01 plan + ADR-0002 JWT session
+docs(design): US-02-01 plan — JWT session, error catalog
 docs(test):   US-02-01 test_cases TC-0201-01..12
 test:         US-02-01 failing tests from TC plan
 feat:         US-02-01 login endpoint — TC-0201-* green
-docs(verify): US-02-01 verification report
+docs(test):   US-02-01 TC results — 12 PASS
 ```
+
+Note the last line: verification closes by recording results **in `test_cases.md`**, so it is another `docs(test)` commit rather than a new document.
 
 ---
 
 ## 5. Current state and boundaries
 
 - **Round 1 scope:** UM-US-01 invite (specified first), UM-US-02 activate, UM-US-03 list users, plus SS-US-01 login — which must be *implemented* first, since the others need an authenticated ADMIN. **Out of scope:** everything else, including Features 03–11 and SRS §6 Feature-10/11 placeholders.
-- **Backend first.** `mobile/` is a skeleton only — folders, config and placeholder files, no screens and no network — until Feature-01 is verified. Analysis in `docs/mobile-readiness.md`; SDS §4.3.1 is the target design.
-- **The discarded implementation-first attempt has been deleted.** Its lessons — 6 verified environment findings and the full list of ways it contradicted the SDS — are in `docs/00-foundation/spike-notes.md`. The code itself remains recoverable with `git show 56768c8` if a detail is ever needed; do not restore it, and never import from it.
-- **Artifacts are tracked in git.** `specs/` and `docs/` are the deliverable, not scratch space. `.gitignore` excludes only `.venv`, `__pycache__`, `*.db`, `.env` and tool caches.
+- **Backend first.** `mobile/` holds a **UI prototype**, not implementation: a navigable Expo web app whose data comes entirely from fixtures (`EXPO_PUBLIC_API_MOCK=1`), because the backend has no routes yet. Its invite screen implements UM-US-01's ACs against those fixtures. It satisfies **no** TC, and the `[UI]` rows in `test_cases.md` stay deferred. SDS §4.3.1 is the target design. Findings that cost real debugging time live in `mobile/AGENTS.md`.
+- **The discarded implementation-first attempt has been deleted.** Its code remains recoverable with `git show 56768c8` if a detail is ever needed; do not restore it, and never import from it. Its lesson is the one at the top of this file.
+- **`specs/` is the tracked deliverable, not scratch space.** `.gitignore` excludes `.venv`, `__pycache__`, `*.db`, `.env`, `node_modules/`, tool caches — and `docs/`, which is kept on disk but deliberately untracked (§1.1 rule 0). Earlier commits still contain `docs/`; `git show <sha>:docs/<path>` retrieves a file if one is ever needed.
 - Dev DB is SQLite; PostgreSQL is the deployment target (SDS §4.5).
 
 ## 6. Honesty rules
