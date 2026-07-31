@@ -23,8 +23,11 @@ const LATENCY_MS = 550;
 
 const delay = (ms = LATENCY_MS) => new Promise<void>((r) => setTimeout(r, ms));
 
-/** Mirrors the backend's max email length (spec EC-04, plan QF-08). */
-const MAX_EMAIL_LENGTH = 254;
+/**
+ * Mirrors the backend's max email length (spec EC-04, test_cases QF-08).
+ * 320 inclusive — matches `InviteCreate.email` max_length, so 321 is rejected.
+ */
+const MAX_EMAIL_LENGTH = 320;
 
 /** Deliberately permissive — the server is the source of truth (VL-01). */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -48,7 +51,12 @@ export const MOCK_INVITE_CASES: { email: string; outcome: string; ref: string }[
   { email: 'forbidden@example.com', outcome: 'Not an ADMIN → 403', ref: 'AC-04' },
   { email: 'noauth@example.com', outcome: 'Credentials rejected → 401', ref: 'AC-05' },
   { email: 'smtpdown@example.com', outcome: 'Mail delivery failed → 502', ref: 'EC-07' },
-  { email: 'a'.repeat(250) + '@example.com', outcome: 'Too long → 422', ref: 'EC-04' },
+  // 321 characters — one past the inclusive 320 maximum, matching test_cases TC-09.
+  {
+    email: 'a'.repeat(321 - '@example.com'.length) + '@example.com',
+    outcome: 'Too long → 422',
+    ref: 'EC-04',
+  },
 ];
 
 let idCounter = 1000;
@@ -124,7 +132,8 @@ export async function mockInviteUser(rawEmail: string): Promise<InvitationRead> 
         email,
         status: 'PENDING',
         message: 'A new invitation has been sent. The previous link no longer works.',
-        invitation_expires_at: expiresIn24h(),
+        token_expires_at: expiresIn24h(),
+        created_at: new Date().toISOString(),
       };
 
     // AC-01 — the happy path (FR-05, FR-16).
@@ -134,7 +143,8 @@ export async function mockInviteUser(rawEmail: string): Promise<InvitationRead> 
         email,
         status: 'PENDING',
         message: 'Invitation sent successfully',
-        invitation_expires_at: expiresIn24h(),
+        token_expires_at: expiresIn24h(),
+        created_at: new Date().toISOString(),
       };
   }
 }

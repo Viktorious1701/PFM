@@ -161,6 +161,31 @@ specs/
 
 That is the whole artifact tree. `specs/` is the deliverable; there is no supporting-documents directory (§1.1 rule 0).
 
+### Who does which step
+
+**Subagents do the work; the main session reviews it.** One agent per step,
+matching that step's reviewer role. Definitions live in `.claude/agents/`.
+
+| Step | Agent | Produces |
+| :-- | :-- | :-- |
+| 1 Spec (BA) | `ba-specifier` | the story's `spec.md` section |
+| 2 Design (SE) | `se-designer` | the story's `plan.md` section |
+| 3 Quality (QC) | `qc-test-designer` | the story's `test_cases.md` section |
+| 4 Implement (SE) | `implementer` | code + tests |
+| 5 Deploy · 6 Verification (QC) | `verifier` | TC verdicts recorded in `test_cases.md` |
+
+The main session's job is **the review gate, not the writing**: dispatch the
+agent, read what it produced against the source documents, check its pasted
+evidence, and either send it back or present it for the user's gate. Writing an
+artifact directly in the main session skips the review — there is then nobody
+left to catch the mistake.
+
+Three rules keep this honest:
+
+- **An agent that hits a genuine ambiguity stops and reports it.** It never invents a ruling. A `[NEEDS RULING]` marker in an artifact is a legitimate deliverable; a silently-invented answer is not. Contradictions between `SRS.md` and `SDS.md` where the choice is material belong to the user (§1).
+- **An agent's report is evidence, not a gate.** Every claim gets checked — pasted output read, files opened, numbers re-derived. "The agent said it passed" is not verification.
+- **The `verifier` is adversarial on purpose.** It exists to find what `implementer` missed, so the two are never the same agent and never run as one step.
+
 ### Gate cadence
 
 - **UM-US-01 (invite)** — the first story through the cycle: stop at **every** step gate.

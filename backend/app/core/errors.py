@@ -41,3 +41,46 @@ class ValidationError(AppError):
     status_code = 422
     error_code = "VALIDATION_ERROR"
     default_message = "Request payload is invalid."
+
+
+# --- UM-US-01: Invite a user via email ------------------------------------
+
+
+class NotAuthenticatedError(AppError):
+    """spec AC-05 / FR-15. Raised before the payload is examined (plan.md A8)."""
+
+    status_code = 401
+    error_code = "NOT_AUTHENTICATED"
+    default_message = "Authentication credentials were not provided or are no longer valid."
+
+
+class ForbiddenError(AppError):
+    """spec AC-04 / FR-14. Authenticated, but the role is not ADMIN."""
+
+    status_code = 403
+    error_code = "FORBIDDEN"
+    default_message = "Only an administrator can perform this action."
+
+
+class UserEmailAlreadyActiveError(AppError):
+    """spec AC-02 / FR-04 / BR-02.
+
+    Deliberately discloses that the address is already in use. Constitution
+    SEC-10 forbids account enumeration in general; this is the documented
+    exemption — an ADMIN inviting a colleague needs to know why it failed.
+    """
+
+    status_code = 409
+    error_code = "USER_EMAIL_ALREADY_ACTIVE"
+    default_message = "An account with this email already exists"
+
+
+class EmailDeliveryError(AppError):
+    """spec EC-07 / FR-20. Only reachable in EMAIL_SEND_MODE=sync.
+
+    SC-09: a delivery failure never produces a silent success.
+    """
+
+    status_code = 502
+    error_code = "EMAIL_DELIVERY_FAILED"
+    default_message = "The invitation could not be emailed. Please try again."

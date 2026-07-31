@@ -1,9 +1,9 @@
 """FastAPI application factory.
 
-Foundation only: health check plus the exception handlers that guarantee the
-SDS §6.6 envelope. Routers are mounted by the story that introduces them.
+Health check, the exception handlers that guarantee the SDS §6.6 envelope, and
+the v1 router. Each story appends its own router to `api.v1.router`.
 
-Constitution: API-02, API-07, API-08.
+Constitution: API-01, API-02, API-07, API-08.
 """
 
 import logging
@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError, ValidationError
 
@@ -46,6 +47,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health", tags=["ops"], summary="Liveness probe")
     def health() -> dict[str, str]:
         return {"status": "ok", "environment": settings.environment}
+
+    # API-01: everything business-facing lives under /api/v1.
+    #
+    # FastAPI >=0.141 makes include_router lazy, so `app.routes` yields
+    # _IncludedRouter objects with no `.path`. To inventory routes, read
+    # `app.openapi()["paths"]` instead (CLAUDE.md §3, spike finding 3).
+    app.include_router(api_router, prefix=settings.api_v1_prefix)
 
     return app
 

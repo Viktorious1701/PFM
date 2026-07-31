@@ -30,8 +30,13 @@ export type InvitationRead = {
   email: string;
   status: UserStatus;
   message: string;
-  /** ISO-8601 instant, exactly 24 hours after creation (spec FR-09). */
-  invitation_expires_at: string;
+  /**
+   * ISO-8601 instant, exactly 24 hours after creation (spec FR-09).
+   * Always carries a UTC offset — the backend passes it through
+   * `clock.ensure_aware()` because SQLite drops tzinfo on read-back.
+   */
+  token_expires_at: string;
+  created_at: string;
 };
 
 /** Row of `GET /api/v1/users` (SDS §6.3 UM-API-03) — UM-US-03. */

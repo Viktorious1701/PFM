@@ -1,0 +1,248 @@
+{
+  "info": {
+    "name": "PFM API — UM-US-01 Invite a User",
+    "description": "Exercises every acceptance criterion and edge case of SRS §6 Feature-01 · US-01-01 (SDS §5.2.1 UM-US-01).\n\nSetup:\n  cd backend\n  uv run alembic upgrade head\n  uv run python -m app.cli create-admin --email boss@example.com --password 'Str0ng-Passw0rd!'\n  uv run python -m app.cli mint-token --email boss@example.com\n  uv run uvicorn app.main:app --reload --port 8000\n\nPaste the minted token into the `admin_token` collection variable.\n\n`mint-token` is a dev stand-in for POST /api/v1/auth/login, which belongs to SS-US-01 and is not built yet (plan.md A11).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000", "type": "string" },
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "string",
+      "description": "Output of `uv run python -m app.cli mint-token --email boss@example.com`"
+    },
+    {
+      "key": "user_token",
+      "value": "",
+      "type": "string",
+      "description": "A token for an ACTIVE non-ADMIN user, for the AC-04 403 case. Not obtainable yet — see that request's description."
+    },
+    {
+      "key": "new_email",
+      "value": "family.member@gmail.com",
+      "type": "string",
+      "description": "An address with no account. Change it between runs, or the second call becomes an EC-02 re-invite."
+    },
+    {
+      "key": "active_email",
+      "value": "boss@example.com",
+      "type": "string",
+      "description": "The bootstrap ADMIN — an ACTIVE account, so inviting it must 409."
+    }
+  ],
+  "item": [
+    {
+      "name": "00 — Health (Deploy gate)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] },
+        "description": "Expect 200 {\"status\":\"ok\",...}. The liveness probe the Deploy step checks."
+      }
+    },
+    {
+      "name": "AC-01 — Invite a new address (201)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{new_email}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Expect 201 with exactly six fields: id, email, status=PENDING, token_expires_at (24h out, UTC with offset), created_at, message='Invitation sent successfully'.\n\nAC-08: there must be NO token in the response. The raw token goes only to the invited mailbox. With SMTP unconfigured the server logs a warning and records the message instead of sending — check the uvicorn output for the activation link."
+      }
+    },
+    {
+      "name": "EC-02 — Re-invite the same PENDING address (201, token rotated)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{new_email}}\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Run immediately after AC-01. Expect 201, the SAME id, and message='A new invitation has been sent. The previous link no longer works.'\n\nThe previous invitation is now SUPERSEDED and its link is dead; the new expiry restarts from now. This is the recovery path when an invitation expired or never arrived."
+      }
+    },
+    {
+      "name": "AC-02 — Invite an ACTIVE address (409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{active_email}}\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Expect 409 USER_EMAIL_ALREADY_ACTIVE, 'An account with this email already exists'.\n\nThis deliberately discloses that the address is in use — constitution SEC-10's documented exemption, because an ADMIN needs to know why the invite failed."
+      }
+    },
+    {
+      "name": "EC-01 — Same address, different case and whitespace (409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"  Boss@Example.COM  \"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Expect 409. Trimmed and case-folded before comparison, so one mailbox maps to exactly one account and no duplicate can be created by changing capitalisation."
+      }
+    },
+    {
+      "name": "AC-03 — Malformed address (422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"not-an-email\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Expect 422 VALIDATION_ERROR with details.fields locating [\"body\",\"email\"]. Also try: @nolocal.com, 'spaces in@email.com', a@b@c.com, empty string."
+      }
+    },
+    {
+      "name": "AC-03 — Missing email field (422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Expect 422 VALIDATION_ERROR, type 'missing'. All field errors are returned together (constitution VL-02)."
+      }
+    },
+    {
+      "name": "EC-04 — Over-long address (422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.com\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "321 characters — one past the inclusive 320 maximum. Expect 422, and confirm the address was NOT silently truncated to fit."
+      }
+    },
+    {
+      "name": "AC-05 — No credentials (401)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"someone@example.com\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Expect 401 NOT_AUTHENTICATED. Absent, invalid and expired credentials all produce the same message — distinguishing them would tell an attacker which half to work on."
+      }
+    },
+    {
+      "name": "AC-05 — Credentials checked before payload (401, not 422)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"not-an-email\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Malformed payload AND no credentials. Expect 401, NOT 422 — an unauthenticated caller must learn nothing about payload validity (plan.md A8)."
+      }
+    },
+    {
+      "name": "AC-05 — Garbage bearer token (401)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer not-a-real-jwt" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"someone@example.com\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Expect 401. Also try a token signed with a different secret, and one whose `exp` has passed."
+      }
+    },
+    {
+      "name": "AC-04 — Non-ADMIN caller (403) — SEE DESCRIPTION",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{user_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"someone@example.com\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Expect 403 FORBIDDEN.\n\nNOT RUNNABLE YET: this needs an ACTIVE user whose role is USER, and there is no way to produce one. `create-admin` only makes ADMINs, and an invited account stays PENDING until UM-US-02 (activate) is built — a PENDING account cannot hold a token at all.\n\nAC-04 is covered instead by the pytest case TC-11 (test_a_non_admin_caller_is_denied), which constructs the USER directly. Run `uv run pytest -k non_admin` to see it."
+      }
+    },
+    {
+      "name": "EC-07 — Sync-mode delivery failure (502) — SEE DESCRIPTION",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"delivery.test@example.com\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/users/invite",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "users", "invite"]
+        },
+        "description": "Expect 502 EMAIL_DELIVERY_FAILED.\n\nRequires the server restarted with BOTH:\n  EMAIL_SEND_MODE=sync\n  SMTP_USER / SMTP_PASSWORD set to something that will fail to authenticate\n\nWith SMTP entirely unconfigured the server falls back to a recording sender that always succeeds, so you get 201 instead. The point of this case is that success is never reported for mail that was not sent."
+      }
+    }
+  ]
+}

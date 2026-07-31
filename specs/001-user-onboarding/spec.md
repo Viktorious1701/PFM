@@ -176,9 +176,218 @@ As an **ADMIN**, I want to invite a prospective family member by entering their 
 
 ### Assumptions & Dependencies
 
-- **Authentication must exist before this story can be implemented.** AC-04 and AC-05 require an authenticated caller with a role, which is **SS-US-01 / US-02-01 (Login)** — a different epic, specified in `specs/002-system-security/`. UM-US-01 is *specified* first because it is the first story of this epic, but it cannot be *implemented* or verified before login exists.
+- **Authentication must exist before this story can be implemented.** AC-04 and AC-05 require an authenticated caller with a role, which is **SS-US-01 / US-02-01 (Login)** — a different epic, to be specified in `specs/002-system-security/`. UM-US-01 is *specified* first because it is the first story of this epic.
+  - **Narrowed at the Implement step (`plan.md` A11).** What these ACs actually need is for a caller's identity and role to be *established*, not *issued*. Token **verification** therefore shipped with this story, and AC-04/AC-05 are satisfied and tested. The login **endpoint** did not, and remains SS-US-01's to deliver — so this story can be implemented and verified, but a human cannot obtain a token through the API until that story lands.
 - **A bootstrap ADMIN is required.** Registration is invitation-only, so with no `ACTIVE` ADMIN in the database nobody can authenticate to issue the first invitation. Closing that cycle is a dependency of implementation, not a requirement of this story.
 - **Working Gmail credentials are required for verification.** AC-01 and SC-01 depend on real mail delivery, which needs a Gmail account with 2FA and an App Password. Automated tests substitute a mail double; the Deploy step requires the real thing.
 - **Role vocabulary comes from the SDS.** The SRS names the actor "Admin / Account Owner" without defining a role model; SDS §5.2 supplies `ADMIN` and `USER`. Treated as an elaboration, not a conflict — see `docs/00-foundation/srs-sds-alignment.md`.
 - **The activation link's destination is out of scope.** This story is complete when a correctly-formed link is delivered. What that link does belongs to UM-US-02.
 - **Notifications are not in scope.** SRS FR-08 mentions notifying on invitation; SRS §6 Feature-08 owns that, and no notification requirement is drawn into this story.
+
+---
+
+## UM-US-02: Activate a User Account
+
+> **IDs in this section are local to UM-US-02.** `AC-01` below is not UM-US-01's `AC-01`; each story section numbers its own criteria, per `artifact-templates/spec-templates.md`. Only `TC-NN` in `test_cases.md` runs continuously across the epic (`CLAUDE.md` §1.1 rule 4).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-01 · US-01-02 — Activate User Account [MVP]**
+> * **As an** Invited User
+> * **I want to** click the activation link from my email and set my password
+> * **So that** I can activate my account and log in safely.
+>
+> ```gherkin
+> Scenario: Successfully activate account within TTL
+>   Given an invited User has a token "valid-uuid-token" with status "PENDING"
+>   And the token expiration time is in the future
+>   When the User accesses the activation link with token "valid-uuid-token"
+>   And the User enters full name "Jane Doe"
+>   And the User enters password "SecurePassword123!"
+>   And the User clicks "Activate Account"
+>   Then the System hashes the password using a secure algorithm
+>   And the System updates User status to "ACTIVE"
+>   And the System invalidates the token "valid-uuid-token"
+>   And the System redirects the User to the Login screen with message "Account activated successfully"
+>
+> Scenario: Reject activation when token is expired
+>   Given an invited User has a token "expired-token"
+>   And the token expiration time has passed
+>   When the User accesses the activation link with token "expired-token"
+>   Then the System displays error "Invitation link has expired. Please request a new invitation."
+>   And the account status remains "PENDING"
+> ```
+
+**SDS §5.2.2 UM-US-02 (GUEST/USER)**
+> * **Goal:** Allow an invited user to set their full name and password to activate their account.
+> 1. Validates token existence and checks `expires_at > CURRENT_TIMESTAMP`.
+> 2. Hashes password using `argon2` or `bcrypt`.
+> 3. Updates user state to `ACTIVE` and invalidates the activation token.
+
+**SRS §5 BF-02 steps 4–6**
+> 4. User accesses activation endpoint with token.
+> 5. System verifies `NOW() < token_expires_at`.
+> 6. User submits password; status transitions to `ACTIVE`; token is invalidated.
+
+**SRS §3 NFR — security baseline** · **SRS §4 UXR-04** · **SDS §7.1.5 password policy** · **SDS §6.4.2 UM-API-02**
+
+### Out of scope for this story
+
+UM-US-03 (list users) · SS-US-01/02 (login, logout) · Features 03–11 · SRS §6 Feature-10/11 placeholders · SDS-only stories UM-US-04, UM-US-05, DC-US-01, DC-US-02.
+
+Deliberately excluded even though adjacent:
+
+- **Logging in.** SRS US-01-02 ends by *directing* the activated user to the login screen. Issuing a session is SS-US-01's job, so activation returns no token (AC-09).
+- **Reactivating a `DEACTIVATED` account.** Restoring withdrawn access belongs to SDS §5.2.5 UM-US-05, out of MVP scope. Here it is simply refused (EC-07).
+- **Password reset / change.** No SRS story in round 1 covers it.
+- **Resending an invitation.** That is UM-US-01's re-invite path (its EC-02), already built.
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **invited person**, I want to open the link from my invitation email and choose my name and password, so that my account becomes usable and nobody but me ever knows the credential that unlocks it.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully activate an account within its TTL**
+**Given** a `PENDING` user whose outstanding invitation has not yet expired,
+**When** the invited person submits that invitation's token together with a full name and a password meeting the password policy,
+**Then** the system sets the user's status to `ACTIVE`, stores the submitted full name, stores the password in irreversible hashed form, marks the invitation `ACCEPTED`, and returns a success result directing the person to log in.
+
+**AC-02: Reject an expired token**
+**Given** an invitation whose expiry instant has passed,
+**When** its token is submitted,
+**Then** the system activates nothing, leaves the user `PENDING`, leaves the invitation's stored state untouched, and returns an expiry error telling the person to request a new invitation.
+
+**AC-03: Reject a token that matches no invitation**
+**Given** a token value that corresponds to no invitation on record,
+**When** it is submitted,
+**Then** the system changes nothing and returns an error that does not reveal whether the token ever existed.
+
+**AC-04: Reject a token that has already been used**
+**Given** an invitation already `ACCEPTED`,
+**When** the same token is submitted a second time,
+**Then** the system changes nothing and refuses. A token grants activation exactly once.
+
+**AC-05: Reject a superseded token**
+**Given** the address was re-invited, so an earlier invitation was superseded,
+**When** the earlier token is submitted,
+**Then** the system refuses it. Only the most recently issued link can activate an account.
+
+**AC-06: Enforce the password policy**
+**Given** an otherwise usable token,
+**When** the submitted password fails any policy rule — too short, missing an uppercase letter, missing a digit, missing a special character, or longer than the maximum supported length,
+**Then** the system activates nothing and returns a validation error identifying the password field.
+
+**AC-07: Never expose the credential**
+**Given** a successful activation,
+**When** the result is returned and the operation is recorded,
+**Then** the raw password appears in no response, no log entry and no audit record; the stored hash is never returned to any caller; and the submitted token is not echoed back.
+
+**AC-08: Activate and invalidate as one atomic outcome**
+**Given** a successful activation,
+**When** the change is persisted,
+**Then** the user's transition to `ACTIVE` and the invitation's transition to `ACCEPTED` either both take effect or neither does. A usable token must never survive a successful activation.
+
+**AC-09: Do not establish a session**
+**Given** a successful activation,
+**When** the result is returned,
+**Then** it carries no access token and no session of any kind — the person is directed to log in, which is a separate story.
+
+**AC-10: Require a full name**
+**Given** an otherwise usable token,
+**When** the submitted full name is absent, empty, or only whitespace,
+**Then** the system activates nothing and returns a validation error identifying the name field.
+
+**AC-11: Report a token's usability without consuming it**
+**Given** a token,
+**When** the person's client asks for the token's state rather than submitting an activation,
+**Then** the system reports whether it is usable, expired, or already used, and **changes nothing** — the token remains exactly as usable afterwards as it was before.
+
+**AC-12: Accept the request without credentials**
+**Given** a caller presenting no credentials at all,
+**When** an activation is submitted or a token's state is requested,
+**Then** the system processes the request. An invited person has no account yet, so requiring authentication would make activation impossible.
+
+### Edge Cases
+
+**EC-01**: **Full name with surrounding whitespace** — `"  Jane Doe  "` is stored trimmed. Interior spacing is preserved as typed; the system does not attempt to correct a person's name.
+
+**EC-02**: **Password exactly at the policy boundary** — a password of exactly the minimum length carrying exactly one uppercase letter, one digit and one special character is **accepted**. The policy is a floor, not a target.
+
+**EC-03**: **Password exceeding the maximum supported length** — rejected with a validation error rather than silently shortened. A credential that is quietly truncated would let a different, shorter password unlock the same account.
+
+**EC-04**: **Non-ASCII full name** — a name such as `Đặng Ngọc Thịnh` is stored and returned exactly as submitted. Names are not transliterated, stripped of accents, or case-folded.
+
+**EC-05**: **The same valid token submitted twice concurrently** — exactly one submission activates the account; the other is refused. Two callers must never both succeed against a single-use token.
+
+**EC-06**: **Token belonging to a user who is already `ACTIVE`** — refused. The account is already usable, and re-running activation would let a stale link overwrite a live password.
+
+**EC-07**: **Token belonging to a `DEACTIVATED` user** — refused. Access was withdrawn deliberately, and an old invitation link must not restore it. Reactivation is UM-US-05's concern.
+
+**EC-08**: **Token submitted with altered surrounding characters** — a token differing from the issued value by so much as leading or trailing whitespace does not match. Unlike an email address, a token is compared exactly and is never normalised; guessing tolerance into a secret would widen the space of values that unlock an account.
+
+**EC-09**: **State requested for an expired or used token** — reported accurately as expired or used, and the request still changes nothing, including not advancing the invitation's stored state.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **accept** an activation request carrying a token, a full name and a password, from a caller presenting no credentials (SRS §6 US-01-02; SDS §6.4.2; constitution API-08).
+- **FR-02**: The system must **locate** the invitation corresponding to the submitted token, comparing the token exactly (EC-08).
+- **FR-03**: The system must **refuse** activation when no invitation corresponds to the submitted token (AC-03).
+- **FR-04**: The system must **refuse** activation when the invitation's expiry instant has passed, determined by comparison at the moment of the request (SRS §5 BF-02 step 5; AC-02).
+- **FR-05**: The system must **refuse** activation when the invitation is not in its outstanding state — already accepted, or superseded by a later invitation (AC-04, AC-05).
+- **FR-06**: The system must **refuse** activation when the invitation's user is not `PENDING` (EC-06, EC-07).
+- **FR-07**: The system must **validate** the submitted password against the password policy before making any change (SDS §7.1.5; constitution VL-04; AC-06).
+- **FR-08**: The system must **reject** a password exceeding the maximum supported length rather than truncating it (EC-03).
+- **FR-09**: The system must **require** a non-empty full name after trimming (AC-10, EC-01).
+- **FR-10**: The system must **store** the password using a strong one-way hash, never in recoverable form (SRS §3 security baseline; SDS §5.2.2 AC-2; AC-07).
+- **FR-11**: The system must **set** the user's status to `ACTIVE` on success (SRS §6 US-01-02; SDS §5.2.2 AC-3).
+- **FR-12**: The system must **record** the submitted full name on the user (SRS §6 US-01-02).
+- **FR-13**: The system must **invalidate** the invitation on success so it cannot activate again (SRS §5 BF-02 step 6; constitution SEC-04; AC-04).
+- **FR-14**: The system must **apply** the status change and the invalidation as a single atomic outcome (AC-08).
+- **FR-15**: The system must **return** a success result confirming activation and directing the person to log in (SDS §6.4.2).
+- **FR-16**: The system must **exclude** any session token from the activation result (AC-09).
+- **FR-17**: The system must **exclude** the raw password, the stored hash, and the submitted token from every response, log entry and audit record (AC-07).
+- **FR-18**: The system must **record** an audit entry for every activation attempt, successful or refused, capturing the affected account and the outcome, and never the credential (constitution LA-02, LA-04).
+- **FR-19**: The system must **report** a token's usability on request without altering it (AC-11, EC-09).
+- **FR-20**: The system must **ensure** that concurrent submissions of one token activate the account at most once (EC-05).
+- **FR-21**: The system must **refuse** an activation whose password fails policy even when every other input is valid, leaving the token still usable so the person can retry (AC-06).
+
+#### Business Rules
+
+- **BR-01**: An invitation token grants activation **exactly once**. Success consumes it (FR-13, SEC-04).
+- **BR-02**: A token is usable only while **all** of the following hold: it matches an invitation, that invitation is outstanding, its expiry has not passed, and its user is `PENDING`. Failing any one makes it unusable.
+- **BR-03**: Expiry is evaluated by comparison at the moment of use, never read from a stored flag (constitution SEC-05; consistent with UM-US-01 BR-04).
+- **BR-04**: Only the most recently issued invitation for an address is usable; earlier ones were superseded when it was issued (UM-US-01 FR-11).
+- **BR-05**: A refused activation leaves every stored value untouched. In particular an expired token leaves its user `PENDING`, so the address remains re-invitable.
+- **BR-06**: The raw password is known only to the person who submits it. It is never stored, logged, returned, or recoverable from what is stored.
+- **BR-07**: Activation confers no session. Authentication is a separate act (AC-09).
+- **BR-08**: Activation is available to unauthenticated callers by necessity, and is the only write operation in this epic that is (constitution API-08).
+- **BR-09**: A password that satisfies every policy rule is accepted regardless of how it satisfies them; the policy defines a minimum, and no additional undocumented rule may reject a compliant password (EC-02).
+
+#### Key Entities
+
+- **User**: Transitions `PENDING → ACTIVE` here, gaining a full name and a password hash. This is the only story that sets a password on an invited account.
+- **Invitation**: Transitions `PENDING → ACCEPTED` here. Its token is the sole authorisation for the transition, and is spent in the process. `EXPIRED` remains derived, never written (UM-US-01 BR-04).
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: A person who receives an invitation email can follow its link, choose a name and password, and end up with a usable account.
+- **SC-02**: An expired link cannot activate an account, and tells the person clearly to ask for a new invitation rather than failing opaquely.
+- **SC-03**: A link works at most once. Re-using it, or using an older superseded link, never activates anything.
+- **SC-04**: A weak password cannot become an account credential, and the person is told which rule they missed.
+- **SC-05**: No credential the person submits is recoverable from the system afterwards — not from the database, not from a log, not from a response.
+- **SC-06**: Activating an account never silently logs anyone in.
+- **SC-07**: A person whose link has expired can be re-invited and the new link works, because the refused activation left their account untouched.
+- **SC-08**: A client can tell a person their link has expired *before* asking them to type a password.
+- **SC-09**: Every activation attempt leaves an audit trail identifying the account and the outcome.
+
+### Assumptions & Dependencies
+
+- **UM-US-01 must be implemented first.** Activation consumes an invitation, and there is no way to create one otherwise. UM-US-01 is complete and verified, so this dependency is satisfied.
+- **The activation link's destination is this story's endpoint.** UM-US-01 delivers a link built from `ACTIVATION_URL_TEMPLATE`; until this story ships, that link resolves to nothing. Making it resolve is the point of this story.
+- **Logging in afterwards requires SS-US-01.** SC-01 says the account is *usable*; proving a person can then log in needs the login endpoint, which is a different epic. This story is verifiable without it — the account's `ACTIVE` status and stored hash are observable directly.
+- **The password policy comes from the SDS, not the SRS.** SRS §3 requires strong hashing but sets no composition rules; SDS §7.1.5 supplies minimum length, uppercase, digit and special character. Treated as an elaboration, consistent with how the role model was handled in UM-US-01.
+- **`GET` on the activation endpoint is drawn from the constitution, not the SDS API index.** `constitution.md` API-08 lists `GET /api/v1/users/activate` as public while SDS §6.3 lists only the `POST`. Ruled in favour of the constitution: the read serves UXR-04's one-page guidance and makes API-08 true as written. Recorded in this story's `plan.md` *Gaps & Decisions*.
+- **A real mailbox is not required to verify this story.** Unlike UM-US-01, activation needs only a token, which a test can obtain from the invitation it created. Live SMTP is UM-US-01's concern and is already proven.

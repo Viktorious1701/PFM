@@ -108,8 +108,8 @@ Each row lists exactly the TCs whose `**AC:**` field cites that id — matrix an
 | AC-01 | [BOTH] | TC-01, TC-02, TC-03, TC-22 | *deferred — mobile round* | — |
 | AC-02 | [BOTH] | TC-04, TC-05 | *deferred — mobile round* | — |
 | AC-03 | [BOTH] | TC-06, TC-07 | *deferred — mobile round* | — |
-| AC-04 | [API] | TC-11 | — | **SS-US-01** (QF-03) |
-| AC-05 | [API] | TC-12, TC-13 | — | **SS-US-01** (QF-03) |
+| AC-04 | [API] | TC-11 | — | ~~SS-US-01~~ **unblocked** (`plan.md` A11) |
+| AC-05 | [API] | TC-12, TC-13 | — | ~~SS-US-01~~ **unblocked** (`plan.md` A11) |
 | AC-06 | [API] | TC-08, TC-23, TC-24 | — | — |
 | AC-07 | [API] | TC-02, TC-10 | — | — |
 | AC-08 | [API] | TC-17, TC-18 | — | — |
@@ -124,7 +124,76 @@ Each row lists exactly the TCs whose `**AC:**` field cites that id — matrix an
 
 `TC-22` is the opt-in live-SMTP case (`@pytest.mark.smtp`). It is the positive counterpart to `EC-07` — it proves the configuration EC-07 fails on is correct — but it does not exercise EC-07's failure path, so it is not listed against it.
 
-> Every AC and EC has at least one integration TC. `[BOTH]` rows have **no** E2E case because `mobile/` has no screens this round — they are deferred to the mobile round, not silently dropped. Three cases (TC-11…TC-13) are blocked on SS-US-01 per QF-03 and must be green before Verification closes. **Known coverage limits, accepted:** true concurrent-writer behaviour (QF-02, deferred to a PostgreSQL run), generator entropy as a property (QF-05, code review against SEC-02), audit durability (QF-01, log-shape only), and real SMTP delivery (QF-07, opt-in `TC-22` plus a manual Deploy gate).
+> Every AC and EC has at least one integration TC. `[BOTH]` rows have **no** E2E case because `mobile/` has no screens this round — they are deferred to the mobile round, not silently dropped. TC-11…TC-13 were blocked on SS-US-01 per QF-03; `plan.md` A11 unblocked them by shipping token verification with this story, and all three are green. **Known coverage limits, accepted:** true concurrent-writer behaviour (QF-02, deferred to a PostgreSQL run), generator entropy as a property (QF-05, code review against SEC-02), audit durability (QF-01, log-shape only), and real SMTP delivery (QF-07, opt-in `TC-22` plus a manual Deploy gate).
+
+---
+
+### Test Implementation Map *(filled at step 4)*
+
+`pytest` node ids for each TC. All under `backend/tests/`, module
+`integration/test_um_us_01_invite.py` unless stated. Run one with
+`uv run pytest -k <fragment>`.
+
+| TC | pytest node id (`::`-suffix of the module above) | Result |
+|---|---|---|
+| TC-01 | `test_invite_returns_201_with_the_invitation_record` | PASS |
+| TC-02 | `test_invite_writes_both_a_user_row_and_an_invitation_row` | PASS |
+| TC-03 | `test_invite_dispatches_an_email_containing_the_activation_link` | PASS |
+| TC-04 | `test_inviting_an_active_address_is_rejected_as_conflict` | PASS |
+| TC-05 | `test_duplicate_detection_ignores_case_and_surrounding_whitespace` | PASS |
+| TC-06 | `test_malformed_email_addresses_are_rejected_as_validation_errors` (5 params) | PASS |
+| TC-07 | `test_a_missing_email_field_is_rejected_as_a_validation_error` | PASS |
+| TC-08 | `test_every_emitted_token_is_43_urlsafe_chars_and_unique` | PASS |
+| TC-09 | `test_an_over_long_email_address_is_rejected_not_truncated` | PASS |
+| TC-10 | `test_the_invited_account_has_no_credentials_and_the_default_role` | PASS |
+| TC-11 | `test_a_non_admin_caller_is_denied` | PASS |
+| TC-12 | `test_an_unauthenticated_caller_is_denied`, `test_an_expired_token_is_denied` | PASS |
+| TC-13 | `test_credentials_are_evaluated_before_the_payload` | PASS |
+| TC-14 | `test_a_unique_constraint_violation_surfaces_as_conflict_not_server_error` | PASS |
+| TC-15 | `test_repeated_submission_yields_exactly_one_account` | PASS |
+| TC-16 | `test_a_successful_invitation_emits_an_audit_record_without_the_token` | PASS |
+| TC-17 | `test_the_raw_token_appears_nowhere_in_the_response_body` | PASS |
+| TC-18 | `test_the_response_exposes_exactly_the_six_documented_fields` | PASS |
+| TC-19 | `test_a_background_delivery_failure_does_not_fail_the_request` | PASS |
+| TC-20 | `test_a_sync_mode_delivery_failure_returns_bad_gateway` | PASS |
+| TC-21 | `test_an_address_whose_email_failed_can_be_reinvited` | PASS |
+| TC-22 | `test_a_real_message_is_delivered_through_gmail_smtp` | **PASS** — real Gmail send, confirmed in the inbox. See the Deploy note below. |
+| TC-23 | `test_the_invitation_expires_exactly_24_hours_after_creation` | PASS |
+| TC-24 | `test_expiry_is_derived_from_the_timestamp_not_stored_as_a_status` | PASS |
+| TC-25 | `test_the_stored_email_is_normalised` | PASS |
+| TC-26 | `test_reinviting_a_pending_address_rotates_the_token_and_supersedes_the_old_invitation` (`still-valid`, `already-expired`) | PASS |
+
+**Supporting tests, not TCs.** These cover code paths no AC reaches, for DOD-03's
+coverage bar. They do not satisfy any test case and are not counted above:
+`integration/test_auth_and_envelope.py` (401 variants, API-02 envelope for 404 /
+405 / 500), `unit/test_security.py`, `unit/test_email_delivery.py`,
+`unit/test_cli.py`, `unit/test_deps_and_audit.py`.
+
+**Deploy evidence (step 5) — TC-22 and SC-01 closed.** `uv run pytest -m smtp`
+passed against real Gmail SMTP (App Password, STARTTLS, port 587), and the
+message was **confirmed present in the recipient inbox** — a send that does not
+raise is not by itself proof of delivery, so the manual check was made. Full run
+with the live case included: `86 passed`, nothing skipped.
+
+Two defects were found by the live walkthrough rather than by the suite, which is
+the argument for the Deploy gate existing at all:
+
+1. **Bearer scheme.** `Authorization` was a raw `Header()` parameter, so Swagger
+   rendered a bare text box; pasting the JWT produced a 401 that looked like a bad
+   token rather than a missing `Bearer ` prefix. Now declared as an `HTTPBearer`
+   security scheme, so Swagger adds the prefix itself. Regression-guarded by
+   `test_auth_is_declared_as_a_bearer_security_scheme_not_a_raw_header`.
+2. **TC-22 read `os.environ`** while `.env` is the documented home for credentials
+   (SEC-09) and only `pydantic-settings` loads it. Filling in `.env` left TC-22
+   silently skipped while appearing configured. Both now route through `Settings()`.
+
+**Defect found and fixed during step 4.** `token_expires_at` and `created_at`
+serialised **without a timezone offset** — SQLite drops `tzinfo`, so values read
+back naive after `db.refresh()` and a client had no way to know the timezone of
+an expiry deadline. Fixed by passing both through `clock.ensure_aware()` at the
+serialisation boundary (`api/v1/users.py`). TC-23 originally applied
+`ensure_aware` to the *response* before comparing, which hid the bug; it now
+asserts `tzinfo is not None` directly.
 
 ---
 

@@ -4,14 +4,13 @@ from logging.config import fileConfig
 
 from alembic import context
 
+# Models must be imported for autogenerate to see their tables. Importing the
+# package is enough — app/models/__init__.py registers every model on
+# Base.metadata. DOD-02: every model change ships a migration.
+import app.models  # noqa: F401
 from app.core.config import get_settings
 from app.db.base import Base
 from app.db.session import build_engine
-
-# Models must be imported for autogenerate to see their tables. There are none
-# yet — each story adds its own import here when it introduces a model, which is
-# also why `alembic revision --autogenerate` currently produces an empty diff.
-# DOD-02: every model change ships a migration.
 
 config = context.config
 

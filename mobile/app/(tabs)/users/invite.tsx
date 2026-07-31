@@ -139,7 +139,7 @@ export default function InviteUserScreen() {
           <ResultRow
             testID={InviteIds.resultExpiry}
             label="Link expires"
-            value={new Date(result.invitation_expires_at).toLocaleString()}
+            value={new Date(result.token_expires_at).toLocaleString()}
           />
           <ResultRow testID={InviteIds.resultId} label="User id" value={result.id} />
         </Banner>
