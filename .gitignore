@@ -23,10 +23,21 @@ venv/
 coverage.xml
 htmlcov/
 
-# Node / React Native (future mobile round)
+# Node / React Native
 node_modules/
 .expo/
 dist/
+
+# Process documents — kept on disk, deliberately untracked.
+#
+# The per-epic deliverable is specs/<NNN>-<slug>/{spec,plan,test_cases}.md and
+# nothing else. Supporting write-ups (ADRs, traceability matrices, verification
+# reports, defect records) are no longer produced: their content belongs in
+# plan.md's Gaps & Decisions table and test_cases.md's Coverage Matrix.
+#
+# Commits before this rule still contain docs/; recover a file with
+#   git show <sha>:docs/<path>
+docs/
 
 # Editors & OS
 .vscode/
