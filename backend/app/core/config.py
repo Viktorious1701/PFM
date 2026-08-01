@@ -8,11 +8,13 @@ Constitution: SEC-09, ENV-01.
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 EmailSendMode = Literal["background", "sync"]
+EmailTransport = Literal["auto", "smtp", "outbox"]
 
 
 class Settings(BaseSettings):
@@ -63,6 +65,18 @@ class Settings(BaseSettings):
     # NFR-01's 300 ms p95 holds. "sync" sends inline and surfaces a 502 on
     # failure (spec FR-20, EC-07); intended for first-time Gmail wiring.
     email_send_mode: EmailSendMode = "background"
+
+    # UM-US-01 A13: which sender `get_email_sender` builds. "auto" (default)
+    # keeps existing behaviour — real SMTP when credentials are set, a
+    # recording double otherwise. "outbox" writes each message to a file
+    # instead, so an ADMIN can read the activation link without a mailbox.
+    # "smtp" forces the real sender even without credentials, so a
+    # misconfiguration surfaces immediately rather than silently degrading.
+    email_transport: EmailTransport = "auto"
+
+    # Where FileOutboxSender writes messages when email_transport="outbox".
+    # Gitignored — these files carry live, unexpired activation tokens.
+    outbox_dir: Path = Path("var/outbox")
 
     @property
     def smtp_configured(self) -> bool:

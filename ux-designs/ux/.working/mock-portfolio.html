@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portfolio — Sâm Thương</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Inter:wght@400;500;600&display=swap&subset=vietnamese,latin" rel="stylesheet">
+<style>
+  :root{
+    --bg-page:#FBF9F4; --surface:#FFFFFF; --surface-sunken:#F1EDE4; --border:#E4DFD3;
+    --ink:#3B4147; --ink-muted:#6B7178; --caption-deep:#71736B;
+    --sky-soft:#7E9AAB; --sky-deep:#4C6577; --sky-deep-hover:#3D5464;
+    --sage-soft:#8B9B7A; --sage-deep:#5E6F4B;
+    --success:#4F7A52; --pending:#96681F; --error:#A85248;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg-page); color:var(--ink);
+    font-family:"Inter",system-ui,sans-serif; font-weight:400; font-size:16px; line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:"Lora",Georgia,serif; color:var(--ink); margin:0; line-height:1.2}
+  a{color:var(--sky-deep); text-decoration:none}
+  a:hover{color:var(--sky-deep-hover)}
+  .wrap{max-width:1200px; margin:0 auto; padding:0 32px}
+  :focus-visible{outline:2px solid var(--sky-deep); outline-offset:3px; border-radius:3px}
+
+  /* ---- Nav ---- */
+  .nav{position:sticky; top:0; z-index:20; background:var(--surface); border-bottom:1px solid var(--border)}
+  .nav-inner{display:flex; align-items:center; gap:32px; height:68px}
+  .wordmark{font-family:"Lora",serif; font-weight:700; font-size:22px; color:var(--ink); letter-spacing:.2px}
+  .nav-links{display:flex; gap:26px; margin-left:8px}
+  .nav-links a{color:var(--ink); font-weight:500; font-size:15px}
+  .nav-links a:hover{color:var(--sky-deep)}
+  .nav-links a.active{color:var(--sky-deep)}
+  .nav-right{margin-left:auto; display:flex; align-items:center; gap:22px}
+  .cart{position:relative; display:inline-flex; align-items:center; gap:8px; color:var(--ink); font-weight:500; font-size:15px}
+  .cart .badge{background:var(--sky-deep); color:#fff; font-size:12px; font-weight:600; min-width:20px; height:20px;
+    border-radius:9999px; display:inline-flex; align-items:center; justify-content:center; padding:0 6px}
+  .lang{font-size:14px; font-weight:500}
+  .lang .on{color:var(--ink)} .lang .off{color:var(--ink-muted)} .lang .sep{color:var(--border); margin:0 6px}
+
+  /* ---- Intro ---- */
+  main{padding:56px 0 80px}
+  .intro{max-width:720px; margin-bottom:44px}
+  .intro h1{font-size:46px; font-weight:700; letter-spacing:-.5px}
+  .intro p{color:var(--ink-muted); font-size:17px; line-height:1.6; margin-top:16px}
+
+  /* ---- Masonry gallery ---- */
+  .gallery{column-count:3; column-gap:24px}
+  @media(max-width:900px){.gallery{column-count:2}}
+  @media(max-width:560px){.gallery{column-count:1}}
+  .shot{break-inside:avoid; margin:0 0 24px; display:block; text-align:left}
+  .shot .frame{border:1px solid var(--border); border-radius:2px; overflow:hidden; display:block}
+  .shot figcaption{font-style:italic; color:var(--caption-deep); font-size:13.5px; margin-top:8px}
+  .shot button.frame{width:100%; padding:0; border:1px solid var(--border); cursor:pointer; background:none}
+  .shot button.frame:focus-visible{outline:2px solid var(--sky-deep); outline-offset:3px}
+
+  /* aspect + gradient photo blocks */
+  .ph{width:100%; display:block}
+  .a-tall{aspect-ratio:3/4}
+  .a-wide{aspect-ratio:4/3}
+  .a-square{aspect-ratio:1/1}
+  .a-pano{aspect-ratio:16/10}
+  .g-kingfisher{background:linear-gradient(150deg,#7E9AAB 0%,#4C6577 60%,#3D5464 100%)}
+  .g-heron{background:linear-gradient(150deg,#9aa98b 0%,#5E6F4B 55%,#4C6577 100%)}
+  .g-crane{background:linear-gradient(150deg,#c9b48c 0%,#96681F 55%,#5E6F4B 100%)}
+  .g-stork{background:linear-gradient(150deg,#b7c2b0 0%,#8B9B7A 50%,#4C6577 100%)}
+  .g-odk{background:linear-gradient(150deg,#c98f6a 0%,#A85248 45%,#4C6577 100%)}
+  .g-wtk{background:linear-gradient(150deg,#7E9AAB 0%,#5E6F4B 60%,#3B4147 100%)}
+  .g-crane2{background:linear-gradient(150deg,#d0c39e 0%,#8B9B7A 50%,#4C6577 100%)}
+  .g-heron2{background:linear-gradient(150deg,#8fa3ad 0%,#4C6577 55%,#3D5464 100%)}
+
+  /* ---- Lightbox ---- */
+  .lightbox{position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:40px}
+  .lightbox .overlay{position:absolute; inset:0; background:rgba(37,42,46,.72)}
+  .lb-panel{position:relative; z-index:2; max-width:860px; width:100%;
+    background:var(--surface); border-radius:6px; padding:16px; box-shadow:0 24px 60px rgba(30,34,38,.35)}
+  .lb-photo{width:100%; aspect-ratio:3/2; border:1px solid var(--border); border-radius:2px}
+  .lb-foot{display:flex; align-items:center; justify-content:space-between; gap:20px; margin-top:14px; flex-wrap:wrap}
+  .lb-cap{font-family:"Lora",serif; font-weight:600; font-size:18px}
+  .lb-cap em{display:block; font-family:"Inter",sans-serif; font-weight:400; font-style:italic;
+    color:var(--caption-deep); font-size:13.5px; margin-top:3px}
+  .lb-link{font-weight:600; font-size:15px}
+  .lb-close{position:absolute; top:-14px; right:-14px; z-index:3; width:40px; height:40px; border-radius:9999px;
+    border:1px solid var(--border); background:var(--surface); color:var(--ink); font-size:20px; line-height:1;
+    cursor:pointer; box-shadow:0 6px 18px rgba(30,34,38,.28)}
+  .lb-close:hover{color:var(--sky-deep)}
+  @media(max-width:560px){.lb-close{top:8px; right:8px}}
+
+  /* ---- Footer ---- */
+  footer{background:var(--surface-sunken); border-top:1px solid var(--border); padding:44px 0 40px}
+  .foot{display:flex; flex-wrap:wrap; gap:40px; justify-content:space-between}
+  .foot .brand{font-family:"Lora",serif; font-weight:700; font-size:20px}
+  .foot .tag{color:var(--ink-muted); font-size:13.5px; margin-top:6px; max-width:280px}
+  .foot .tag .vn{display:block; font-style:italic; color:var(--caption-deep)}
+  .foot nav{display:flex; flex-direction:column; gap:8px}
+  .foot nav a{color:var(--ink); font-size:14px}
+  .foot .track{font-weight:500}
+  @media(max-width:860px){.nav-links{display:none} .intro h1{font-size:34px}}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <span class="wordmark">Sâm Thương</span>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#">Shop</a>
+      <a href="#" class="active" aria-current="page">Portfolio</a>
+      <a href="#">About</a>
+      <a href="#">Contact</a>
+    </nav>
+    <div class="nav-right">
+      <a href="#" class="cart" aria-label="Cart, 2 items">
+        <span aria-hidden="true">🛒</span> Cart <span class="badge">2</span>
+      </a>
+      <span class="lang" aria-label="Language">
+        <span class="on">EN</span><span class="sep">|</span><a href="#" class="off">VN</a>
+      </span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="intro">
+      <h1>Portfolio</h1>
+      <p>Sâm Thương photographs the birds of Vietnam's wetlands and forests — from the mudflats of Xuân Thủy to the flooded grasslands of Tràm Chim. Each frame is a patient morning spent close to the water, waiting for the light.</p>
+    </div>
+
+    <div class="gallery">
+      <figure class="shot">
+        <span class="frame"><span class="ph a-tall g-kingfisher" role="img" aria-label="A Common Kingfisher perched low over still water at Tràm Chim"></span></span>
+        <figcaption>— Common Kingfisher / Bói cá lam · Tràm Chim</figcaption>
+      </figure>
+
+      <figure class="shot">
+        <span class="frame"><span class="ph a-wide g-heron" role="img" aria-label="A Grey Heron wading through the shallows at Xuân Thủy"></span></span>
+        <figcaption>— Grey Heron · Xuân Thủy</figcaption>
+      </figure>
+
+      <figure class="shot">
+        <span class="frame"><span class="ph a-square g-crane" role="img" aria-label="A pair of Sarus Cranes in the flooded grassland of Tràm Chim"></span></span>
+        <figcaption>— Sarus Crane · Tràm Chim</figcaption>
+      </figure>
+
+      <figure class="shot">
+        <span class="frame"><span class="ph a-pano g-stork" role="img" aria-label="Painted Storks gathered on a wetland bank at Tràm Chim"></span></span>
+        <figcaption>— Painted Stork · Tràm Chim</figcaption>
+      </figure>
+
+      <figure class="shot">
+        <span class="frame"><span class="ph a-tall g-odk" role="img" aria-label="An Oriental Dwarf Kingfisher glowing orange in a forest at Cúc Phương"></span></span>
+        <figcaption>— Oriental Dwarf Kingfisher · Cúc Phương</figcaption>
+      </figure>
+
+      <figure class="shot">
+        <span class="frame"><span class="ph a-square g-wtk" role="img" aria-label="A White-throated Kingfisher perched on a reed at Vân Long"></span></span>
+        <figcaption>— White-throated Kingfisher · Vân Long</figcaption>
+      </figure>
+
+      <figure class="shot">
+        <span class="frame"><span class="ph a-wide g-crane2" role="img" aria-label="Sarus Cranes silhouetted against dawn mist at Tràm Chim"></span></span>
+        <figcaption>— Sarus Crane · Tràm Chim</figcaption>
+      </figure>
+
+      <figure class="shot">
+        <span class="frame"><span class="ph a-tall g-heron2" role="img" aria-label="A Grey Heron in flight over open water at Xuân Thủy"></span></span>
+        <figcaption>— Grey Heron · Xuân Thủy</figcaption>
+      </figure>
+    </div>
+  </div>
+</main>
+
+<!-- Lightbox shown in OPEN state -->
+<div class="lightbox" role="dialog" aria-modal="true" aria-labelledby="lb-title">
+  <div class="overlay"></div>
+  <div class="lb-panel">
+    <button type="button" class="lb-close" aria-label="Close / Đóng">×</button>
+    <span class="ph lb-photo g-crane" role="img" aria-label="A pair of Sarus Cranes standing in the flooded grassland of Tràm Chim at dawn"></span>
+    <div class="lb-foot">
+      <div class="lb-cap" id="lb-title">
+        Sarus Crane / Sếu đầu đỏ
+        <em>— Sarus Crane · Tràm Chim</em>
+      </div>
+      <a href="#" class="lb-link">View print → / Xem bản in</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      <div class="brand">Sâm Thương</div>
+      <p class="tag">
+        Wetland &amp; forest bird photography from Vietnam.
+        <span class="vn">Nhiếp ảnh chim vùng đất ngập nước &amp; rừng Việt Nam.</span>
+      </p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="#">Shop</a>
+      <a href="#">Portfolio</a>
+      <a href="#">About</a>
+      <a href="#">Contact</a>
+    </nav>
+    <nav aria-label="Order">
+      <a href="#" class="track">Track your order / Theo dõi đơn hàng</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

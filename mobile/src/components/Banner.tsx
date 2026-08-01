@@ -50,6 +50,10 @@ const styles = StyleSheet.create({
     padding: space.md,
     gap: space.sm,
   },
-  message: { fontSize: font.size.body, fontWeight: font.weight.semibold, lineHeight: 20 },
+  message: {
+    fontFamily: font.family.bodyMedium,
+    fontSize: font.size.body,
+    lineHeight: 20,
+  },
   detail: { gap: space.xs },
 });

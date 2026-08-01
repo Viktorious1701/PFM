@@ -120,13 +120,18 @@ Everything else applies as written.
 - [ ] Business Unit is scoped correctly: created when a new internal unit is needed and may represent a unit in a foreign country
 
 ### `plan.md` — Sequence Diagrams
+
+For this stack, these items are `constitution.md`'s `DG` group (`DG-01`…`DG-07`), adopted
+2026-07-31 — cite the specific `DG-NN` in the gate record rather than just checking the box:
+
 - [ ] Arrows follow correct logical order and are numbered for traceability
-- [ ] Every action arrow has a matching return arrow
+- [ ] Every action arrow has a matching return arrow, **and every `UI→API` request is answered with an HTTP status code, in every `alt`/`opt` branch** (DG-05) — a request the diagram leaves unanswered is the most common defect in this shape of diagram
 - [ ] Arrow labels describe the action/intent, not a method name or UI click target (e.g. "validate employee code", not "call `validateCode()`" or "click Submit button")
 - [ ] Diagram favors earliest possible UI response — the user is not made to wait on DB operations before seeing feedback
 - [ ] Feature access goes straight to the relevant page (e.g. "create record" → navigate directly to the creation page) instead of intermediate click-throughs
-- [ ] Each workflow is cut off cleanly when it ends — separate flows are not blended into one diagram
-- [ ] No direct SQL statements, backend method signatures, or frontend method parameters appear on the diagram — only actor-level actions
+- [ ] Each workflow is cut off cleanly when it ends — separate flows are not blended into one diagram (DG-07)
+- [ ] **No direct SQL statements, backend method signatures, or frontend method parameters appear on the diagram — only actor-level actions.** For this stack: exactly four lanes, `UI → API → <Name>Service → Store` (DG-01); no `Repo`/`DB` lane; a `Service→Store` arrow states intent only, never `SELECT`/`INSERT`/`UPDATE … WHERE`/`rowcount` (DG-04). This item was checked and marked passed in error on 2026-07-30 while the diagram still showed a `Repo`/`DB` lane and raw SQL — see `CLAUDE.md` §1 *Resolved contradictions*, "Sequence diagram shape". Re-verify by reading the diagram, not by trusting a prior gate record.
+- [ ] No `;` or `#` inside any Mermaid label — either silently truncates the statement at parse time (DG-06); verify with the harness in `CLAUDE.md` §3
 
 ### `plan.md` — API Design
 - [ ] All endpoints are versioned under `/api/v1/` with kebab-case plural resource names (API-01)

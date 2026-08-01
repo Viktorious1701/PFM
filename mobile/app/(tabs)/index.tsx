@@ -9,6 +9,10 @@
  * nothing real to read — hence the DEMO markers and the prototype banner.
  * Colours come from src/theme/tokens.ts so budget health stays consistent with
  * UXR-02 (🟢 healthy · 🟡 warning · 🔴 exceeded).
+ *
+ * Per DESIGN.md's "One real conflict" note: the budget meter's category/percent
+ * text stays `ink` — the status hue rides the fill bar, not the label — so
+ * colour is never the only channel and the label clears WCAG AA on its own.
  */
 import { Link } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
@@ -120,10 +124,10 @@ function BudgetBar({ category, used, limit }: { category: string; used: number; 
   const palette = color.budget[budgetHealth(percent)];
 
   return (
-    <View style={[styles.budgetItem, { backgroundColor: palette.bg }]}>
+    <View style={styles.budgetItem}>
       <View style={styles.budgetHeader}>
-        <Text style={[styles.budgetCategory, { color: palette.fg }]}>{category}</Text>
-        <Text style={[styles.budgetPercent, { color: palette.fg }]}>{percent}%</Text>
+        <Text style={styles.budgetCategory}>{category}</Text>
+        <Text style={styles.budgetPercent}>{percent}%</Text>
       </View>
       <View style={styles.budgetTrack}>
         <View
@@ -133,7 +137,7 @@ function BudgetBar({ category, used, limit }: { category: string; used: number; 
           ]}
         />
       </View>
-      <Text style={[styles.budgetDetail, { color: palette.fg }]}>
+      <Text style={styles.budgetDetail}>
         ${used} of ${limit}
       </Text>
     </View>
@@ -141,34 +145,40 @@ function BudgetBar({ category, used, limit }: { category: string; used: number; 
 }
 
 const styles = StyleSheet.create({
+  // stat-tile — DESIGN.md: sky-deep fill, white hero figure.
   balanceCard: {
     backgroundColor: color.surfaceInverse,
     padding: space.xl,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     gap: space.xs + 2,
   },
-  balanceLabel: { color: color.textOnInverse, fontSize: font.size.body },
+  balanceLabel: {
+    fontFamily: font.family.bodyMedium,
+    color: color.textOnInverse,
+    fontSize: font.size.body,
+  },
   balanceAmount: {
+    fontFamily: font.family.heading,
     color: color.textInverse,
     fontSize: font.size.hero,
-    fontWeight: font.weight.bold,
   },
   primaryButton: {
     backgroundColor: color.primary,
     color: color.primaryText,
-    fontWeight: font.weight.semibold,
-    fontSize: font.size.lg,
-    paddingVertical: space.md + 2,
-    borderRadius: radius.md,
+    fontFamily: font.family.bodyMedium,
+    fontSize: font.size.md,
+    paddingVertical: space.md,
+    borderRadius: radius.full,
     textAlign: 'center',
   },
   section: { gap: space.sm },
   sectionTitle: {
-    fontSize: font.size.xl,
-    fontWeight: font.weight.semibold,
+    fontFamily: font.family.headingSemibold,
+    fontSize: 20,
     color: color.text,
   },
   walletRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  // wallet-card — DESIGN.md: surface card, hairline, name muted body, balance h3.
   walletCard: {
     flexGrow: 1,
     minWidth: 100,
@@ -179,22 +189,35 @@ const styles = StyleSheet.create({
     borderColor: color.border,
     gap: 2,
   },
-  walletName: { fontSize: font.size.sm, color: color.textMuted },
-  walletBalance: { fontSize: font.size.lg, fontWeight: font.weight.semibold, color: color.text },
+  walletName: { fontFamily: font.family.body, fontSize: font.size.sm, color: color.textMuted },
+  walletBalance: { fontFamily: font.family.headingSemibold, fontSize: font.size.xl, color: color.text },
   budgetList: { gap: space.sm },
-  budgetItem: { padding: space.md, borderRadius: radius.md, gap: space.xs + 2 },
+  // budget-meter — DESIGN.md: surface-sunken field; category/percent stay ink,
+  // the status hue lives only in the fill (never the sole channel of meaning).
+  budgetItem: {
+    padding: space.md,
+    borderRadius: radius.md,
+    backgroundColor: color.surfaceSunken,
+    gap: space.xs + 2,
+  },
   budgetHeader: { flexDirection: 'row', justifyContent: 'space-between' },
-  budgetCategory: { fontSize: font.size.body, fontWeight: font.weight.semibold },
-  budgetPercent: { fontSize: font.size.body, fontWeight: font.weight.bold },
+  budgetCategory: {
+    fontFamily: font.family.bodyMedium,
+    fontSize: font.size.sm,
+    color: color.text,
+  },
+  budgetPercent: { fontFamily: font.family.bodyMedium, fontSize: font.size.sm, color: color.text },
   budgetTrack: {
     height: 6,
     borderRadius: radius.sm,
-    backgroundColor: 'rgba(0,0,0,0.10)',
+    backgroundColor: 'rgba(59,65,71,0.12)',
     overflow: 'hidden',
   },
   budgetFill: { height: 6, borderRadius: radius.sm },
-  budgetDetail: { fontSize: font.size.sm },
+  budgetDetail: { fontFamily: font.family.body, fontSize: font.size.xs, color: color.textMuted },
   recentList: { gap: space.xs },
+  // transaction-row — DESIGN.md: surface row, hairline; sign shown alongside
+  // colour, so income green is a supplement, not the only signal.
   recentRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -205,8 +228,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.border,
   },
-  recentLabel: { fontSize: font.size.body, color: color.text },
-  recentAmount: { fontSize: font.size.body, fontWeight: font.weight.semibold },
+  recentLabel: { fontFamily: font.family.body, fontSize: font.size.body, color: color.text },
+  recentAmount: { fontFamily: font.family.bodyMedium, fontSize: font.size.body },
   quickLinks: { marginTop: space.sm, gap: space.md },
-  link: { color: color.primary, fontSize: font.size.md, fontWeight: font.weight.medium },
+  link: { color: color.primary, fontFamily: font.family.bodyMedium, fontSize: font.size.md },
 });

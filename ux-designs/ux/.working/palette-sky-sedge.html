@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SamThuongShop · Sky &amp; Sedge Palette Board</title>
+<style>
+  :root{
+    --bg-page:#FBF9F4;
+    --surface:#FFFFFF;
+    --surface-sunken:#F1EDE4;
+    --border:#E4DFD3;
+    --ink:#3B4147;
+    --ink-muted:#6B7178;
+    --caption:#93968F;
+    --caption-deep:#71736B;
+    --sky-soft:#7E9AAB;
+    --sky-deep:#4C6577;
+    --sage-soft:#8B9B7A;
+    --sage-deep:#5E6F4B;
+    --success:#4F7A52;
+    --pending:#B07D2E;
+    --pending-deep:#96681F;
+    --error:#A85248;
+    --info:#4C6577;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg-page);
+    color:var(--ink);
+    font-family:"Inter","Helvetica Neue",Arial,system-ui,sans-serif;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:56px 40px 80px;}
+  header .eyebrow{
+    font-family:Georgia,"Times New Roman",serif;
+    font-style:italic;
+    color:var(--sky-deep);
+    letter-spacing:.02em;
+    margin:0 0 6px;
+    font-size:15px;
+  }
+  h1{
+    font-family:Georgia,"Times New Roman",serif;
+    font-weight:600;
+    font-size:38px;
+    letter-spacing:-.01em;
+    margin:0 0 8px;
+  }
+  header p{color:var(--ink-muted);margin:0;max-width:60ch;font-size:15px;}
+  h2{
+    font-family:Georgia,"Times New Roman",serif;
+    font-size:13px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    color:var(--sage-deep);
+    margin:52px 0 18px;
+    padding-bottom:10px;
+    border-bottom:1px solid var(--border);
+  }
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+    gap:16px;
+  }
+  .chip{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    overflow:hidden;
+  }
+  .swatch{height:96px;display:flex;align-items:flex-end;padding:10px;}
+  .swatch .flag{
+    font-size:11px;font-weight:600;letter-spacing:.04em;
+    padding:2px 8px;border-radius:20px;
+    background:rgba(255,255,255,.82);color:var(--ink);
+  }
+  .swatch .flag.dark{background:rgba(0,0,0,.28);color:#fff;}
+  .chip .meta{padding:12px 14px 14px;}
+  .chip .name{font-weight:600;font-size:14px;}
+  .chip .hex{
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+    font-size:12.5px;color:var(--ink-muted);margin:2px 0 8px;
+    text-transform:uppercase;
+  }
+  .chip .use{font-size:12.5px;color:var(--ink-muted);line-height:1.45;}
+  .chip .role{
+    display:inline-block;margin-top:8px;font-size:10.5px;font-weight:600;
+    text-transform:uppercase;letter-spacing:.06em;
+    padding:2px 7px;border-radius:5px;
+  }
+  .role.soft{background:var(--surface-sunken);color:var(--ink-muted);}
+  .role.deep{background:var(--sky-deep);color:#fff;}
+  .chip.bordered .swatch{border-bottom:1px solid var(--border);}
+
+  /* contrast table */
+  table{width:100%;border-collapse:collapse;background:var(--surface);
+    border:1px solid var(--border);border-radius:12px;overflow:hidden;font-size:14px;}
+  caption{text-align:left;color:var(--ink-muted);font-size:12.5px;margin-bottom:10px;}
+  th,td{padding:11px 16px;text-align:left;border-bottom:1px solid var(--border);}
+  th{background:var(--surface-sunken);font-size:11.5px;text-transform:uppercase;
+    letter-spacing:.07em;color:var(--ink-muted);font-weight:600;}
+  tbody tr:last-child td{border-bottom:none;}
+  td.ratio{font-family:"SFMono-Regular",Consolas,monospace;font-weight:600;}
+  .prev{display:inline-block;padding:3px 9px;border-radius:6px;font-size:12.5px;
+    font-family:"SFMono-Regular",Consolas,monospace;}
+  .badge{font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 9px;border-radius:20px;}
+  .badge.pass{background:#E4EFE2;color:var(--success);}
+  .badge.fail{background:#F6E2DE;color:var(--error);}
+  .badge.na{background:var(--surface-sunken);color:var(--caption-deep);}
+
+  /* in-context strip */
+  .context{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;}
+  .product-card{
+    width:280px;background:var(--bg-page);border:1px solid var(--border);
+    border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(59,65,71,.04);
+  }
+  .product-card .photo{
+    height:180px;
+    background:linear-gradient(135deg,var(--sky-soft),var(--sage-soft));
+    position:relative;display:flex;align-items:flex-end;padding:12px;
+  }
+  .product-card .photo span{
+    font-family:Georgia,serif;font-style:italic;color:rgba(255,255,255,.9);font-size:13px;
+  }
+  .product-card .body{padding:16px 18px 20px;}
+  .tag{
+    display:inline-block;font-size:11px;font-weight:600;letter-spacing:.04em;
+    color:#fff;background:var(--sage-deep);padding:3px 10px;border-radius:20px;margin-bottom:10px;
+  }
+  .product-card h3{
+    font-family:Georgia,serif;font-weight:600;font-size:19px;margin:0 0 4px;color:var(--ink);
+  }
+  .product-card .cap{color:var(--caption-deep);font-size:12px;margin:0 0 14px;}
+  .product-card .price{font-size:22px;font-weight:600;color:var(--ink);margin:0 0 16px;}
+  .pill-btn{
+    display:block;width:100%;text-align:center;background:var(--sky-deep);color:#fff;
+    border:none;border-radius:30px;padding:12px 18px;font-size:14px;font-weight:600;
+    letter-spacing:.02em;cursor:default;
+  }
+  .status-stack{display:flex;flex-direction:column;gap:14px;}
+  .status-stack .lbl{font-size:12.5px;color:var(--ink-muted);}
+  .status-pill{
+    display:inline-flex;align-items:center;gap:7px;color:#fff;font-size:13px;font-weight:600;
+    padding:7px 16px;border-radius:30px;
+  }
+  .status-pill .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.85);}
+  .status-pill.paid{background:var(--success);}
+  .status-pill.pending{background:var(--pending-deep);}
+  .status-pill.failed{background:var(--error);}
+  footer{margin-top:56px;color:var(--caption-deep);font-size:12px;
+    border-top:1px solid var(--border);padding-top:18px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">SamThuongShop · Visual Identity</p>
+    <h1>Sky &amp; Sedge — Palette Board</h1>
+    <p>An airy, modern-magazine Nature-editorial system for a bird-photography store &amp; portfolio.
+       Photography always leads; UI colors stay quiet and supporting. Where a soft brand color fails
+       accessible text contrast, a deepened accessible variant is added alongside it (soft = large-area/decorative,
+       deep = text/CTA).</p>
+  </header>
+
+  <!-- NEUTRALS -->
+  <h2>Neutrals / Surfaces</h2>
+  <div class="grid">
+    <div class="chip bordered">
+      <div class="swatch" style="background:#FBF9F4"><span class="flag">bg-page</span></div>
+      <div class="meta"><div class="name">bg-page</div><div class="hex">#FBF9F4</div>
+        <div class="use">Cream page background — the calm canvas behind everything.</div></div>
+    </div>
+    <div class="chip bordered">
+      <div class="swatch" style="background:#FFFFFF"><span class="flag">surface</span></div>
+      <div class="meta"><div class="name">surface</div><div class="hex">#FFFFFF</div>
+        <div class="use">Cards and raised panels lifted off the cream.</div></div>
+    </div>
+    <div class="chip bordered">
+      <div class="swatch" style="background:#F1EDE4"><span class="flag">surface-sunken</span></div>
+      <div class="meta"><div class="name">surface-sunken</div><div class="hex">#F1EDE4</div>
+        <div class="use">Wells and subtle fills — inputs, table headers.</div></div>
+    </div>
+    <div class="chip bordered">
+      <div class="swatch" style="background:#E4DFD3"><span class="flag">border</span></div>
+      <div class="meta"><div class="name">border</div><div class="hex">#E4DFD3</div>
+        <div class="use">Hairlines and dividers between quiet surfaces.</div></div>
+    </div>
+  </div>
+
+  <!-- TEXT -->
+  <h2>Text / Ink</h2>
+  <div class="grid">
+    <div class="chip">
+      <div class="swatch" style="background:#3B4147"><span class="flag dark">ink</span></div>
+      <div class="meta"><div class="name">ink</div><div class="hex">#3B4147</div>
+        <div class="use">Headings and primary body text.</div></div>
+    </div>
+    <div class="chip">
+      <div class="swatch" style="background:#6B7178"><span class="flag dark">ink-muted</span></div>
+      <div class="meta"><div class="name">ink-muted</div><div class="hex">#6B7178</div>
+        <div class="use">Secondary text, labels, supporting copy.</div></div>
+    </div>
+    <div class="chip bordered">
+      <div class="swatch" style="background:#93968F"><span class="flag dark">caption</span></div>
+      <div class="meta"><div class="name">caption</div><div class="hex">#93968F</div>
+        <div class="use">Photo captions &amp; meta — decorative only, over large type / imagery.</div>
+        <span class="role soft">soft · decorative</span></div>
+    </div>
+    <div class="chip">
+      <div class="swatch" style="background:#71736B"><span class="flag dark">caption-deep</span></div>
+      <div class="meta"><div class="name">caption-deep <em>(added)</em></div><div class="hex">#71736B</div>
+        <div class="use">Accessible caption/meta text on cream where AA normal is required.</div>
+        <span class="role deep">deep · text</span></div>
+    </div>
+  </div>
+
+  <!-- ACCENTS -->
+  <h2>Accents — the two brand hues</h2>
+  <div class="grid">
+    <div class="chip">
+      <div class="swatch" style="background:#7E9AAB"><span class="flag dark">sky-soft</span></div>
+      <div class="meta"><div class="name">sky-soft</div><div class="hex">#7E9AAB</div>
+        <div class="use">Dusty sky-blue — large decorative areas, backgrounds, borders.</div>
+        <span class="role soft">soft · decorative</span></div>
+    </div>
+    <div class="chip">
+      <div class="swatch" style="background:#4C6577"><span class="flag dark">sky-deep</span></div>
+      <div class="meta"><div class="name">sky-deep</div><div class="hex">#4C6577</div>
+        <div class="use">Primary interactive — links, CTA fill; accessible on cream.</div>
+        <span class="role deep">deep · interactive</span></div>
+    </div>
+    <div class="chip">
+      <div class="swatch" style="background:#8B9B7A"><span class="flag dark">sage-soft</span></div>
+      <div class="meta"><div class="name">sage-soft</div><div class="hex">#8B9B7A</div>
+        <div class="use">Sage — secondary decorative fills and tags.</div>
+        <span class="role soft">soft · decorative</span></div>
+    </div>
+    <div class="chip">
+      <div class="swatch" style="background:#5E6F4B"><span class="flag dark">sage-deep</span></div>
+      <div class="meta"><div class="name">sage-deep</div><div class="hex">#5E6F4B</div>
+        <div class="use">Secondary interactive / accessible sage text.</div>
+        <span class="role deep">deep · interactive</span></div>
+    </div>
+  </div>
+
+  <!-- SEMANTIC -->
+  <h2>Semantic / State — harmonized &amp; muted</h2>
+  <div class="grid">
+    <div class="chip">
+      <div class="swatch" style="background:#4F7A52"><span class="flag dark">success</span></div>
+      <div class="meta"><div class="name">success</div><div class="hex">#4F7A52</div>
+        <div class="use">Paid / completed orders.</div></div>
+    </div>
+    <div class="chip">
+      <div class="swatch" style="background:#B07D2E"><span class="flag dark">pending</span></div>
+      <div class="meta"><div class="name">pending</div><div class="hex">#B07D2E</div>
+        <div class="use">Warm ochre — awaiting payment / bank transfer. Soft: fills &amp; large labels.</div>
+        <span class="role soft">soft · decorative</span></div>
+    </div>
+    <div class="chip">
+      <div class="swatch" style="background:#96681F"><span class="flag dark">pending-deep</span></div>
+      <div class="meta"><div class="name">pending-deep <em>(added)</em></div><div class="hex">#96681F</div>
+        <div class="use">Accessible ochre for white-on-fill pills &amp; status text.</div>
+        <span class="role deep">deep · text/pill</span></div>
+    </div>
+    <div class="chip">
+      <div class="swatch" style="background:#A85248"><span class="flag dark">error</span></div>
+      <div class="meta"><div class="name">error</div><div class="hex">#A85248</div>
+        <div class="use">Muted terracotta — payment failed / problem.</div></div>
+    </div>
+    <div class="chip">
+      <div class="swatch" style="background:#4C6577"><span class="flag dark">info</span></div>
+      <div class="meta"><div class="name">info</div><div class="hex">#4C6577</div>
+        <div class="use">Informational notices (= sky-deep).</div></div>
+    </div>
+  </div>
+
+  <!-- CONTRAST -->
+  <h2>Accessibility — WCAG contrast (computed)</h2>
+  <table>
+    <caption>Ratios computed with the standard sRGB relative-luminance formula.
+      AA normal text ≥ 4.5 · AA large text ≥ 3.0.</caption>
+    <thead>
+      <tr><th>Pairing</th><th>Preview</th><th>Ratio</th><th>AA normal</th><th>AA large</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>ink on bg-page</td>
+        <td><span class="prev" style="background:#FBF9F4;color:#3B4147">Aa text</span></td>
+        <td class="ratio">9.82</td><td><span class="badge pass">PASS</span></td><td><span class="badge pass">PASS</span></td></tr>
+      <tr><td>ink on surface</td>
+        <td><span class="prev" style="background:#FFFFFF;color:#3B4147;border:1px solid #E4DFD3">Aa text</span></td>
+        <td class="ratio">10.33</td><td><span class="badge pass">PASS</span></td><td><span class="badge pass">PASS</span></td></tr>
+      <tr><td>ink-muted on bg-page</td>
+        <td><span class="prev" style="background:#FBF9F4;color:#6B7178">Aa text</span></td>
+        <td class="ratio">4.69</td><td><span class="badge pass">PASS</span></td><td><span class="badge pass">PASS</span></td></tr>
+      <tr><td>caption on bg-page <em>(soft)</em></td>
+        <td><span class="prev" style="background:#FBF9F4;color:#93968F">Aa text</span></td>
+        <td class="ratio">2.85</td><td><span class="badge fail">FAIL</span></td><td><span class="badge fail">FAIL</span></td></tr>
+      <tr><td>caption-deep on bg-page <em>(added fix)</em></td>
+        <td><span class="prev" style="background:#FBF9F4;color:#71736B">Aa text</span></td>
+        <td class="ratio">4.57</td><td><span class="badge pass">PASS</span></td><td><span class="badge pass">PASS</span></td></tr>
+      <tr><td>white on sky-deep</td>
+        <td><span class="prev" style="background:#4C6577;color:#fff">Aa text</span></td>
+        <td class="ratio">6.11</td><td><span class="badge pass">PASS</span></td><td><span class="badge pass">PASS</span></td></tr>
+      <tr><td>white on sage-deep</td>
+        <td><span class="prev" style="background:#5E6F4B;color:#fff">Aa text</span></td>
+        <td class="ratio">5.45</td><td><span class="badge pass">PASS</span></td><td><span class="badge pass">PASS</span></td></tr>
+      <tr><td>white on success</td>
+        <td><span class="prev" style="background:#4F7A52;color:#fff">Aa text</span></td>
+        <td class="ratio">4.96</td><td><span class="badge pass">PASS</span></td><td><span class="badge pass">PASS</span></td></tr>
+      <tr><td>white on pending <em>(soft)</em></td>
+        <td><span class="prev" style="background:#B07D2E;color:#fff">Aa text</span></td>
+        <td class="ratio">3.61</td><td><span class="badge fail">FAIL</span></td><td><span class="badge pass">PASS</span></td></tr>
+      <tr><td>white on pending-deep <em>(added fix)</em></td>
+        <td><span class="prev" style="background:#96681F;color:#fff">Aa text</span></td>
+        <td class="ratio">4.89</td><td><span class="badge pass">PASS</span></td><td><span class="badge pass">PASS</span></td></tr>
+      <tr><td>white on error</td>
+        <td><span class="prev" style="background:#A85248;color:#fff">Aa text</span></td>
+        <td class="ratio">5.30</td><td><span class="badge pass">PASS</span></td><td><span class="badge pass">PASS</span></td></tr>
+      <tr><td>sky-deep on bg-page</td>
+        <td><span class="prev" style="background:#FBF9F4;color:#4C6577">Aa link</span></td>
+        <td class="ratio">5.81</td><td><span class="badge pass">PASS</span></td><td><span class="badge pass">PASS</span></td></tr>
+    </tbody>
+  </table>
+
+  <!-- IN CONTEXT -->
+  <h2>In context</h2>
+  <div class="context">
+    <div class="product-card">
+      <div class="photo"><span>Photography always leads</span></div>
+      <div class="body">
+        <span class="tag">Digital</span>
+        <h3>Kingfisher at Dawn</h3>
+        <p class="cap">Xuân Thủy National Park · 2025</p>
+        <p class="price">980.000₫</p>
+        <button class="pill-btn">Add to cart · Thêm vào giỏ</button>
+      </div>
+    </div>
+    <div class="status-stack">
+      <div class="lbl">Order status pills</div>
+      <span class="status-pill paid"><span class="dot"></span>Paid · Đã thanh toán</span>
+      <span class="status-pill pending"><span class="dot"></span>Awaiting transfer · Chờ chuyển khoản</span>
+      <span class="status-pill failed"><span class="dot"></span>Failed · Thất bại</span>
+    </div>
+  </div>
+
+  <footer>
+    Sky &amp; Sedge palette board · Contrast ratios computed with the WCAG 2.x sRGB relative-luminance
+    formula. Soft brand hues stay for decorative/large-area use; deep variants carry text and CTAs.
+  </footer>
+</div>
+</body>
+</html>

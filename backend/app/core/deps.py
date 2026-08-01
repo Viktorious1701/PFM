@@ -27,6 +27,7 @@ from app.core.errors import ForbiddenError, NotAuthenticatedError
 from app.db.session import get_db
 from app.models.user import UserModel, UserRole, UserStatus
 from app.repositories import user_repo
+from app.services.email.outbox import FileOutboxSender
 from app.services.email.sender import EmailSender, RecordingEmailSender
 from app.services.email.smtp import GmailSmtpSender
 
@@ -38,16 +39,22 @@ DbDep = Annotated[Session, Depends(get_db)]
 
 
 def get_email_sender(settings: SettingsDep) -> EmailSender:
-    """Real SMTP when credentials exist, a recording double otherwise.
+    """Choose a sender per `settings.email_transport` (UM-US-01 A13).
 
-    Falling back rather than failing at startup is deliberate: a developer with
-    no Gmail App Password still gets a working invite flow. It does not hide a
-    misconfiguration — `EMAIL_SEND_MODE=sync` with real credentials absent still
-    produces the 502 that spec EC-07 requires, because `GmailSmtpSender` is what
-    gets constructed as soon as `SMTP_USER`/`SMTP_PASSWORD` are set, and the
-    recording double is obviously not delivering anything.
+    `"outbox"` writes to a file so an ADMIN can read the activation link
+    without a real mailbox (the dev outbox route, A14). `"smtp"` forces the
+    real sender even without credentials, so a misconfiguration surfaces
+    immediately as `EmailDeliveryFailed` rather than silently degrading —
+    intentionally the opposite default from `"auto"`. `"auto"` (default)
+    keeps the original behaviour: real SMTP when credentials exist, a
+    recording double otherwise, so a developer with no Gmail App Password
+    still gets a working invite flow while `EMAIL_SEND_MODE=sync` with real
+    credentials still produces the 502 spec EC-07 requires.
     """
-    if settings.smtp_configured:
+    if settings.email_transport == "outbox":
+        return FileOutboxSender(directory=settings.outbox_dir)
+
+    if settings.email_transport == "smtp" or settings.smtp_configured:
         return GmailSmtpSender(
             host=settings.smtp_host,
             port=settings.smtp_port,

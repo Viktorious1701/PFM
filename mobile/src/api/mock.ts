@@ -207,21 +207,22 @@ export async function mockLogin(rawEmail: string, password: string): Promise<Log
 
   if (email === 'pending@example.com') {
     throw new ApiError(
-      ErrorCode.FORBIDDEN,
-      'This account has not been activated yet. Use the link in your invitation email.',
+      ErrorCode.ACCOUNT_NOT_ACTIVATED,
+      'Your account is not activated. Please check your email invitation.',
       403,
     );
   }
 
   if (email === 'wrong@example.com') {
-    throw new ApiError(ErrorCode.NOT_AUTHENTICATED, 'Incorrect email or password.', 401);
+    throw new ApiError(ErrorCode.INVALID_CREDENTIALS, 'The email or password is incorrect.', 401);
   }
 
   const isAdmin = email === MOCK_ADMIN.email || email === 'admin@example.com';
   return {
     access_token: 'mock.jwt.token',
     token_type: 'bearer',
-    user: isAdmin ? MOCK_ADMIN : { ...MOCK_USERS[1], email },
+    expires_in: 3600,
+    role: isAdmin ? 'ADMIN' : 'USER',
   };
 }
 
@@ -237,9 +238,9 @@ export async function mockActivate(token: string): Promise<ActivateResponse> {
 
   if (token === 'expired') {
     throw new ApiError(
-      'INVITATION_TOKEN_EXPIRED',
+      ErrorCode.INVITATION_TOKEN_EXPIRED,
       'The provided invitation link has expired. Please request a new invitation.',
-      410,
+      400,
     );
   }
 

@@ -15,10 +15,22 @@
 export const ErrorCode = {
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   USER_EMAIL_ALREADY_ACTIVE: 'USER_EMAIL_ALREADY_ACTIVE',
+  USER_EMAIL_DEACTIVATED: 'USER_EMAIL_DEACTIVATED',
   NOT_AUTHENTICATED: 'NOT_AUTHENTICATED',
   FORBIDDEN: 'FORBIDDEN',
   EMAIL_DELIVERY_FAILED: 'EMAIL_DELIVERY_FAILED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  /** A route the backend does not mount yet — e.g. UM-US-03's GET /users. */
+  NOT_FOUND: 'NOT_FOUND',
+  /** SS-US-01: unknown email, wrong password, or a DEACTIVATED account — one
+   * generic outcome for all three (spec AC-03/AC-04, constitution SEC-10). */
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  /** SS-US-01 AC-02: a PENDING account, named specifically per the SRS. */
+  ACCOUNT_NOT_ACTIVATED: 'ACCOUNT_NOT_ACTIVATED',
+  /** UM-US-02: an unrecognised, used, superseded, or wrong-state token. */
+  INVITATION_TOKEN_INVALID: 'INVITATION_TOKEN_INVALID',
+  /** UM-US-02: an outstanding token past its TTL. */
+  INVITATION_TOKEN_EXPIRED: 'INVITATION_TOKEN_EXPIRED',
   /** Client-side only: the request never reached the server. */
   NETWORK_ERROR: 'NETWORK_ERROR',
 } as const;

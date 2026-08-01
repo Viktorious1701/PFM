@@ -2,11 +2,13 @@
 
 Stable, citable rules for the PFM codebase. `aif-review-checklist.md` references rule IDs; this file defines them for **this** stack (Python 3.13 / FastAPI / SQLAlchemy 2.0 / React Native Expo), derived from `SDS.md`.
 
+Groups: **AR** architecture · **DG** diagrams · **API** API design · **NC** naming · **VL** validation · **SEC** security · **LA** logging · **PF** performance · **TST** testing · **DOD** definition of done · **ENV** environment.
+
 Every rule has a permanent ID. Cite them in `plan.md`, in review findings, and in ADRs. Never renumber — supersede instead.
 
-**Source of authority:** `SRS.md` v2.0.0 is the requirements baseline. `SDS.md` v1.1.0 supplies the technical rules cited here — §4.7 (architecture principles), §6.1 (API standards), §7 (security), §8 (NFR), §12 (naming, DoD).
+**Source of authority:** `SRS.md` v2.2.0 is the requirements baseline. `SDS.md` v1.3.0 supplies the technical rules cited here — §4.7 (architecture principles), §6.1 (API standards), §7 (security), §8 (NFR), §12 (naming, DoD).
 
-Precedence: **SRS → SDS → this file.** Where this file and the SDS disagree, the SDS wins and this file gets corrected; where the SDS and the SRS disagree, the SRS wins and the SDS gets corrected (see `docs/00-foundation/srs-sds-alignment.md`).
+Precedence: **SRS → SDS → this file.** Where this file and the SDS disagree, the SDS wins and this file gets corrected; where the SDS and the SRS disagree, the SRS wins and the SDS gets corrected. Each document's own revision-history section is the audit trail for its alignment edits.
 
 **NFR ids** are the SRS §3 scheme, which SDS §8.1 was renumbered to match. `NFR-04` means Security & Token Enforcement in both documents.
 
@@ -22,8 +24,41 @@ Precedence: **SRS → SDS → this file.** Where this file and the SDS disagree,
 - **AR-04** DTO ↔ model mapping happens in schemas or services, never in routers or repositories.
 - **AR-05** A service function never touches `Request`, `Response`, `BackgroundTasks`, or any Starlette/FastAPI object. Pass plain values.
 - **AR-06** Multi-entity writes execute in **one** transaction. Services never call `commit()`; the router owns the commit boundary.
-- **AR-07** Sequence diagrams and call chains follow `router → service → repository`. A router calling a repository directly is a violation.
-- **AR-08** Module layout follows SDS §4.3.2: `api/`, `services/`, `repositories/`, `models/`, `schemas/`, `core/`. (Deviation: rooted at `app/` not `src/` — see ADR-0001.)
+- **AR-07** Call chains follow `router → service → repository`. A router calling a repository directly is a violation. How that chain is *drawn* is the `DG` group below.
+- **AR-08** Module layout follows SDS §4.3.2: `api/`, `services/`, `repositories/`, `models/`, `schemas/`, `core/`, rooted at `backend/app/` rather than `src/`. SDS §4.3.2 was corrected to match the real repository in v1.1.0, so this is no longer a deviation.
+
+## DG — Sequence Diagrams
+
+*Source: `aif-review-checklist.md` Step 2 · `artifact-templates/plan-templates.md` · the reference diagram adopted 2026-07-31*
+
+A sequence diagram exists so a human can see, in one pass, **which component talks to which and what
+comes back**. Anything that pulls the reader into implementation detail — a SQL fragment, a real
+parameter list, a `rowcount` — costs more attention than it returns, and belongs in the surrounding
+prose or in the code. These rules are how that stays true.
+
+- **DG-01** Lanes are `UI → API → <Name>Service → Store`, in that order. Four lanes. **No** `Repo`
+  or `DB` lane, and **no** separate auth-dependency lane — resolving a caller is something `API`
+  does, not a participant the reader needs to meet.
+- **DG-02** A `UI → API` arrow is labelled **HTTP verb plus path**, with path parameters as `:name` —
+  `POST /users/activate`, `GET /users/:id`. No request bodies, no query strings, no headers, no
+  mention of a bearer token; whether a route is authenticated is stated in the API contract, not
+  drawn.
+- **DG-03** An `API → Service` arrow is a **verb plus one opaque input**: `create(input)`,
+  `activate(input)`, `authenticate(input)`. Never a real parameter list, never a type, never `db`.
+- **DG-04** A `Service → Store` arrow states **intent only**: `insert invitation`, `mark invitation
+  accepted`, `find invitation by token`. **No SQL and no NoSQL** — no `SELECT`, no `INSERT`, no
+  `UPDATE … WHERE`, no `COMMIT`, no `rowcount`, no table-and-column syntax. If an ordering or a
+  conditional write is load-bearing, say so in a `Note`, where a sentence can carry the reason.
+- **DG-05** Every arrow **into** `UI` carries an **HTTP status code** and what comes back —
+  `201 invitation`, `200 session`, `400 INVITATION_TOKEN_INVALID`. And **every `UI → API` request has
+  exactly one matching return arrow to `UI`**, in every branch: a request the diagram leaves
+  unanswered is the single most common defect in a diagram like this, because it hides whether the
+  client is left waiting on work it cannot see.
+- **DG-06** No `;` or `#` anywhere in a Mermaid label. Mermaid's message and note text token is
+  `[^#\n;]+`, so either character silently ends the statement and the parse fails several lines later
+  with a misleading error. Use an em dash or a comma. Checked by the harness in `CLAUDE.md` §3.
+- **DG-07** One workflow per diagram, cut off cleanly when it ends. Separate flows are not blended
+  into one picture; a second flow gets a second diagram or an explicitly titled section within it.
 
 ## API — API Design
 
@@ -46,7 +81,7 @@ Precedence: **SRS → SDS → this file.** Where this file and the SDS disagree,
 *Source: SDS §2.1, §12.1*
 
 - **NC-01** Modules and packages: lowercase snake_case, singular for a module of one concept (`user_repo.py`, `invitation_service.py`).
-- **NC-02** SQLAlchemy models `UserModel`-style per SDS §2.1; Pydantic DTOs `UserRead` / `UserCreate` / `InviteCreate` / `UserActivate`; tables lowercase plural snake_case (`users`, `invitations`).
+- **NC-02** SQLAlchemy models `UserModel`-style per SDS §2.1; Pydantic DTOs `UserRead` / `InviteCreate` / `InvitationRead` / `ActivateRequest` / `ActivationResult` / `TokenStateRead`; tables lowercase plural snake_case (`users`, `invitations`). *(`UserActivate` — the name this rule carried until SDS v1.2.0 — was never implemented; the request DTO is `ActivateRequest`.)*
 - **NC-03** API paths lowercase hyphenated nouns. No verbs except for explicit state transitions permitted by API-05.
 - **NC-04** Columns snake_case; foreign keys `<entity>_id`; timestamps `created_at` / `updated_at` / `expires_at`.
 - **NC-05** Enum values are `UPPER_SNAKE_CASE` strings in the database and serialise as the same literal in JSON (`"PENDING"`, `"ACTIVE"`, `"SUPERSEDED"`). Human-friendly labels are a client concern.
@@ -71,7 +106,7 @@ Precedence: **SRS → SDS → this file.** Where this file and the SDS disagree,
 
 - **SEC-01** Passwords hashed one-way with bcrypt or argon2. No plaintext password is ever stored, logged, or returned.
 - **SEC-02** Invitation tokens come from `secrets.token_urlsafe(32)` — 256 bits, exceeding NFR-04's 128-bit floor.
-- **SEC-03** Only the SHA-256 **hash** of an invitation token is persisted. The raw token exists solely in the email body. (Deviation from SDS §4.3.3 — ADR-0003.)
+- **SEC-03** Only the SHA-256 **hash** of an invitation token is persisted, in `invitations.token_hash`. The raw token exists solely in the email body, and activation finds the row by hashing what the user presents. Began as a deviation from SDS §4.3.3's plain `token UK`; SDS §2.2/§2.3/§4.3.3 were aligned to `token_hash` in v1.2.0.
 - **SEC-04** Invitation tokens are single-use: activation invalidates the token in the same transaction as the status change.
 - **SEC-05** TTL is enforced on every token read, comparing against `clock.utcnow()`. An expired token never grants access.
 - **SEC-06** JWT: HS256, 60-minute expiry, `sub` = user id (SDS §7.1.3, §7.1.6).
@@ -79,13 +114,13 @@ Precedence: **SRS → SDS → this file.** Where this file and the SDS disagree,
 - **SEC-08** Queries for user-owned data filter on the authenticated `user_id` at the repository layer (SDS §7.2, SRS NFR-06).
 - **SEC-09** No secret is hardcoded. All come from `.env` via `pydantic-settings`; `.env` is gitignored and `.env.example` lists every key with no real values.
 - **SEC-10** Error messages must not reveal whether an account exists, except where a story deliberately does so (an ADMIN inviting an existing active address — documented in that story's spec).
-- **SEC-11** Rate limiting on invitation endpoints to blunt invite spam (SDS §7.3 DoS row).
+- **SEC-11** Rate limiting on the invitation **and activation** endpoints — to blunt invite spam, and to stop the unauthenticated `GET /users/activate` being brute-forced as an oracle over token values (SDS §7.3 DoS row). Specified, not yet implemented: deferred as an explicit task in each story's `plan.md` (UM-US-01 T-13, UM-US-02 T-08) because no AC requires it. A story that adds a public route inherits this rule and must state where it stands on it.
 
 ## LA — Logging & Audit
 
 *Source: SDS §7.1.10, §10.6*
 
-- **LA-01** No PII, passwords, tokens, or credentials in log statements. Log the user id, not the email, where either would do.
+- **LA-01** No PII, passwords, tokens, or credentials in log statements the application writes. Log the user id, not the email, where either would do. *Scope:* this governs application and audit logging. The web server's **access log** records request URLs, so a token supplied as a query parameter reaches it — one documented exemption exists for `GET /api/v1/users/activate` (recorded in UM-US-02's `plan.md` A10). Any further route carrying a secret in its URL needs the same explicit record.
 - **LA-02** Audit-worthy events log at INFO with five fields: UTC timestamp, actor user id, action, target entity id, result. Structured (JSON) output.
 - **LA-03** `401` and `403` responses log at WARN with method, path, caller id if known, and the requirement that failed.
 - **LA-04** Invitations sent, activations completed, and logins (success and failure) are audit events under LA-02.
@@ -123,16 +158,16 @@ Precedence: **SRS → SDS → this file.** Where this file and the SDS disagree,
 - **DOD-04** `ruff check` and `mypy app` clean.
 - **DOD-05** Routes match the generated OpenAPI schema; `/docs` renders without error.
 - **DOD-06** At least one integration test per endpoint covering the happy path, plus its documented error cases.
-- **DOD-07** `docs/traceability.md` updated with real pytest node ids.
-- **DOD-08** Deviations from `SRS.md` / `SDS.md` each carry an ADR.
+- **DOD-07** The **Coverage Matrix and Test Implementation Map in that epic's `test_cases.md`** are updated with real pytest node ids. *(Superseded the former `docs/traceability.md`, which no longer exists — `CLAUDE.md` §1.1 replaced the separate matrix file with these two sections.)*
+- **DOD-08** Deviations from `SRS.md` / `SDS.md` are each recorded as a row in that story's `plan.md` *Gaps & Decisions (Resolved)* table, with its rationale, and listed in the story's `spec.md`. No separate ADR file — `CLAUDE.md` §1.1 rule 0 permits exactly three artifacts per epic. Where a deviation is better resolved by correcting the reference document, align it instead and log the edit in that document's revision history.
 
 ## ENV — Environment
 
-*Source: verified 2026-07-30, see docs/00-foundation/environment.md*
+*Source: environment verified 2026-07-30 on this machine*
 
 - **ENV-01** `uv` is the only Python entry point; system Python has no pip. Every command is `uv run …`.
 - **ENV-02** Python is pinned to 3.13 (`.python-version`), not the system 3.14, to stay on well-supported wheels.
-- **ENV-03** Local database is SQLite; PostgreSQL is the deployment target (SDS §4.5). Nothing may depend on SQLite-only behaviour. ADR-0001.
+- **ENV-03** Local database is SQLite; PostgreSQL is the deployment target (SDS §4.5), because Docker is unreachable in this WSL2 setup. Nothing may depend on SQLite-only behaviour, and nothing may be *hidden* by it either: SQLite ignores column widths and drops `tzinfo`, so a bound or a timezone that only PostgreSQL enforces must be enforced in the application as well. `id` columns are UUID-as-text for the same reason.
 - **ENV-04** No Docker, Android SDK, or emulator is available in this environment. Work requiring them is deferred and documented, never faked.
 
 ---

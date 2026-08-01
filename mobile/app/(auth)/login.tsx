@@ -3,14 +3,15 @@
  *
  * Story: SRS §6 Feature-02 · US-02-01 / SDS §5.1.1 SS-US-01
  * Endpoint: POST /api/v1/auth/login (SDS §6.3 SS-API-01)
+ * Spec: specs/002-system-security/spec.md
  *
- * BOILERPLATE. SS-US-01 belongs to specs/002-system-security/, which does not
- * exist yet — no spec, no plan, no test cases. This screen exists because the
- * invite story's AC-04/AC-05 need an authenticated ADMIN to stand behind, and a
- * 401 has to land somewhere. Nothing here is a substitute for specifying login.
- *
- * The PENDING-account rejection (SDS §5.1.1 AC-2 / spec BR-06) is demonstrated
- * as a fixture branch, not implemented logic.
+ * Implemented and verified — `backend/app/services/auth_service.py`,
+ * 14 tests, 100% coverage. In mock mode (`EXPO_PUBLIC_API_MOCK=1`), the
+ * PENDING-account rejection is a fixture branch; with it unset, this is the
+ * real `authenticate()` service, including its precedence rule: a PENDING
+ * account is refused by name regardless of the password submitted (spec
+ * AC-02, since it holds no password to check), while everything else checks
+ * the password first (spec AC-05, BR-01).
  */
 import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -66,7 +67,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <Screen testID={LoginIds.screen} note="SS-US-01 · not yet specified — boilerplate only">
+    <Screen testID={LoginIds.screen} note="SS-US-01 · POST /api/v1/auth/login">
       <View style={styles.header}>
         <Text style={styles.title}>Sign in to PFM</Text>
         <Text style={styles.description}>
@@ -154,21 +155,26 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   header: { gap: space.sm },
-  title: { fontSize: font.size.title, fontWeight: font.weight.bold, color: color.text },
-  description: { fontSize: font.size.body, color: color.textMuted, lineHeight: 20 },
+  title: { fontFamily: font.family.heading, fontSize: font.size.title, color: color.text },
+  description: {
+    fontFamily: font.family.body,
+    fontSize: font.size.body,
+    color: color.textMuted,
+    lineHeight: 20,
+  },
   hints: { gap: space.xs, marginTop: space.sm },
   hintsTitle: {
+    fontFamily: font.family.bodyMedium,
     fontSize: font.size.xs,
-    fontWeight: font.weight.bold,
     color: color.textMuted,
     letterSpacing: 0.4,
   },
-  hint: { fontSize: font.size.sm, color: color.textMuted },
+  hint: { fontFamily: font.family.body, fontSize: font.size.sm, color: color.textMuted },
   hintKey: { fontFamily: 'monospace', color: color.text },
   skip: {
     marginTop: space.md,
     color: color.primary,
+    fontFamily: font.family.bodyMedium,
     fontSize: font.size.md,
-    fontWeight: font.weight.medium,
   },
 });

@@ -18,7 +18,11 @@ from sqlalchemy.orm import Session
 
 from app.core import audit, clock, security
 from app.core.config import Settings
-from app.core.errors import EmailDeliveryError, UserEmailAlreadyActiveError
+from app.core.errors import (
+    EmailDeliveryError,
+    UserEmailAlreadyActiveError,
+    UserEmailDeactivatedError,
+)
 from app.models.invitation import InvitationModel
 from app.models.user import UserModel, UserStatus
 from app.repositories import invitation_repo, user_repo
@@ -74,15 +78,17 @@ def create_invitation(
     # DEACTIVATED is blocked too. That is NOT what BR-02 literally says — it
     # names only ACTIVE — but re-inviting a DEACTIVATED address would silently
     # resurrect a disabled account, a security decision no AC or EC authorises.
-    # Blocking is the conservative reading; the error code is imprecise for that
-    # case. Raised as finding F1 in plan.md for a ruling rather than settled
-    # silently here.
+    # Ruled in plan.md F1 (T-18): the block is confirmed, and the two cases get
+    # distinct codes so an ADMIN never confuses "already has an account" with
+    # "this account was disabled".
     #
     # Checked outside the try below so this deliberate 409 can never be confused
     # with the incidental one an IntegrityError produces.
-    if existing is not None and existing.status is not UserStatus.PENDING:
-        raise UserEmailAlreadyActiveError(details={"email": email})
-
+    if existing is not None:
+        if existing.status is UserStatus.ACTIVE:
+            raise UserEmailAlreadyActiveError(details={"email": email})
+        if existing.status is UserStatus.DEACTIVATED:
+            raise UserEmailDeactivatedError(details={"email": email})
     # spec AC-06 / FR-08 / FR-09: 256-bit token, expiry exactly TTL hours out.
     raw_token = security.generate_invitation_token()
     expires_at = _expiry(settings.invitation_ttl_hours)

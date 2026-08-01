@@ -47,8 +47,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     overflow: 'hidden',
   },
-  title: { fontSize: font.size.title, fontWeight: font.weight.bold, color: color.text },
-  purpose: { fontSize: font.size.md, lineHeight: 22, color: color.textMuted },
+  title: { fontFamily: font.family.heading, fontSize: font.size.title, color: color.text },
+  purpose: { fontFamily: font.family.body, fontSize: font.size.md, lineHeight: 22, color: color.textMuted },
   meta: { marginTop: space.sm, gap: space.xs },
   metaLine: { fontSize: font.size.sm, color: color.textMuted, fontFamily: 'monospace' },
 });

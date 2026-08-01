@@ -1,8 +1,8 @@
 # Software Design Specification (SDS)
 ## Personal Finance Management (PFM) System
-**Document Version:** 1.1.0  
+**Document Version:** 1.3.0  
 **Status:** Approved for Implementation  
-**Aligned to:** SRS v2.0.0 (see §1.6 Revision History)  
+**Aligned to:** SRS v2.2.0 (see §1.6 Revision History)  
 
 ---
 
@@ -111,9 +111,10 @@ This document specifies the initial **Core Technology Stack** and system archite
 * **DAO:** Data Access Object / Repository Pattern
 
 ### 1.5 Related Documents
-* Personal Finance Management System Requirements Specification (SRS) v2.0.0 — **the authoritative requirements baseline.** Where this SDS and the SRS disagree, the SRS wins and this document is corrected.
+* Personal Finance Management System Requirements Specification (SRS) v2.2.0 — **the authoritative requirements baseline.** Where this SDS and the SRS disagree, the SRS wins and this document is corrected. SRS §1.5 (added v2.2.0) is the conceptual domain model this document's §2 realises technically — see §2's own note.
 * `constitution.md` — project rules with stable IDs (AR/API/NC/VL/SEC/LA/PF/TST/DOD/ENV) derived from this document.
-* `docs/00-foundation/srs-sds-alignment.md` — audit trail of every alignment edit applied to this document.
+* `specs/<NNN>-<epic>/{spec,plan,test_cases}.md` — the working artifacts. Per-story design detail, error catalogues, and the decisions behind any deviation live there, never in this document.
+* §1.6 Revision History below is the audit trail of every alignment edit applied to this document.
 
 #### 1.5.1 Story ID Map (SDS ↔ SRS)
 
@@ -143,18 +144,28 @@ refer to the same stories. Always cite both.
 | Version | Change |
 | :--- | :--- |
 | 1.0.0 | Initial design specification. |
-| **1.1.0** | **Aligned to SRS v2.0.0.** User status `PENDING_INVITATION` → `PENDING` (§2.4.1, §5.1.1, §6.4.1, §7.1.2). `EXPIRED` removed from the user state machine and moved to a new invitation state machine (§2.4.1, §2.4.2) because SRS US-01-02 requires an expired token to leave the account `PENDING`. NFR matrix renumbered to the SRS §3 scheme, resolving an id collision where SDS `NFR-02` meant Security while SRS `NFR-02` means Availability (§8.1). Story ID map added (§1.5.1). SRS feature references annotated on §5 headings. Backend package layout corrected to the real repository structure (§4.3.2). Full audit trail in `docs/00-foundation/srs-sds-alignment.md`. |
+| **1.1.0** | **Aligned to SRS v2.0.0.** User status `PENDING_INVITATION` → `PENDING` (§2.4.1, §5.1.1, §6.4.1, §7.1.2). `EXPIRED` removed from the user state machine and moved to a new invitation state machine (§2.4.1, §2.4.2) because SRS US-01-02 requires an expired token to leave the account `PENDING`. NFR matrix renumbered to the SRS §3 scheme, resolving an id collision where SDS `NFR-02` meant Security while SRS `NFR-02` means Availability (§8.1). Story ID map added (§1.5.1). SRS feature references annotated on §5 headings. Backend package layout corrected to the real repository structure (§4.3.2). |
+| **1.2.0** | **Aligned to the implemented and verified UM-US-01, and to UM-US-02's approved design.** Every change below is this document catching up to code that exists or to a design decision recorded in `specs/001-user-onboarding/plan.md` — none of it is new design. **Domain:** `InvitationToken` renamed `Invitation`; its `token` column replaced by `token_hash` (SHA-256 hex, unique) with `invited_by_id` FK and `created_at` added, in §2.2, the §2.3 class diagram and the §4.3.3 ERD, plus notes on email normalisation, nullable credential columns, and UUID-as-text (§4.3.3). **Invitation state:** §2.4.2 now says explicitly that `EXPIRED` is a derived read-state and names the fixed order of evaluation when a token fails several conditions at once. **Stories:** §5.2.2's acceptance criteria extended to cover check ordering, atomicity, the no-session rule, and the state check; its role annotation corrected from `GUEST/USER` to unauthenticated. **API:** `UM-API-04` (`GET /users/activate`) registered in §6.3 and §6.5 and specified in a new §6.4.3; §6.4.1's response corrected to the six fields actually returned; §6.4.2's UUID token example replaced, since a UUIDv4's ~122 bits fall under NFR-04's 128-bit floor; DTO registry (§6.2.1) renamed to the implemented `ActivateRequest` and completed with `InvitationRead`, `ActivationResult`, `TokenStateRead`, `UserRead`; §6.6 expanded from one example into the full nine-code catalogue with status codes. **Security:** §7.1.5 gained the 72-byte bcrypt ceiling and reject-not-truncate rule, and names bcrypt as the MVP choice; §7.1.8 lists the four public endpoints by method; §7.3's DoS row records that rate limiting is specified but deferred, and its Spoofing row corrected to bcrypt. **Other:** §4.4.1's sequence diagram redrawn to show the repository layer, token hashing, the commit boundary and post-commit mail dispatch; §8.1 gained the missing UXR-02/03/04 rows; §12.1's endpoint-naming rule reconciled with the verb segments API-05 requires. Audit trail is this table — the former pointer to an untracked process-documents directory was removed. |
+| **1.3.0** | **§4.4.1's sequence diagram redrawn to the `constitution.md` `DG` group** adopted this session: four lanes only (`UI → API → Service → Store`), no SQL or repository lane, no parameter lists, every request answered with an HTTP status. v1.2.0's diagram — while itself an improvement over v1.0.0's sketch — had reintroduced a `Repo`/`DB` lane and query-shaped labels (`INSERT x2`, `UPDATE x2, same flush`, `SELECT`), which is exactly what `DG-01`/`DG-04` now forbid. No design fact changes: the same commit boundary, the same fixed check order, the same post-commit mail dispatch — only how they are drawn. |
 
 ---
 
 ## 2. Technical Domain Model
 
+This is the technical realisation — DB columns, SQLAlchemy types, DTOs — of `SRS.md` §1.5's
+**conceptual** domain model (added v2.2.0), which describes the same seven entities in business
+language with no technical detail. **Known gap, not yet closed here:** `SRS.md` §1.5 draws
+`User receives Notification`, inferred from the `NM-US-*` stories in §5.8 below; this section's own
+§2.3 class diagram and the §4.3.3 ERD have never drawn that relationship, even though **Notification**
+is a full domain entity in §2.1's table. Left as-is for now rather than fixed in this pass, so it does
+not get lost: the next alignment of this document should add it to both places.
+
 ### 2.1 Domain Layer Traceability
 
 | Business Entity | Database Table | SQLAlchemy Entity | Pydantic Schema DTO |
 | :--- | :--- | :--- | :--- |
-| **User** | `users` | `UserModel` | `UserRead`, `UserCreate` |
-| **Invitation Token** | `invitations` | `InvitationModel` | `InviteCreate`, `ActivateUser` |
+| **User** | `users` | `UserModel` | `UserRead` |
+| **Invitation** | `invitations` | `InvitationModel` | `InviteCreate`, `InvitationRead`, `ActivateRequest`, `ActivationResult`, `TokenStateRead` |
 | **Wallet** | `wallets` | `WalletModel` | `WalletRead`, `WalletCreate` |
 | **Category** | `categories` | `CategoryModel` | `CategoryRead`, `CategoryCreate` |
 | **Budget** | `budgets` | `BudgetModel` | `BudgetRead`, `BudgetCreate` |
@@ -163,8 +174,8 @@ refer to the same stories. Always cite both.
 
 ### 2.2 Domain Object
 
-* **User:** Represents the application account owner (`id`, `email`, `password_hash`, `full_name`, `status`, `role`).
-* **InvitationToken:** Tracks email invitations (`id`, `email`, `token`, `expires_at`, `status`).
+* **User:** Represents the application account owner (`id`, `email`, `password_hash`, `full_name`, `status`, `role`, `created_at`). An invited account exists with `password_hash` and `full_name` both null until activation sets them.
+* **Invitation:** Tracks email invitations (`id`, `email`, `token_hash`, `expires_at`, `status`, `invited_by_id`, `created_at`). One row per invitation *attempt*, so the history of attempts survives and an expired attempt leaves the account untouched. **Only the SHA-256 hash of the token is stored** (`token_hash`) — the raw token exists solely in the delivered email, and activation finds the row by hashing what the user presents (§7.4, constitution SEC-03). `invited_by_id` records which ADMIN issued it.
 * **Wallet:** Financial container holding funds (`id`, `user_id`, `name`, `type`, `balance`, `currency`).
 * **Category:** Classification for monetary activities (`id`, `user_id`, `name`, `type`, `icon`).
 * **Budget:** Spending constraint attached to a wallet and category (`id`, `wallet_id`, `category_id`, `amount_limit`, `period`).
@@ -181,11 +192,13 @@ classDiagram
         +String status
         +String role
     }
-    class InvitationToken {
+    class Invitation {
         +UUID id
-        +String token
+        +String email
+        +String token_hash
         +DateTime expires_at
         +String status
+        +UUID invited_by_id
     }
     class Wallet {
         +UUID id
@@ -210,7 +223,7 @@ classDiagram
         +Date period
     }
 
-    User "1" -- "*" InvitationToken : invites
+    User "1" -- "*" Invitation : invites
     User "1" -- "*" Wallet : owns
     User "1" -- "*" Category : defines
     Wallet "1" -- "*" Transaction : contains
@@ -253,6 +266,17 @@ stateDiagram-v2
 
 `EXPIRED` is **derived** from `expires_at` on every read, never written by a
 background job — there is no sweeper in the MVP.
+
+Read the diagram accordingly: `PENDING → EXPIRED` and `EXPIRED → SUPERSEDED` describe how a *reader*
+sees the row, not writes anyone performs. The stored `status` of an expired invitation is still
+`PENDING`; re-inviting the address updates that same `PENDING` row to `SUPERSEDED`, which is why
+expiry is no obstacle to re-inviting. `ACCEPTED` and `SUPERSEDED` are the only two values ever
+written after insertion.
+
+When a token fails more than one condition — say it is `ACCEPTED` *and* past `expires_at`, which is
+the normal state of any used invitation a day later — the reported reason is decided by a fixed order
+of evaluation, with expiry checked **last** (§5.2.2). So `expired` is only ever reported for a token
+that would otherwise have worked.
 
 #### 2.4.3 Budget Monitoring State
 
@@ -386,9 +410,11 @@ erDiagram
     INVITATIONS {
         uuid id PK
         string email
-        string token UK
+        string token_hash UK
         timestamp expires_at
         string status
+        uuid invited_by_id FK
+        timestamp created_at
     }
 
     WALLETS {
@@ -426,32 +452,64 @@ erDiagram
     }
 ```
 
+**Notes on the onboarding tables** (aligned to the implemented schema in v1.2.0):
+
+* `users.email` carries the unique index and is stored **normalised** — trimmed and case-folded — so
+  one mailbox maps to exactly one account. `invitations.email` is denormalised for audit history and
+  is indexed but deliberately **not** unique: an address may be invited many times.
+* `invitations.token_hash` is the SHA-256 hex digest of the token, `char(64)`, unique. The raw token
+  is never persisted (§7.4, constitution SEC-03).
+* `users.password_hash` and `users.full_name` are nullable, because an invited account exists before
+  anyone has set either.
+* `id` columns are UUIDs held as 36-character text rather than a native UUID type, so one schema runs
+  on both SQLite (local) and PostgreSQL (deployment) — see §4.5 and constitution ENV-03.
+
 ### 4.4 Process View
 
 #### 4.4.1 Sequence Diagrams
 
 ##### User Invitation & Activation Sequence
+
+Aligned in v1.3.0 to `constitution.md`'s `DG` group: four lanes only (`UI → API → Service → Store`),
+no SQL, no parameter lists, every request answered with an HTTP status. Per-story detail, including
+every refusal branch and the fixed check order, lives in that story's `plan.md`; this diagram is the
+system-level shape, not the full contract.
+
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Admin
-    participant API as FastAPI Router
-    participant Service as UserService
-    participant SMTP as Gmail SMTP
-    actor User as Invited User
+    actor UI as Admin / Invited person
+    participant API as API
+    participant Svc as Service
+    participant Store as Store
 
-    Admin->>API: POST /api/v1/users/invite {email}
-    API->>Service: invite_user(email)
-    Service->>Service: Generate secure token + TTL (24h)
-    Service->>SMTP: Send Email with link (token)
-    SMTP-->>User: Delivers Activation Email
-    API-->>Admin: 201 Created
+    Note over UI,Store: UM-US-01 — invite (ADMIN, authenticated)
+    UI->>API: POST /users/invite
+    API->>Svc: create(input)
+    Svc->>Store: insert user PENDING, insert invitation PENDING
+    Note over Svc,Store: One transaction — both rows commit together or not at all
+    Store-->>Svc: invitation created
+    Svc-->>API: invitation
+    API-->>UI: 201 invitation created — no token in the body
+    Note over API,UI: Activation email dispatched after this response, off the request path — the token reaches the invited mailbox only
 
-    User->>API: POST /api/v1/users/activate {token, password, name}
-    API->>Service: activate_user(token, password)
-    Service->>Service: Verify token & check TTL
-    Service->>Service: Hash password & set status = ACTIVE
-    API-->>User: 200 OK (Account Activated)
+    Note over UI,Store: UM-US-02 — activate (unauthenticated, public)
+    UI->>API: GET /users/activate
+    API->>Svc: checkState(input)
+    Svc->>Store: find invitation by token
+    Store-->>Svc: invitation, or none
+    Svc-->>API: usable, expired, or not_usable — nothing mutated
+    API-->>UI: 200 state
+    UI->>API: POST /users/activate
+    API->>Svc: activate(input)
+    Svc->>Store: find invitation by token
+    Store-->>Svc: matching invitation, or none
+    Note over Svc: Checked in a fixed order — outstanding, then user PENDING, then expiry last
+    Svc->>Store: claim the invitation, then set the user ACTIVE with name and hash
+    Note over Svc,Store: The claim happens first, then both writes commit as one transaction
+    Store-->>Svc: activated
+    Svc-->>API: activation confirmed
+    API-->>UI: 200 activated — no session issued
 ```
 
 ### 4.5 Physical View
@@ -497,16 +555,23 @@ sequenceDiagram
 #### 5.2.1 UM-US-01: Invite a User via Email (ADMIN)
 * **Goal:** Send an activation link with a secure token and TTL to a target email address.
 * **Acceptance Criteria:**
-  1. Validates email format and checks for existing active accounts.
-  2. Generates a secure random token (`secrets.token_urlsafe`) with a 24-hour TTL.
-  3. Persists invitation state and dispatches an email via Gmail SMTP.
+  1. Validates email format, then normalises the address (trimmed, case-folded) before any uniqueness comparison, so one mailbox maps to exactly one account.
+  2. Refuses the address if it belongs to an `ACTIVE` account, and likewise if it belongs to a `DEACTIVATED` one — an invitation must not silently resurrect withdrawn access. A `PENDING` address is **re-invitable**: the outstanding invitation is marked `SUPERSEDED` and a fresh token issued, which is the recovery path when a link expired or never arrived.
+  3. Generates a secure random token (`secrets.token_urlsafe(32)` — 256 bits) with a 24-hour TTL, and persists only its hash.
+  4. Writes the `users` row and the `invitations` row in **one** transaction; neither may exist without the other.
+  5. Dispatches an email via Gmail SMTP **after** the commit and off the request path, so a rolled-back token is never advertised and NFR-01's 300 ms p95 holds against SMTP's 1–3 s.
+  6. Returns the new account's id, email, status and token expiry — and never the token, which reaches the invited mailbox alone.
+  7. ADMIN only. An unauthenticated caller is refused before the payload is examined.
 
-#### 5.2.2 UM-US-02: Activate a User Account (GUEST/USER)
+#### 5.2.2 UM-US-02: Activate a User Account (GUEST — unauthenticated)
 * **Goal:** Allow an invited user to set their full name and password to activate their account.
 * **Acceptance Criteria:**
-  1. Validates token existence and checks `expires_at > CURRENT_TIMESTAMP`.
-  2. Hashes password using `argon2` or `bcrypt`.
-  3. Updates user state to `ACTIVE` and invalidates the activation token.
+  1. Validates that the presented token matches an invitation, that the invitation is still outstanding, that its user is `PENDING`, and — **checked last** — that `expires_at > CURRENT_TIMESTAMP`. The order fixes which refusal is reported when more than one condition fails.
+  2. Hashes password using `bcrypt` (§7.1.5) after enforcing the password policy.
+  3. Updates user state to `ACTIVE`, records the full name, and invalidates the activation token — both writes in one transaction, so a usable token never survives a successful activation.
+  4. Issues **no** session. The client directs the activated person to log in (SS-US-01).
+  5. Exposes a read-only companion (`UM-API-04`) reporting a token's state without consuming it, so a client can warn about an expired link before asking for a password (UXR-04).
+* **Note:** reactivating a `DEACTIVATED` account is **not** this story — an old invitation link must not restore withdrawn access. That is §5.2.5 UM-US-05.
 
 #### 5.2.3 UM-US-03: List Users (ADMIN)
 * **Goal:** Display a list of all invited and active accounts.
@@ -647,8 +712,16 @@ sequenceDiagram
 ### 6.2 Data Transfer Objects (DTOs) and Domain Mapping
 
 #### 6.2.1 DTO Registry
+
+Onboarding DTOs use the names the code uses (aligned v1.2.0 — v1.0.0 called the activation request
+`ActivateUser` in §2.1 and `UserActivate` here, neither of which was ever implemented):
+
 * **`InviteCreate`**: `{ "email": "string" }`
-* **`UserActivate`**: `{ "token": "string", "full_name": "string", "password": "string" }`
+* **`InvitationRead`**: `{ "id": "UUID", "email": "string", "status": "PENDING", "token_expires_at": "datetime", "created_at": "datetime", "message": "string" }` — six fields, and **no token**.
+* **`ActivateRequest`**: `{ "token": "string", "full_name": "string", "password": "string" }`
+* **`ActivationResult`**: `{ "status": "SUCCESS", "message": "string" }` — no session, no token.
+* **`TokenStateRead`**: `{ "state": "usable" | "expired" | "not_usable" }`
+* **`UserRead`**: `{ "id": "UUID", "email": "string", "full_name": "string", "status": "string", "created_at": "datetime" }` — never `password_hash`.
 * **`WalletCreate`**: `{ "name": "string", "type": "string", "currency": "string", "initial_balance": 0.00 }`
 * **`TransactionCreate`**: `{ "wallet_id": "UUID", "category_id": "UUID", "amount": 0.00, "type": "EXPENSE", "note": "string" }`
 
@@ -660,6 +733,7 @@ sequenceDiagram
 | **UM-API-01** | `POST` | `/api/v1/users/invite` | Send email invitation |
 | **UM-API-02** | `POST` | `/api/v1/users/activate` | Activate account with token |
 | **UM-API-03** | `GET` | `/api/v1/users` | List all users |
+| **UM-API-04** | `GET` | `/api/v1/users/activate` | Report a token's state without consuming it |
 | **WM-API-01** | `POST` | `/api/v1/wallets` | Create a new wallet |
 | **WM-API-02** | `GET` | `/api/v1/wallets` | List user wallets |
 | **TM-API-01** | `POST` | `/api/v1/transactions` | Record a transaction |
@@ -676,22 +750,28 @@ sequenceDiagram
   "email": "family.member@gmail.com"
 }
 ```
+* **Auth:** ADMIN bearer token required.
 * **Success Response (`201 Created`):**
 ```json
 {
   "id": "e3a89047-bf1b-4f81-8b38-8c114fef6f82",
   "email": "family.member@gmail.com",
   "status": "PENDING",
-  "message": "Invitation dispatched successfully."
+  "token_expires_at": "2026-08-01T09:15:00+00:00",
+  "created_at": "2026-07-31T09:15:00+00:00",
+  "message": "Invitation sent successfully"
 }
 ```
+* **Errors:** `401 NOT_AUTHENTICATED` · `403 FORBIDDEN` · `409 USER_EMAIL_ALREADY_ACTIVE` · `409 USER_EMAIL_DEACTIVATED` · `422 VALIDATION_ERROR` · `502 EMAIL_DELIVERY_FAILED`.
+* **Note:** the invitation token appears nowhere in this response. It reaches the invited mailbox and nowhere else. Timestamps are always offset-aware.
 
 #### 6.4.2 UM-API-02: Activate User Account
 * **Endpoint:** `POST /api/v1/users/activate`
+* **Auth:** none — public (§7.1.8). An invited person has no account yet, so requiring authentication would make activation impossible.
 * **Request Payload:**
 ```json
 {
-  "token": "d9b2d63d-8b3f-4e1a-9f1c-2e3b4a5f6c7d",
+  "token": "kR8t-2yQm5vB1nX7cZ0pLdSfWhJgTaUeQiYoKbNrMxE",
   "full_name": "Jane Doe",
   "password": "StrongPassword123!"
 }
@@ -703,6 +783,21 @@ sequenceDiagram
   "message": "Account activated successfully. You may now log in."
 }
 ```
+* **Errors:** `400 INVITATION_TOKEN_EXPIRED` · `400 INVITATION_TOKEN_INVALID` · `422 VALIDATION_ERROR`.
+* **Notes:** the token is an opaque high-entropy string (`secrets.token_urlsafe(32)`, 256 bits), **not** a UUID — a UUIDv4 carries only ~122 bits and would fall under NFR-04's 128-bit floor. Success issues **no** session; the client directs the person to log in (SS-API-01). Every refusal other than expiry returns the same `INVITATION_TOKEN_INVALID`, so an unrecognised token cannot be told from one already used, superseded, or belonging to a user who is no longer `PENDING`.
+
+#### 6.4.3 UM-API-04: Report Invitation Token State
+* **Endpoint:** `GET /api/v1/users/activate?token=<token>`
+* **Auth:** none — public (§7.1.8).
+* **Purpose:** lets a client tell a person their link has expired *before* asking them to type a password (UXR-04). Strictly read-only: it never consumes, supersedes, or otherwise alters the invitation.
+* **Success Response (`200 OK`):**
+```json
+{
+  "state": "usable"
+}
+```
+* **`state`** is one of `usable`, `expired`, `not_usable`. `not_usable` collapses every non-expiry reason — never issued, already used, superseded, or user no longer `PENDING` — and continues to do so once such a token also passes its TTL. `expired` is reported **only** for a token that is otherwise usable, which is why the checks run in a fixed order: outstanding state, then user state, then expiry last.
+* **Known exposure:** the token travels in the query string, so a web server's access log records it. Accepted as a bounded exemption — the token is single-use and 24-hour-lived, and the same value already appears in the URL of the emailed activation link. Operators behind a proxy should strip the query string for this path.
 
 ---
 
@@ -713,12 +808,15 @@ sequenceDiagram
 | `POST /api/v1/auth/login` | System Security | SS-US-01 |
 | `POST /api/v1/users/invite` | User Management | UM-US-01 |
 | `POST /api/v1/users/activate` | User Management | UM-US-02 |
+| `GET /api/v1/users/activate` | User Management | UM-US-02 |
 | `GET /api/v1/users` | User Management | UM-US-03 |
 | `POST /api/v1/wallets` | Wallet Management | WM-US-01 |
 | `POST /api/v1/transactions` | Transaction Management | TM-US-01 |
 
 ### 6.6 Error Response Catalog
-Standard JSON Error Structure:
+
+Standard JSON Error Structure — **flat**, never nested under an `"error"` key, and used for
+validation failures as well as domain errors:
 ```json
 {
   "error_code": "INVITATION_TOKEN_EXPIRED",
@@ -726,6 +824,25 @@ Standard JSON Error Structure:
   "details": {}
 }
 ```
+
+Every code the onboarding and security features can emit (catalogued in v1.2.0; previously this
+section carried only the example above). Codes are `UPPER_SNAKE_CASE` with a resource prefix, and
+each story's `plan.md` catalogues the subset that story emits.
+
+| Error code | HTTP | Meaning |
+| :--- | :-: | :--- |
+| `VALIDATION_ERROR` | 422 | Payload failed schema validation — malformed email, weak or over-long password, blank or over-long full name. All field errors are returned together in `details.fields`. |
+| `NOT_AUTHENTICATED` | 401 | Credentials absent, malformed, invalid, or expired. Evaluated before the payload. |
+| `FORBIDDEN` | 403 | Authenticated, but the role is insufficient — a non-ADMIN attempting an ADMIN action. |
+| `USER_EMAIL_ALREADY_ACTIVE` | 409 | The address already belongs to an `ACTIVE` account. Deliberately discloses existence: an ADMIN inviting a colleague needs to know why it failed (documented exemption to §7.3's enumeration concern). |
+| `USER_EMAIL_DEACTIVATED` | 409 | The address belongs to a `DEACTIVATED` account. Refused rather than silently resurrecting withdrawn access; reactivation is UM-US-05. *Designed, not yet implemented — currently emitted as `USER_EMAIL_ALREADY_ACTIVE`.* |
+| `EMAIL_DELIVERY_FAILED` | 502 | Mail dispatch was attempted inline and could not complete. A delivery failure never reports success. |
+| `INVITATION_TOKEN_EXPIRED` | 400 | The token matches an outstanding invitation whose user is still `PENDING`, and it is past its TTL. The only refusal reason named specifically. |
+| `INVITATION_TOKEN_INVALID` | 400 | Every other refusal: unrecognised, already accepted, superseded, or the user is no longer `PENDING` — including when such a token is also expired. One code so these cases stay indistinguishable. |
+| `INTERNAL_ERROR` | 500 | Unexpected server error. Never carries internal detail. |
+
+`400` rather than `404` for a bad token is deliberate: a `404` would itself be a distinguishable
+"no such token" answer, which is exactly the disclosure `INVITATION_TOKEN_INVALID` exists to prevent.
 
 ---
 
@@ -746,7 +863,16 @@ JWT-based Bearer token authentication signed via HMAC-SHA256 (`HS256`).
 Email and Password.
 
 #### 7.1.5 Password Policy
-Minimum 8 characters containing at least one uppercase letter, one digit, and one special character. Hashed using `passlib` with `argon2` or `bcrypt`.
+Minimum 8 characters containing at least one uppercase letter, one digit, and one special character.
+**Capped at 72 bytes UTF-8**, and a longer password is *rejected*, never truncated — bcrypt silently
+ignores anything past 72 bytes, so a truncating implementation would let a shorter password unlock the
+same account (constitution VL-04).
+
+Hashed with **`bcrypt`** in the MVP, called directly rather than through `passlib`. `argon2` remains a
+sanctioned alternative; the choice is isolated behind `core/security.py`'s `hash_password` /
+`verify_password`, so swapping it touches one module. Invitation tokens are *not* password-hashed —
+they are already 256 bits of uniform randomness, so they use plain SHA-256 (§7.4, SEC-03); a slow KDF
+would add latency on every activation and buy nothing.
 
 #### 7.1.6 Session Management
 Short-lived access tokens (60 minutes).
@@ -755,8 +881,14 @@ Short-lived access tokens (60 minutes).
 Endpoints check user context and reject tokens belonging to non-active user accounts.
 
 #### 7.1.8 Public vs Protected Endpoints
-* **Public:** `/api/v1/auth/login`, `/api/v1/users/activate`
-* **Protected:** All other endpoints require `Authorization: Bearer <token>`.
+* **Public** — exactly these four, listed by method so the set is unambiguous (constitution API-08):
+  * `POST /api/v1/auth/login`
+  * `POST /api/v1/users/activate` — the one unauthenticated **write** in the system
+  * `GET /api/v1/users/activate` — the token state check (`UM-API-04`)
+  * `GET /health` — liveness probe
+* **Protected:** All other endpoints require `Authorization: Bearer <token>`, declared as an
+  `HTTPBearer` security scheme so generated documentation adds the `Bearer ` prefix itself.
+* Adding a public route is a design decision, recorded in the story's `plan.md` before it ships.
 
 #### 7.1.9 CSRF Protection
 Stateless JWT Authorization headers mitigate cross-site request forgery attacks.
@@ -771,11 +903,11 @@ Ownership-based access control: Service queries append `WHERE user_id = :authent
 
 | Threat Category | Risk Scenario | Mitigation Strategy |
 | :--- | :--- | :--- |
-| **Spoofing** | Attacker impersonates a user | Secure password hashing (`argon2`) + signed JWT tokens |
+| **Spoofing** | Attacker impersonates a user | Secure password hashing (`bcrypt`, §7.1.5) + signed JWT tokens |
 | **Tampering** | Modifying transaction amounts in transit | TLS 1.3 encryption for all endpoint interactions |
 | **Repudiation** | User denies performing transaction | Structured audit logs recording timestamps and user context |
 | **Information Leak** | Viewing another user's balance | Strict user ownership filter on data repository layer |
-| **Denial of Service** | Spamming invitation API | Rate limiting middleware (`slowapi`) on invite endpoints |
+| **Denial of Service** | Spamming the invitation API, or brute-forcing the public token state check | Rate limiting middleware (`slowapi`) on the invite and activate endpoints — **specified, not yet implemented.** Deferred as an explicit task in each story's `plan.md` (UM-US-01 T-13, UM-US-02 T-08) because no acceptance criterion requires it. The unauthenticated `GET /users/activate` is the stronger case of the two, since it answers a yes/no question about a secret. |
 | **Elevation of Privilege** | Normal user accessing admin endpoints | Role checks on user management routes |
 
 ### 7.4 Data Protection
@@ -803,6 +935,9 @@ in both documents. UXR rows match SRS §4.
 | **NFR-05** | Data Integrity & Monetary Precision | `DECIMAL(15,2)` throughout; balance updates inside ACID transactions | Atomic DB transaction tests; schema inspection |
 | **NFR-06** | Privacy | Every query on user-owned data is scoped by `user_id` | Repository code review + cross-user access tests |
 | **UXR-01** | Low-Friction Entry | Transaction entry in < 3 taps | UI/UX stopwatch validation testing |
+| **UXR-02** | At-a-Glance Clarity | Budget health conveyed by colour token (green / yellow / red) without reading figures | Design review against §3.1; component-level UI tests |
+| **UXR-03** | Immediate Balance Feedback | Wallet totals and budget bars update without a manual refresh | UI integration test asserting post-submit state |
+| **UXR-04** | Clear Onboarding Guidance | Activation is a single-page Name + Password form, and an unusable link is explained before the form is filled in | `UM-API-04` state check plus the activation screen's rendering test |
 
 ---
 
@@ -871,7 +1006,11 @@ Structured JSON logs (`structlog`) capture system metrics, request latencies, an
 ### 12.1 Naming Conventions
 * **Database Tables:** Lowercase snake_case, pluralized (e.g., `users`, `wallets`, `transactions`).
 * **Python Classes:** PascalCase (e.g., `TransactionService`, `WalletRepository`).
-* **API Endpoints:** Lowercase hyphenated nouns (e.g., `/api/v1/users/activate`).
+* **API Endpoints:** Lowercase, hyphenated, plural resource nouns (e.g., `/api/v1/users`,
+  `/api/v1/wallets`). A **verb** segment is permitted only for an explicit business state
+  transition, which is preferred over a generic status update — hence `/users/invite` and
+  `/users/activate` rather than `PATCH /users/{id}` carrying a `status` field (constitution
+  API-05, NC-03).
 
 ### 12.2 API Documentation Template
 FastAPI automatically generates live interactive documentation accessible at `/docs` (Swagger UI) and `/redoc` (ReDoc) based on Pydantic schemas.

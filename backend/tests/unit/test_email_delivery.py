@@ -6,10 +6,12 @@ whether spec EC-07 produces a 502 or an unhandled 500.
 """
 
 import smtplib
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.services.email.outbox import FileOutboxSender
 from app.services.email.sender import (
     EmailDeliveryFailed,
     EmailMessage,
@@ -115,3 +117,46 @@ def test_the_recording_sender_can_be_told_to_fail() -> None:
         failing.send(MESSAGE)
     assert failing.sent == []
     assert failing.last is None
+
+
+def test_the_file_outbox_writes_a_readable_message_with_the_activation_link(
+    tmp_path: Path,
+) -> None:
+    """UM-US-01 A13: the file must exist, name the recipient, and carry the link."""
+    message = build_invitation_email(
+        to_email="invitee@example.com",
+        raw_token="TOK123",
+        activation_url_template="https://app.example/activate?token={token}",
+        expires_in_hours=24,
+    )
+    outbox_dir = tmp_path / "outbox"
+
+    FileOutboxSender(directory=outbox_dir).send(message)
+
+    files = list(outbox_dir.glob("*.eml"))
+    assert len(files) == 1
+    content = files[0].read_text(encoding="utf-8")
+    assert "To: invitee@example.com" in content
+    assert "https://app.example/activate?token=TOK123" in content
+
+
+def test_the_file_outbox_creates_its_directory_if_absent(tmp_path: Path) -> None:
+    outbox_dir = tmp_path / "does" / "not" / "exist" / "yet"
+    assert not outbox_dir.exists()
+
+    FileOutboxSender(directory=outbox_dir).send(MESSAGE)
+
+    assert outbox_dir.is_dir()
+    assert len(list(outbox_dir.glob("*.eml"))) == 1
+
+
+def test_the_file_outbox_raises_email_delivery_failed_on_an_os_error(tmp_path: Path) -> None:
+    """A write failure must map to the same failure type every other sender uses,
+    so the service layer's EC-06/EC-07 handling applies unchanged.
+    """
+    # A file where a directory is expected — mkdir raises NotADirectoryError (an OSError).
+    blocked = tmp_path / "blocked"
+    blocked.write_text("not a directory")
+
+    with pytest.raises(EmailDeliveryFailed):
+        FileOutboxSender(directory=blocked / "outbox").send(MESSAGE)

@@ -63,10 +63,19 @@ export type LoginRequest = {
   password: string;
 };
 
+/**
+ * Matches `TokenResponse` (`backend/app/schemas/auth.py`) exactly — SS-US-01's
+ * spec requires only the token, its expiry, and the caller's role, so that is
+ * all the server returns. There is deliberately no `user` field: a full
+ * profile is UM-US-04's concern (SDS-only, out of MVP scope), not this
+ * story's, and inventing one here would be a client contract the backend
+ * does not honour.
+ */
 export type LoginResponse = {
   access_token: string;
   token_type: 'bearer';
-  user: UserRead;
+  expires_in: number;
+  role: UserRole;
 };
 
 /** SDS §6.2.1 `UserActivate` — UM-US-02. */
@@ -79,4 +88,26 @@ export type ActivateRequest = {
 export type ActivateResponse = {
   status: 'SUCCESS';
   message: string;
+};
+/** Token state for UM-US-02 pre-check (GET /api/v1/users/activate) */
+export type TokenState = 'usable' | 'expired' | 'not_usable';
+
+export type TokenStateRead = {
+  state: TokenState;
+};
+
+/**
+ * `GET /api/v1/dev/outbox` (UM-US-01 A13/A14) — dev-only, ADMIN, never present
+ * in production. Reads what `FileOutboxSender` wrote when
+ * `EMAIL_TRANSPORT=outbox`, so an activation link can be read without a real
+ * mailbox. Not a documented SDS DTO — this route belongs to no SRS/SDS story.
+ */
+export type OutboxMessage = {
+  to: string;
+  sent_at: string;
+  activation_url: string | null;
+};
+
+export type OutboxList = {
+  messages: OutboxMessage[];
 };

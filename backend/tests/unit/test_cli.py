@@ -119,3 +119,79 @@ def test_an_unknown_command_is_a_usage_error() -> None:
 
     with pytest.raises(SystemExit):
         main(["no-such-command"])
+
+
+def test_promote_admin_turns_an_invited_pending_user_into_an_active_admin(
+    cli_db: sessionmaker[Session], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The exact lockout this command exists to break: a real address invited
+    one or more times, stuck PENDING, that create-admin now refuses to touch.
+    """
+    from app.cli import main
+
+    with cli_db() as db:
+        user_repo.add_pending_user(db, "real.person@gmail.com")
+        db.commit()
+
+    exit_code = main(
+        ["promote-admin", "--email", "Real.Person@Gmail.COM", "--password", "Str0ng-Passw0rd!"]
+    )
+
+    assert exit_code == 0
+    with cli_db() as db:
+        user = user_repo.get_by_email(db, "real.person@gmail.com")
+        assert user is not None
+        assert user.status is UserStatus.ACTIVE
+        assert user.role is UserRole.ADMIN
+        assert user.password_hash is not None
+        assert security.verify_password("Str0ng-Passw0rd!", user.password_hash)
+    assert user.password_hash not in capsys.readouterr().out
+
+
+def test_promote_admin_refuses_an_address_with_no_existing_user(
+    cli_db: sessionmaker[Session],
+) -> None:
+    """Creating one from nothing is create-admin's job, not this one's."""
+    from app.cli import main
+
+    exit_code = main(
+        ["promote-admin", "--email", "nobody@example.com", "--password", "Str0ng-Passw0rd!"]
+    )
+
+    assert exit_code == 1
+    with cli_db() as db:
+        assert user_repo.get_by_email(db, "nobody@example.com") is None
+
+
+def test_promote_admin_overwrites_an_existing_credential(cli_db: sessionmaker[Session]) -> None:
+    """The operator running this owns the account — a fresh password is the point."""
+    from app.cli import main
+
+    main(["create-admin", "--email", "boss@example.com", "--password", "OldPassw0rd!"])
+
+    assert main(["promote-admin", "--email", "boss@example.com", "--password", "NewPassw0rd!"]) == 0
+
+    with cli_db() as db:
+        admin = user_repo.get_by_email(db, "boss@example.com")
+        assert admin is not None
+        assert security.verify_password("NewPassw0rd!", admin.password_hash)
+        assert not security.verify_password("OldPassw0rd!", admin.password_hash)
+
+
+def test_promote_admin_refuses_a_password_past_bcrypts_ceiling(
+    cli_db: sessionmaker[Session],
+) -> None:
+    from app.cli import main
+
+    with cli_db() as db:
+        user_repo.add_pending_user(db, "real.person@gmail.com")
+        db.commit()
+
+    exit_code = main(
+        ["promote-admin", "--email", "real.person@gmail.com", "--password", "a" * 100]
+    )
+
+    assert exit_code == 2
+    with cli_db() as db:
+        user = user_repo.get_by_email(db, "real.person@gmail.com")
+        assert user is not None and user.status is UserStatus.PENDING

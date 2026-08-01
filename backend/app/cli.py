@@ -8,9 +8,16 @@ plan.md A10). This is the only path to the first account.
 job via `POST /api/v1/auth/login`, which is not built (plan.md A11). Until it
 exists, this is how you get a bearer token for Swagger and Postman.
 
+`promote-admin` exists because `create-admin` refuses when the address already
+has a row — which is exactly the state a real invited address ends up in
+(PENDING, invited one or more times). Without this, an operator's own real
+mailbox can never become the ADMIN once it has been invited even once (plan.md
+UM-US-01 A12).
+
 Run with:
     uv run python -m app.cli create-admin --email you@example.com --password '…'
     uv run python -m app.cli mint-token --email you@example.com
+    uv run python -m app.cli promote-admin --email you@example.com --password '…'
 """
 
 import argparse
@@ -54,6 +61,52 @@ def create_admin(email: str, password: str, full_name: str | None) -> int:
         db.refresh(admin)
 
         print(f"created ADMIN {admin.email} (id={admin.id})")
+        print(f"database: {settings.database_url}")
+    return 0
+
+
+def promote_admin(email: str, password: str, full_name: str | None) -> int:
+    """Turn an existing user into an ACTIVE ADMIN, resetting its credential.
+
+    Deliberately the opposite failure mode of `create_admin`: it requires the
+    user to already exist and refuses if not — creating one from nothing is
+    `create-admin`'s job. Overwriting the password is intentional: the
+    operator running this owns the account and is choosing a fresh credential,
+    not recovering a lost one.
+
+    A stranded `PENDING` invitation for the address needs no cleanup: once
+    this user is ACTIVE, that invitation's token is refused by
+    `activation_service` as "not usable" (UM-US-02 EC-06), exactly the
+    generic outcome any other stale token gets.
+    """
+    settings = get_settings()
+    normalised = user_repo.normalize_email(email)
+
+    try:
+        password_hash = security.hash_password(password)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    with SessionLocal() as db:
+        user = user_repo.get_by_email(db, normalised)
+        if user is None:
+            print(
+                f"error: no user for {normalised} — use create-admin to make one from nothing",
+                file=sys.stderr,
+            )
+            return 1
+
+        previous_status = user.status
+        user.status = UserStatus.ACTIVE
+        user.role = UserRole.ADMIN
+        user.password_hash = password_hash
+        if full_name is not None:
+            user.full_name = full_name
+        db.commit()
+        db.refresh(user)
+
+        print(f"promoted {user.email} to ACTIVE ADMIN (was {previous_status.value})")
         print(f"database: {settings.database_url}")
     return 0
 
@@ -106,6 +159,13 @@ def build_parser() -> argparse.ArgumentParser:
     token = sub.add_parser("mint-token", help="Print a bearer token (dev only).")
     token.add_argument("--email", required=True)
 
+    promote = sub.add_parser(
+        "promote-admin", help="Turn an existing user into an ACTIVE ADMIN, resetting its password."
+    )
+    promote.add_argument("--email", required=True)
+    promote.add_argument("--password", required=True)
+    promote.add_argument("--full-name", default=None)
+
     return parser
 
 
@@ -116,6 +176,8 @@ def main(argv: list[str] | None = None) -> int:
         return create_admin(args.email, args.password, args.full_name)
     if args.command == "mint-token":
         return mint_token(args.email)
+    if args.command == "promote-admin":
+        return promote_admin(args.email, args.password, args.full_name)
 
     return 2
 

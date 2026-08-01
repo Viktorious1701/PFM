@@ -6,17 +6,31 @@
  * `undefined` at runtime, crashing this layout with "Element type is invalid".
  * See node_modules/expo-router/build/exports.js:111. docs.expo.dev still shows
  * the old root import — the package source is authoritative. (ADR-0009)
+ *
+ * Chrome per DESIGN.md "screen chrome": `surface` bar with a `border` top
+ * hairline (never a shadow, per the flat-editorial depth rule), `sky-deep`
+ * active tint / `ink-muted` inactive, Lora header titles.
  */
 import { Tabs } from 'expo-router/js-tabs';
 import { Text } from 'react-native';
+
+import { color } from '../../src/theme/tokens';
 
 export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#2563eb',
-        tabBarInactiveTintColor: '#64748b',
-        headerTitleStyle: { fontWeight: '600' },
+        tabBarActiveTintColor: color.primary,
+        tabBarInactiveTintColor: color.textMuted,
+        tabBarStyle: {
+          backgroundColor: color.surface,
+          borderTopColor: color.border,
+          borderTopWidth: 1,
+        },
+        tabBarLabelStyle: { fontFamily: 'Inter_500Medium', fontSize: 11 },
+        headerStyle: { backgroundColor: color.surface },
+        headerTintColor: color.text,
+        headerTitleStyle: { fontFamily: 'Lora_600SemiBold', fontSize: 18 },
       }}
     >
       <Tabs.Screen

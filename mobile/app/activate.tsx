@@ -1,29 +1,10 @@
-/**
- * Complete account activation.
- *
- * Story: SRS §6 Feature-01 · US-01-02 / SDS §5.2.2 UM-US-02
- * Endpoint: POST /api/v1/users/activate (SDS §6.4.2)
- *
- * BOILERPLATE. UM-US-02 is listed 2nd in the epic and is *pending* in
- * specs/001-user-onboarding/spec.md, whose "Out of scope" section names it
- * explicitly. The single-page Name + Password form follows UXR-04.
- *
- * The token is never displayed. The invited user legitimately holds it — it came
- * from their own email — but printing it on screen or passing it to an alert
- * normalises token display, and the same habit in a log would breach
- * constitution LA-01 / SEC-01. Only its presence is confirmed.
- *
- * Deep link: `pfm://activate?token=…` on native (scheme is set in app.json).
- * On web the equivalent is http://localhost:8081/activate?token=demo
- * Use `?token=expired` to see the expiry path (SDS §2.4.2, spec BR-04).
- */
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { ApiError, ErrorCode, fieldErrors, toApiError } from '../src/api/errors';
-import { activateAccount } from '../src/api/users';
+import { activateAccount, checkTokenState } from '../src/api/users';
 import { Banner } from '../src/components/Banner';
 import { Button } from '../src/components/Button';
 import { Screen } from '../src/components/Screen';
@@ -39,6 +20,7 @@ export default function ActivateScreen() {
 
   const [failure, setFailure] = useState<ApiError | null>(null);
   const [succeeded, setSucceeded] = useState<string | null>(null);
+  const [tokenUsable, setTokenUsable] = useState<boolean>(true);
 
   const {
     control,
@@ -46,6 +28,43 @@ export default function ActivateScreen() {
     setError,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ defaultValues: { fullName: '', password: '' } });
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const stateResult = await checkTokenState(token);
+        if (cancelled) return;
+        if (stateResult.state === 'expired') {
+          setTokenUsable(false);
+          setFailure(
+            new ApiError(
+              'INVITATION_TOKEN_EXPIRED',
+              'The provided invitation link has expired. Please request a new invitation.',
+              400
+            )
+          );
+        } else if (stateResult.state === 'not_usable') {
+          setTokenUsable(false);
+          setFailure(
+            new ApiError(
+              'INVITATION_TOKEN_INVALID',
+              'The provided invitation link is invalid or has already been used.',
+              400
+            )
+          );
+        }
+      } catch {
+        // Fallback: user can still attempt submission
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const onSubmit = async ({ fullName, password }: FormValues) => {
     setFailure(null);
@@ -76,16 +95,11 @@ export default function ActivateScreen() {
   };
 
   return (
-    <Screen testID={ActivateIds.screen} note="UM-US-02 · not yet specified — boilerplate only">
+    <Screen testID={ActivateIds.screen} note="UM-US-02 · POST /api/v1/users/activate">
       <View style={styles.header}>
         <Text style={styles.title}>Complete Account Activation</Text>
         <Text style={styles.description}>
           Choose your name and a password to finish setting up your account.
-        </Text>
-        <Text style={styles.tokenState}>
-          {token
-            ? 'Activation link recognised.'
-            : 'No activation token in this link — open the link from your invitation email.'}
         </Text>
       </View>
 
@@ -106,7 +120,7 @@ export default function ActivateScreen() {
                 testID={ActivateIds.fullNameInput}
                 placeholder="Jane Doe"
                 autoComplete="name"
-                editable={!isSubmitting}
+                editable={!isSubmitting && tokenUsable}
                 value={value}
                 onChangeText={onChange}
                 onBlur={onBlur}
@@ -127,12 +141,11 @@ export default function ActivateScreen() {
                 secureTextEntry
                 autoCapitalize="none"
                 autoComplete="new-password"
-                editable={!isSubmitting}
+                editable={!isSubmitting && tokenUsable}
                 value={value}
                 onChangeText={onChange}
                 onBlur={onBlur}
                 error={errors.password?.message}
-                hint="The server enforces the real password policy (constitution VL-04)."
               />
             )}
           />
@@ -142,7 +155,7 @@ export default function ActivateScreen() {
             testID={ActivateIds.submit}
             onPress={handleSubmit(onSubmit)}
             pending={isSubmitting}
-            disabled={!token}
+            disabled={!token || !tokenUsable}
           />
 
           {failure ? (
@@ -156,7 +169,11 @@ export default function ActivateScreen() {
 
 const styles = StyleSheet.create({
   header: { gap: space.sm },
-  title: { fontSize: font.size.title, fontWeight: font.weight.bold, color: color.text },
-  description: { fontSize: font.size.body, color: color.textMuted, lineHeight: 20 },
-  tokenState: { fontSize: font.size.sm, color: color.textMuted, fontStyle: 'italic' },
+  title: { fontFamily: font.family.heading, fontSize: font.size.title, color: color.text },
+  description: {
+    fontFamily: font.family.body,
+    fontSize: font.size.body,
+    color: color.textMuted,
+    lineHeight: 20,
+  },
 });

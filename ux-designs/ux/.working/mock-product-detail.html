@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Common Kingfisher / Bói cá lam — Sâm Thương</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Inter:wght@400;500;600&display=swap&subset=vietnamese,latin" rel="stylesheet">
+<style>
+  :root{
+    --bg-page:#FBF9F4; --surface:#FFFFFF; --surface-sunken:#F1EDE4; --border:#E4DFD3;
+    --ink:#3B4147; --ink-muted:#6B7178; --caption-deep:#71736B;
+    --sky-soft:#7E9AAB; --sky-deep:#4C6577; --sky-deep-hover:#3D5464;
+    --sage-soft:#8B9B7A; --sage-deep:#5E6F4B;
+    --success:#4F7A52; --pending:#96681F; --error:#A85248;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg-page); color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif; font-weight:400;
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:'Lora',Georgia,serif; margin:0; color:var(--ink);}
+  a{color:var(--sky-deep); text-decoration:none;}
+  a:hover{color:var(--sky-deep-hover);}
+  .wrap{max-width:1200px; margin:0 auto; padding:0 32px;}
+
+  /* focus styles */
+  a:focus-visible, button:focus-visible, .chip:focus-visible, [tabindex]:focus-visible{
+    outline:2px solid var(--sky-deep); outline-offset:3px; border-radius:2px;
+  }
+
+  /* ---------- NAV ---------- */
+  .nav{position:sticky; top:0; z-index:50; background:var(--surface); border-bottom:1px solid var(--border);}
+  .nav-inner{display:flex; align-items:center; gap:32px; height:72px;}
+  .wordmark{font-family:'Lora',serif; font-weight:700; font-size:1.4rem; color:var(--ink); letter-spacing:.3px;}
+  .nav-links{display:flex; gap:28px; margin-left:auto; font-size:.95rem; font-weight:500;}
+  .nav-links a{color:var(--ink);}
+  .nav-links a:hover{color:var(--sky-deep);}
+  .nav-right{display:flex; align-items:center; gap:18px;}
+  .cart{display:inline-flex; align-items:center; gap:6px; color:var(--ink); font-weight:500; position:relative;}
+  .cart-badge{background:var(--sky-deep); color:#fff; font-size:.72rem; font-weight:600; min-width:19px; height:19px; padding:0 5px; border-radius:9999px; display:inline-flex; align-items:center; justify-content:center;}
+  .lang{display:inline-flex; align-items:center; gap:8px; font-size:.9rem; font-weight:500; padding-left:18px; border-left:1px solid var(--border);}
+  .lang .active{color:var(--ink);}
+  .lang .inactive{color:var(--ink-muted);}
+  .lang a{color:inherit;}
+
+  /* ---------- BREADCRUMB ---------- */
+  .breadcrumb{font-size:.85rem; color:var(--ink-muted); padding:28px 0 0;}
+  .breadcrumb a{color:var(--ink-muted);}
+  .breadcrumb a:hover{color:var(--sky-deep);}
+  .breadcrumb .sep{margin:0 8px; color:var(--border);}
+  .breadcrumb .current{color:var(--ink);}
+
+  /* ---------- PRODUCT LAYOUT ---------- */
+  .product{display:grid; grid-template-columns:60% 40%; gap:56px; padding:32px 0 72px; align-items:start;}
+  .photo-col{position:relative;}
+  .photo{
+    position:relative; border:1px solid var(--border); border-radius:2px; overflow:hidden;
+    aspect-ratio:4/5;
+    background:linear-gradient(150deg,#8fb0c0 0%,#6f93a6 38%,#5e7a63 78%,#48633f 100%);
+  }
+  .photo::after{
+    content:""; position:absolute; inset:0;
+    background:radial-gradient(circle at 62% 40%, rgba(255,255,255,.28), transparent 46%),
+               radial-gradient(circle at 30% 78%, rgba(94,111,75,.35), transparent 55%);
+  }
+  .wm-badge{
+    position:absolute; top:16px; left:16px; z-index:2;
+    background:rgba(59,65,71,.72); color:#fff; font-size:.74rem; font-weight:500;
+    padding:6px 12px; border-radius:9999px; backdrop-filter:blur(2px);
+    letter-spacing:.2px;
+  }
+  .photo-caption{
+    font-style:italic; color:var(--caption-deep); font-size:.9rem; margin-top:14px;
+  }
+
+  .detail-col{padding-top:4px;}
+  h1.species{font-weight:700; font-size:2.5rem; line-height:1.12; letter-spacing:-.4px;}
+  .sci-name{font-style:italic; color:var(--ink-muted); font-size:1.05rem; margin-top:6px;}
+  .vn-sub{color:var(--sage-deep); font-size:1rem; margin-top:4px; font-weight:500;}
+  .desc{color:var(--ink-muted); font-size:1rem; margin:22px 0 8px; max-width:42ch;}
+
+  .price-block{margin:28px 0 4px; padding-bottom:24px; border-bottom:1px solid var(--border);}
+  .price{font-family:'Inter',sans-serif; font-weight:600; color:var(--ink); font-size:2rem; letter-spacing:-.5px;}
+  .price-note{color:var(--ink-muted); font-size:.85rem; margin-top:4px;}
+
+  .variant-group{margin-top:26px;}
+  .variant-label{display:block; font-size:.82rem; font-weight:600; letter-spacing:.5px; text-transform:uppercase; color:var(--ink-muted); margin-bottom:12px;}
+  .variant-label .vn{text-transform:none; font-weight:400; color:var(--caption-deep); font-style:italic; letter-spacing:0;}
+  .chips{display:flex; flex-wrap:wrap; gap:10px;}
+  .chip{
+    font-family:'Inter',sans-serif; font-size:.92rem; font-weight:500; color:var(--ink);
+    background:var(--surface); border:1px solid var(--border); border-radius:6px;
+    padding:11px 16px; cursor:pointer; display:flex; flex-direction:column; gap:2px;
+    line-height:1.3; min-width:96px; transition:border-color .15s, background .15s;
+  }
+  .chip .chip-price{font-size:.8rem; color:var(--ink-muted); font-weight:400;}
+  .chip:hover{border-color:var(--sky-soft);}
+  .chip[aria-pressed="true"]{
+    border-color:var(--sky-deep); background:#EDF1F3; color:var(--sky-deep);
+  }
+  .chip[aria-pressed="true"] .chip-price{color:var(--sky-deep);}
+  .chip[disabled], .chip.soldout{opacity:.5; cursor:not-allowed;}
+
+  .meta-lines{margin-top:26px; font-size:.9rem; color:var(--ink-muted); display:grid; gap:10px;}
+  .meta-lines .line{display:flex; gap:10px; align-items:baseline;}
+  .meta-lines .k{color:var(--ink); font-weight:500; min-width:118px; flex-shrink:0;}
+  .made-to-order{color:var(--pending);}
+
+  .add-cart{
+    margin-top:30px; display:inline-flex; align-items:center; justify-content:center; gap:10px;
+    background:var(--sky-deep); color:#fff; font-family:'Inter',sans-serif; font-weight:600; font-size:1rem;
+    border:none; border-radius:9999px; padding:16px 40px; cursor:pointer; width:100%;
+    transition:background .15s;
+  }
+  .add-cart:hover{background:var(--sky-deep-hover);}
+
+  /* ---------- FOOTER ---------- */
+  footer{background:var(--surface-sunken); border-top:1px solid var(--border); margin-top:24px;}
+  .foot-inner{display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:40px; padding:52px 0 40px;}
+  .foot-name{font-family:'Lora',serif; font-weight:700; font-size:1.25rem; color:var(--ink);}
+  .foot-tag{color:var(--ink-muted); font-size:.9rem; margin-top:10px; max-width:34ch;}
+  .foot-tag .vn{font-style:italic; color:var(--caption-deep); display:block; margin-top:2px;}
+  .foot-col h3{font-family:'Inter',sans-serif; font-size:.78rem; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:var(--ink-muted); margin-bottom:14px;}
+  .foot-col ul{list-style:none; margin:0; padding:0; display:grid; gap:9px; font-size:.92rem;}
+  .foot-col a{color:var(--ink);}
+  .foot-col a:hover{color:var(--sky-deep);}
+  .foot-bottom{border-top:1px solid var(--border); padding:20px 0 40px; font-size:.82rem; color:var(--ink-muted);}
+
+  @media(max-width:840px){
+    .product{grid-template-columns:1fr; gap:32px;}
+    .nav-links{display:none;}
+    .foot-inner{grid-template-columns:1fr; gap:28px;}
+    h1.species{font-size:2rem;}
+  }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a href="#" class="wordmark" aria-label="Sâm Thương home">Sâm Thương</a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#">Shop</a>
+      <a href="#">Portfolio</a>
+      <a href="#">About</a>
+      <a href="#">Contact</a>
+    </nav>
+    <div class="nav-right">
+      <a href="#" class="cart" aria-label="Cart, 2 items">
+        <span aria-hidden="true">Cart</span>
+        <span class="cart-badge">2</span>
+      </a>
+      <span class="lang" aria-label="Language">
+        <a href="#" class="active" aria-current="true">EN</a>
+        <span aria-hidden="true" style="color:var(--border)">|</span>
+        <a href="#" class="inactive">VN</a>
+      </span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="#">Shop</a><span class="sep" aria-hidden="true">/</span>
+    <a href="#">Wetlands</a><span class="sep" aria-hidden="true">/</span>
+    <span class="current">Bói cá lam</span>
+  </nav>
+
+  <div class="product">
+    <!-- PHOTO -->
+    <section class="photo-col" aria-label="Product image">
+      <figure style="margin:0;">
+        <div class="photo" role="img" aria-label="Common Kingfisher perched over water at Tràm Chim National Park — digital preview, watermarked">
+          <span class="wm-badge">Digital preview — watermarked</span>
+        </div>
+        <figcaption class="photo-caption">— Common Kingfisher · Tràm Chim National Park</figcaption>
+      </figure>
+    </section>
+
+    <!-- DETAIL -->
+    <section class="detail-col" aria-label="Product details">
+      <h1 class="species">Common Kingfisher</h1>
+      <p class="sci-name">Alcedo atthis</p>
+      <p class="vn-sub">Bói cá lam</p>
+
+      <p class="desc">A flash of cobalt over still water, caught at first light along the reed channels. Photographed on a quiet morning as the bird held its perch above the Mekong Delta wetlands.</p>
+
+      <div class="price-block">
+        <div class="price" id="price">980.000₫</div>
+        <div class="price-note" id="price-note">Print — A4, made to order / Bản in A4</div>
+      </div>
+
+      <!-- PRINT VARIANTS -->
+      <div class="variant-group">
+        <span class="variant-label">Print — made to order <span class="vn">/ Bản in</span></span>
+        <div class="chips" role="group" aria-label="Print size">
+          <button type="button" class="chip" aria-pressed="true">
+            <span>A4</span><span class="chip-price">980.000₫</span>
+          </button>
+          <button type="button" class="chip" aria-pressed="false">
+            <span>A3</span><span class="chip-price">1.250.000₫</span>
+          </button>
+          <button type="button" class="chip soldout" aria-pressed="false" aria-disabled="true">
+            <span>A2</span><span class="chip-price">Sold out</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- DIGITAL VARIANTS -->
+      <div class="variant-group">
+        <span class="variant-label">Digital download <span class="vn">/ Bản kỹ thuật số</span></span>
+        <div class="chips" role="group" aria-label="Digital resolution">
+          <button type="button" class="chip" aria-pressed="false">
+            <span>Web-res</span><span class="chip-price">350.000₫</span>
+          </button>
+          <button type="button" class="chip" aria-pressed="false">
+            <span>Print-res</span><span class="chip-price">650.000₫</span>
+          </button>
+        </div>
+      </div>
+
+      <dl class="meta-lines">
+        <div class="line"><dt class="k">License</dt><dd style="margin:0;">Personal, non-commercial use / Sử dụng cá nhân</dd></div>
+        <div class="line"><dt class="k made-to-order">Made to order</dt><dd style="margin:0;" class="made-to-order">Prints made to order · ships in 7–10 days / Đặt in theo yêu cầu</dd></div>
+      </dl>
+
+      <button type="button" class="add-cart">Add to cart / Thêm vào giỏ</button>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div>
+      <div class="foot-name">Sâm Thương</div>
+      <p class="foot-tag">Wetland &amp; forest bird photography, made to order.
+        <span class="vn">Nhiếp ảnh chim vùng đất ngập nước.</span>
+      </p>
+    </div>
+    <div class="foot-col">
+      <h3>Explore</h3>
+      <ul>
+        <li><a href="#">Shop</a></li>
+        <li><a href="#">Portfolio</a></li>
+        <li><a href="#">About</a></li>
+        <li><a href="#">Contact</a></li>
+      </ul>
+    </div>
+    <div class="foot-col">
+      <h3>Orders</h3>
+      <ul>
+        <li><a href="#">Track your order / Theo dõi đơn hàng</a></li>
+        <li><a href="#">Shipping &amp; returns</a></li>
+        <li><a href="#">Licensing</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="wrap foot-bottom">© 2026 Sâm Thương · Tràm Chim, Việt Nam</div>
+</footer>
+
+</body>
+</html>

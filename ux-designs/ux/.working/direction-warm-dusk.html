@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SamThuongShop — Warm Dusk</title>
+<style>
+/*
+  DIRECTION: warm-dusk  (SCREEN: Home / Hero)
+  Personality: Nature editorial — richer, moodier, premium & warm.
+  Larger type, higher contrast, a full-bleed dramatic hero with copy overlaid.
+  Denser rhythm than cream-journal.
+  PALETTE:
+    --sand     #EDE3D2  (warm sand background)
+    --sand-dk  #E2D4BC  (secondary surface)
+    --clay     #B5714E  (clay / terracotta accent)
+    --clay-dk  #9A5B3B  (accent hover)
+    --olive    #4A4A32  (deep olive headings/ink)
+    --olive-dk #3A3A26  (darkest ink)
+    --cream    #F6EEDF  (light text on dark)
+    --muted    #8C7B63  (captions / meta)
+    --line     #D8C7AC  (hairline dividers)
+*/
+:root{
+  --sand:#EDE3D2; --sand-dk:#E2D4BC; --clay:#B5714E; --clay-dk:#9A5B3B;
+  --olive:#4A4A32; --olive-dk:#3A3A26; --cream:#F6EEDF; --muted:#8C7B63; --line:#D8C7AC;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  background:#D9CBB2;
+  font-family:Georgia,"Times New Roman",serif;
+  color:var(--olive);line-height:1.55;
+  padding:32px 16px;
+}
+.frame{max-width:1200px;margin:0 auto;background:var(--sand);
+  border:1px solid var(--line);box-shadow:0 26px 70px rgba(58,58,38,.28);}
+
+.rationale{
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:12.5px;line-height:1.55;color:var(--muted);
+  background:var(--sand-dk);border-bottom:1px solid var(--line);padding:12px 40px;
+}
+.rationale b{color:var(--clay-dk);font-weight:600;}
+
+nav{display:flex;align-items:center;justify-content:space-between;padding:22px 40px;
+  background:var(--olive);}
+.brand{font-family:Georgia,serif;font-size:23px;color:var(--cream);letter-spacing:.5px;}
+.brand .dot{color:var(--clay);}
+.navlinks{display:flex;gap:30px;font-family:system-ui,sans-serif;font-size:14px;}
+.navlinks a{color:var(--sand);text-decoration:none;padding-bottom:3px;border-bottom:2px solid transparent;transition:.15s;}
+.navlinks a:hover{color:var(--clay);border-bottom-color:var(--clay);}
+.navright{display:flex;align-items:center;gap:22px;font-family:system-ui,sans-serif;font-size:13px;color:var(--sand);}
+.lang b{color:#fff;}
+.cart{position:relative;font-size:18px;}
+.cart .badge{position:absolute;top:-8px;right:-10px;background:var(--clay);color:#fff;font-family:system-ui,sans-serif;font-size:10px;border-radius:10px;padding:1px 5px;}
+
+/* full-bleed dramatic hero */
+.hero{position:relative;min-height:600px;overflow:hidden;
+  background:linear-gradient(120deg,#7A4A2E 0%,#B5714E 38%,#8A6A3E 68%,#4A4A32 100%);}
+.hero::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(90deg,rgba(40,32,20,.72) 0%,rgba(40,32,20,.30) 52%,rgba(40,32,20,0) 100%);}
+.hero-inner{position:relative;z-index:2;max-width:640px;padding:96px 40px;
+  display:flex;flex-direction:column;justify-content:center;min-height:600px;}
+.eyebrow{font-family:system-ui,sans-serif;font-size:12px;letter-spacing:4px;text-transform:uppercase;color:#EAC9AC;margin-bottom:22px;}
+.hero h1{font-family:Georgia,serif;font-weight:normal;font-size:74px;line-height:.98;color:var(--cream);margin-bottom:14px;text-shadow:0 2px 18px rgba(0,0,0,.35);}
+.hero .sub{font-family:Georgia,serif;font-style:italic;font-size:24px;color:#EAC9AC;margin-bottom:26px;}
+.hero p.lede{font-size:18px;color:#F0E6D6;max-width:470px;margin-bottom:38px;text-shadow:0 1px 8px rgba(0,0,0,.3);}
+.hero-cap{position:absolute;right:22px;bottom:18px;z-index:2;font-family:Georgia,serif;font-style:italic;font-size:13px;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.6);}
+.btns{display:flex;gap:16px;}
+.btn{font-family:system-ui,sans-serif;font-size:14.5px;text-decoration:none;padding:15px 30px;border-radius:2px;transition:.18s;display:inline-block;}
+.btn-primary{background:var(--clay);color:#fff;border:1px solid var(--clay);}
+.btn-primary:hover{background:var(--clay-dk);border-color:var(--clay-dk);}
+.btn-ghost{background:transparent;color:var(--cream);border:1px solid var(--cream);}
+.btn-ghost:hover{background:var(--cream);color:var(--olive);}
+
+/* featured */
+.featured{padding:70px 40px 78px;background:var(--sand);}
+.feat-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:38px;
+  border-bottom:2px solid var(--clay);padding-bottom:16px;}
+.feat-head h2{font-family:Georgia,serif;font-weight:normal;font-size:38px;color:var(--olive);}
+.feat-head h2 .em{font-style:italic;color:var(--clay);}
+.feat-head a{font-family:system-ui,sans-serif;font-size:13px;color:var(--clay-dk);text-decoration:none;}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}
+.card{background:var(--cream);border:1px solid var(--line);transition:.2s;}
+.card:hover{box-shadow:0 18px 36px rgba(58,58,38,.24);transform:translateY(-4px);}
+.photo{position:relative;overflow:hidden;}
+.photo .cap{position:absolute;left:14px;bottom:11px;font-family:Georgia,serif;font-style:italic;font-size:12.5px;color:#fff;text-shadow:0 1px 5px rgba(0,0,0,.6);}
+.card .photo{height:250px;}
+.card-body{padding:22px 22px 26px;}
+.card h3{font-family:Georgia,serif;font-weight:normal;font-size:23px;color:var(--olive);margin-bottom:4px;}
+.card .loc{font-family:Georgia,serif;font-style:italic;font-size:13px;color:var(--muted);margin-bottom:16px;}
+.card-foot{display:flex;align-items:center;justify-content:space-between;}
+.avail{font-family:system-ui,sans-serif;font-size:11px;letter-spacing:.5px;color:#fff;background:var(--olive);border-radius:2px;padding:4px 9px;}
+.price{font-family:Georgia,serif;font-size:21px;color:var(--clay-dk);}
+.badge-wm{position:absolute;top:12px;left:12px;font-family:system-ui,sans-serif;font-size:10.5px;letter-spacing:.4px;background:rgba(154,91,59,.92);color:#fff;padding:4px 9px;border-radius:2px;}
+.made-note{font-family:system-ui,sans-serif;font-size:11px;color:var(--muted);margin-top:13px;display:flex;align-items:center;gap:6px;}
+.made-note::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--clay);display:inline-block;}
+
+footer{background:var(--olive);padding:26px 40px;font-family:system-ui,sans-serif;font-size:12px;color:var(--sand);display:flex;justify-content:space-between;}
+footer .clay{color:var(--clay);}
+
+@media(max-width:820px){
+  .hero h1{font-size:52px;} .hero-inner{padding:60px 28px;min-height:auto;}
+  .grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <div class="rationale">
+    <b>Direction 2 — Warm Dusk.</b> Same Nature editorial DNA (earthy palette, serif headings, photography-led), pushed richer and moodier.
+    Terracotta clay + deep olive on warm sand, larger type and higher contrast, and a full-bleed dramatic hero with the copy laid over the photograph — the premium, warm end of the spectrum.
+  </div>
+
+  <nav>
+    <div class="brand">Sam Thuong<span class="dot">.</span></div>
+    <div class="navlinks">
+      <a href="#">Shop</a>
+      <a href="#">Portfolio</a>
+      <a href="#">About</a>
+      <a href="#">Contact</a>
+    </div>
+    <div class="navright">
+      <span class="lang"><b>EN</b>&nbsp;|&nbsp;VN</span>
+      <span class="cart">&#128722;<span class="badge">2</span></span>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">Bird photography · Vietnam</div>
+      <h1>Sam Thuong</h1>
+      <div class="sub">Light, patience &amp; the wild edges of the delta</div>
+      <p class="lede">From mangrove dusk to misted highland forest, a decade of chasing Vietnam's rarest birds — collected as museum-grade prints and instant digital downloads.</p>
+      <div class="btns">
+        <a class="btn btn-primary" href="#">Shop prints</a>
+        <a class="btn btn-ghost" href="#">View portfolio</a>
+      </div>
+    </div>
+    <div class="hero-cap">— White-throated Kingfisher, Can Gio at dusk</div>
+  </section>
+
+  <section class="featured">
+    <div class="feat-head">
+      <h2>Featured <span class="em">Collection</span></h2>
+      <a href="#">Browse all prints &rarr;</a>
+    </div>
+    <div class="grid">
+
+      <div class="card">
+        <div class="photo" style="height:250px;background:linear-gradient(150deg,#C98A55,#8A4E2C);">
+          <div class="cap">— Sarus Crane, Tram Chim</div>
+        </div>
+        <div class="card-body">
+          <h3>Sarus Crane</h3>
+          <div class="loc">Tram Chim National Park</div>
+          <div class="card-foot">
+            <span class="avail">Print / Digital</span>
+            <span class="price">1.200.000₫</span>
+          </div>
+          <div class="made-note">Prints made to order · ships in 7–10 days</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="photo" style="height:250px;background:linear-gradient(150deg,#B5714E,#5E3A22);">
+          <div class="badge-wm">Digital preview — watermarked</div>
+          <div class="cap">— Oriental Dwarf Kingfisher, Cat Tien</div>
+        </div>
+        <div class="card-body">
+          <h3>Dwarf Kingfisher</h3>
+          <div class="loc">Cat Tien Forest</div>
+          <div class="card-foot">
+            <span class="avail">Digital download</span>
+            <span class="price">450.000₫</span>
+          </div>
+          <div class="made-note">Instant download · high-resolution</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="photo" style="height:250px;background:linear-gradient(150deg,#8A7A44,#4A4A32);">
+          <div class="cap">— Painted Stork, U Minh</div>
+        </div>
+        <div class="card-body">
+          <h3>Painted Stork</h3>
+          <div class="loc">U Minh Wetlands</div>
+          <div class="card-foot">
+            <span class="avail">Print / Digital</span>
+            <span class="price">980.000₫</span>
+          </div>
+          <div class="made-note">Prints made to order · ships in 7–10 days</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    <span>© 2026 SamThuong<span class="clay">Shop</span> — Wild birds of Vietnam</span>
+    <span>Prints &amp; digital · Shipped worldwide</span>
+  </footer>
+
+</div>
+</body>
+</html>

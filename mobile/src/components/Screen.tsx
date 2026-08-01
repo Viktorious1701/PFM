@@ -42,5 +42,5 @@ export function Screen({ children, note, scroll = true, testID }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: color.bg },
   scrollContent: { flexGrow: 1 },
-  body: { flex: 1, padding: space.lg, gap: space.lg },
+  body: { flex: 1, paddingHorizontal: space.xl, paddingVertical: space.lg, gap: space.lg },
 });

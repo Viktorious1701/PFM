@@ -55,3 +55,14 @@ def add_pending_user(db: Session, email: str) -> UserModel:
     db.add(user)
     db.flush()
     return user
+
+def activate(db: Session, user: UserModel, full_name: str, password_hash: str) -> UserModel:
+    """Activate a PENDING user with their full name and password hash.
+
+    Flushed, not committed (AR-06).
+    """
+    user.status = UserStatus.ACTIVE
+    user.full_name = full_name
+    user.password_hash = password_hash
+    db.flush()
+    return user

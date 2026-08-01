@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout / Thanh toán — Sâm Thương</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Inter:wght@400;500;600&display=swap&subset=vietnamese,latin" rel="stylesheet">
+<style>
+  :root{
+    --bg-page:#FBF9F4; --surface:#FFFFFF; --surface-sunken:#F1EDE4; --border:#E4DFD3;
+    --ink:#3B4147; --ink-muted:#6B7178; --caption-deep:#71736B;
+    --sky-soft:#7E9AAB; --sky-deep:#4C6577; --sky-deep-hover:#3D5464;
+    --sage-soft:#8B9B7A; --sage-deep:#5E6F4B;
+    --success:#4F7A52; --pending:#96681F; --error:#A85248;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg-page); color:var(--ink);
+    font-family:"Inter",system-ui,sans-serif; font-weight:400;
+    font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:"Lora",Georgia,serif; color:var(--ink); margin:0; line-height:1.2}
+  a{color:var(--sky-deep); text-decoration:none}
+  a:hover{color:var(--sky-deep-hover)}
+  .wrap{max-width:1200px; margin:0 auto; padding:0 32px}
+  :focus-visible{outline:2px solid var(--sky-deep); outline-offset:2px; border-radius:3px}
+
+  /* ---- Nav ---- */
+  .nav{position:sticky; top:0; z-index:20; background:var(--surface); border-bottom:1px solid var(--border)}
+  .nav-inner{display:flex; align-items:center; gap:32px; height:68px}
+  .wordmark{font-family:"Lora",serif; font-weight:700; font-size:22px; color:var(--ink); letter-spacing:.2px}
+  .nav-links{display:flex; gap:26px; margin-left:8px}
+  .nav-links a{color:var(--ink); font-weight:500; font-size:15px}
+  .nav-links a:hover{color:var(--sky-deep)}
+  .nav-right{margin-left:auto; display:flex; align-items:center; gap:22px}
+  .cart{position:relative; display:inline-flex; align-items:center; gap:8px; color:var(--ink); font-weight:500; font-size:15px}
+  .cart .badge{background:var(--sky-deep); color:#fff; font-size:12px; font-weight:600; min-width:20px; height:20px;
+    border-radius:9999px; display:inline-flex; align-items:center; justify-content:center; padding:0 6px}
+  .lang{font-size:14px; font-weight:500}
+  .lang .on{color:var(--ink)} .lang .off{color:var(--ink-muted)} .lang .sep{color:var(--border); margin:0 6px}
+
+  /* ---- Layout ---- */
+  main{padding:44px 0 72px}
+  .page-head{margin-bottom:36px}
+  .page-head h1{font-size:38px; font-weight:700}
+  .page-head .sub{color:var(--ink-muted); font-size:15px; margin-top:6px}
+  .grid{display:grid; grid-template-columns:1.35fr .95fr; gap:56px; align-items:start}
+
+  /* ---- Form ---- */
+  .section{margin-bottom:38px}
+  .section > h2{font-size:21px; font-weight:600; margin-bottom:4px}
+  .section .note{color:var(--ink-muted); font-size:13.5px; margin:0 0 18px}
+  .field{margin-bottom:18px}
+  .field label{display:block; font-weight:500; font-size:14px; margin-bottom:6px}
+  .field .help{color:var(--ink-muted); font-size:12.5px; margin-top:6px}
+  input[type=text],input[type=email],select{
+    width:100%; font-family:inherit; font-size:15px; color:var(--ink);
+    background:var(--surface); border:1px solid var(--border); border-radius:6px;
+    padding:11px 13px;
+  }
+  input::placeholder{color:#a7a49b}
+  input:focus,select:focus{outline:2px solid var(--sky-deep); outline-offset:1px; border-color:var(--sky-deep)}
+  .field.invalid input{border-color:var(--error)}
+  .err{display:flex; align-items:center; gap:6px; color:var(--error); font-size:13px; font-weight:500; margin-top:6px}
+  .err .ico{display:inline-flex; width:16px; height:16px; border-radius:9999px; background:var(--error); color:#fff;
+    align-items:center; justify-content:center; font-size:11px; font-weight:700; flex:none}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+
+  /* ---- Payment radios ---- */
+  .pay{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px}
+  .pay li{border:1px solid var(--border); border-radius:6px; background:var(--surface)}
+  .pay label{display:flex; align-items:flex-start; gap:12px; padding:14px 16px; cursor:pointer; font-weight:500}
+  .pay input[type=radio]{margin-top:3px; accent-color:var(--sky-deep); width:17px; height:17px}
+  .pay .method{display:flex; flex-direction:column}
+  .pay .method small{color:var(--ink-muted); font-weight:400; font-size:12.5px; margin-top:2px}
+  .pay li.disabled{background:var(--surface-sunken); opacity:.85}
+  .pay li.disabled label{cursor:not-allowed}
+  .pay li.disabled .method small{color:var(--ink-muted)}
+
+  /* ---- Summary card ---- */
+  .summary{background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:26px; position:sticky; top:96px}
+  .summary h2{font-size:19px; font-weight:600; margin-bottom:18px}
+  .line{display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--border)}
+  .thumb{width:64px; height:64px; border:1px solid var(--border); border-radius:2px; flex:none}
+  .thumb.heron{background:linear-gradient(140deg,#8B9B7A 0%,#5E6F4B 55%,#4C6577 100%)}
+  .thumb.kingfisher{background:linear-gradient(140deg,#7E9AAB 0%,#4C6577 60%,#3D5464 100%)}
+  .line .meta{flex:1}
+  .line .meta .title{font-weight:600; font-size:14.5px}
+  .line .meta .cap{font-style:italic; color:var(--caption-deep); font-size:12.5px; margin-top:2px}
+  .line .meta .tag{display:inline-block; margin-top:7px; font-size:11.5px; font-weight:600; letter-spacing:.3px;
+    text-transform:uppercase; padding:2px 9px; border-radius:9999px}
+  .tag.print{background:var(--surface-sunken); color:var(--sage-deep); border:1px solid var(--border)}
+  .tag.digital{background:var(--surface-sunken); color:var(--sky-deep); border:1px solid var(--border)}
+  .line .price{font-weight:600; font-size:14.5px; white-space:nowrap}
+  .totals{margin-top:16px; font-size:14.5px}
+  .totals .r{display:flex; justify-content:space-between; padding:7px 0}
+  .totals .r .lbl{color:var(--ink-muted)}
+  .totals .r small{display:block; color:var(--ink-muted); font-weight:400; font-size:11.5px}
+  .totals .grand{border-top:1px solid var(--border); margin-top:8px; padding-top:14px; font-weight:600; font-size:18px}
+  .btn-place{margin-top:22px; width:100%; border:none; cursor:pointer; font-family:inherit;
+    background:var(--sky-deep); color:#fff; font-weight:600; font-size:16px; padding:15px; border-radius:9999px}
+  .btn-place:hover{background:var(--sky-deep-hover)}
+  .secure{text-align:center; color:var(--ink-muted); font-size:12px; margin-top:12px}
+
+  /* ---- Footer ---- */
+  footer{background:var(--surface-sunken); border-top:1px solid var(--border); padding:44px 0 40px}
+  .foot{display:flex; flex-wrap:wrap; gap:40px; justify-content:space-between}
+  .foot .brand{font-family:"Lora",serif; font-weight:700; font-size:20px}
+  .foot .tag{color:var(--ink-muted); font-size:13.5px; margin-top:6px; max-width:280px}
+  .foot .tag .vn{display:block; font-style:italic; color:var(--caption-deep)}
+  .foot nav{display:flex; flex-direction:column; gap:8px}
+  .foot nav a{color:var(--ink); font-size:14px}
+  .foot .track{font-weight:500}
+
+  @media(max-width:860px){
+    .grid{grid-template-columns:1fr; gap:36px}
+    .summary{position:static}
+    .nav-links{display:none}
+    .page-head h1{font-size:30px}
+  }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <span class="wordmark">Sâm Thương</span>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#">Shop</a>
+      <a href="#">Portfolio</a>
+      <a href="#">About</a>
+      <a href="#">Contact</a>
+    </nav>
+    <div class="nav-right">
+      <a href="#" class="cart" aria-label="Cart, 2 items">
+        <span aria-hidden="true">🛒</span> Cart <span class="badge">2</span>
+      </a>
+      <span class="lang" aria-label="Language">
+        <span class="on">EN</span><span class="sep">|</span><a href="#" class="off">VN</a>
+      </span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="page-head">
+      <h1>Checkout / Thanh toán</h1>
+      <p class="sub">Review your details and place your order · Kiểm tra thông tin và đặt hàng</p>
+    </div>
+
+    <div class="grid">
+      <!-- LEFT: form -->
+      <form novalidate>
+        <section class="section" aria-labelledby="s-contact">
+          <h2 id="s-contact">Contact / Liên hệ</h2>
+          <p class="note">We'll use this to reach you about your order.</p>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email">
+            <span class="help">Order confirmation &amp; download link sent here / Gửi xác nhận &amp; liên kết tải về</span>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="s-ship">
+          <h2 id="s-ship">Shipping address / Địa chỉ giao hàng</h2>
+          <p class="note">Digital items don't need shipping / Bản kỹ thuật số không cần giao hàng</p>
+          <div class="field">
+            <label for="fullname">Full name / Họ và tên</label>
+            <input type="text" id="fullname" name="fullname" placeholder="Nguyễn Văn A" autocomplete="name">
+          </div>
+          <div class="field invalid">
+            <label for="phone">Phone / Số điện thoại</label>
+            <input type="text" id="phone" name="phone" value="098 12" aria-invalid="true" aria-describedby="phone-err" autocomplete="tel">
+            <span class="err" id="phone-err">
+              <span class="ico" aria-hidden="true">!</span>
+              Please enter a valid phone number / Vui lòng nhập số điện thoại hợp lệ
+            </span>
+          </div>
+          <div class="field">
+            <label for="addr">Street address / Địa chỉ</label>
+            <input type="text" id="addr" name="addr" placeholder="Số nhà, tên đường" autocomplete="street-address">
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="city">City / Tỉnh · Thành phố</label>
+              <input type="text" id="city" name="city" placeholder="Hà Nội" autocomplete="address-level1">
+            </div>
+            <div class="field">
+              <label for="ward">Ward / District — Phường · Quận</label>
+              <input type="text" id="ward" name="ward" placeholder="Ba Đình" autocomplete="address-level2">
+            </div>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="s-pay">
+          <h2 id="s-pay">Payment method / Phương thức thanh toán</h2>
+          <p class="note">Choose how you'd like to pay.</p>
+          <ul class="pay">
+            <li>
+              <label for="pay-momo">
+                <input type="radio" id="pay-momo" name="payment" checked>
+                <span class="method">Momo <small>e-wallet / ví điện tử</small></span>
+              </label>
+            </li>
+            <li>
+              <label for="pay-zalo">
+                <input type="radio" id="pay-zalo" name="payment">
+                <span class="method">ZaloPay <small>e-wallet / ví điện tử</small></span>
+              </label>
+            </li>
+            <li>
+              <label for="pay-bank">
+                <input type="radio" id="pay-bank" name="payment">
+                <span class="method">Bank transfer <small>Chuyển khoản ngân hàng</small></span>
+              </label>
+            </li>
+            <li class="disabled">
+              <label for="pay-cod">
+                <input type="radio" id="pay-cod" name="payment" disabled aria-describedby="cod-note">
+                <span class="method">Cash on Delivery (COD)
+                  <small id="cod-note">COD unavailable when your cart includes a digital item / Không áp dụng COD khi giỏ có bản kỹ thuật số</small>
+                </span>
+              </label>
+            </li>
+          </ul>
+        </section>
+      </form>
+
+      <!-- RIGHT: order summary -->
+      <aside aria-labelledby="s-summary">
+        <div class="summary">
+          <h2 id="s-summary">Order summary / Đơn hàng</h2>
+
+          <div class="line">
+            <div class="thumb heron" role="img" aria-label="Photo print of a Grey Heron / Diệc xám"></div>
+            <div class="meta">
+              <div class="title">Grey Heron / Diệc xám</div>
+              <div class="cap">Fine-art print · A3</div>
+              <span class="tag print">Print</span>
+            </div>
+            <div class="price">1.250.000₫</div>
+          </div>
+
+          <div class="line">
+            <div class="thumb kingfisher" role="img" aria-label="Digital download of a Common Kingfisher / Bói cá lam"></div>
+            <div class="meta">
+              <div class="title">Common Kingfisher / Bói cá lam</div>
+              <div class="cap">Digital download · Hi-res</div>
+              <span class="tag digital">Digital</span>
+            </div>
+            <div class="price">350.000₫</div>
+          </div>
+
+          <div class="totals">
+            <div class="r"><span class="lbl">Subtotal / Tạm tính</span><span>1.600.000₫</span></div>
+            <div class="r">
+              <span class="lbl">Shipping / Phí giao hàng <small>Applies to the print / Áp dụng cho bản in</small></span>
+              <span>30.000₫</span>
+            </div>
+            <div class="r grand"><span>Total / Tổng cộng</span><span>1.630.000₫</span></div>
+          </div>
+
+          <button type="submit" class="btn-place">Place order / Đặt hàng</button>
+          <p class="secure">Secure checkout · Thanh toán an toàn</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      <div class="brand">Sâm Thương</div>
+      <p class="tag">
+        Wetland &amp; forest bird photography from Vietnam.
+        <span class="vn">Nhiếp ảnh chim vùng đất ngập nước &amp; rừng Việt Nam.</span>
+      </p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="#">Shop</a>
+      <a href="#">Portfolio</a>
+      <a href="#">About</a>
+      <a href="#">Contact</a>
+    </nav>
+    <nav aria-label="Order">
+      <a href="#" class="track">Track your order / Theo dõi đơn hàng</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

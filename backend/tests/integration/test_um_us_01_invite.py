@@ -638,6 +638,39 @@ def test_reinviting_a_pending_address_rotates_the_token_and_supersedes_the_old_i
     assert clock.ensure_aware(pending.expires_at) == expected
 
 
+def test_reinviting_a_deactivated_address_is_rejected_with_its_own_code(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    db: Session,
+    email_sender: RecordingEmailSender,
+) -> None:
+    """TC-27 (amendment — plan.md F1/T-18): a DEACTIVATED address is refused
+    with its own 409 USER_EMAIL_DEACTIVATED — distinct from
+    USER_EMAIL_ALREADY_ACTIVE — and nothing is created or sent.
+    """
+    deactivated_email = "was.active@example.com"
+    user = UserModel(
+        email=deactivated_email,
+        password_hash=None,
+        full_name="Formerly Active",
+        status=UserStatus.DEACTIVATED,
+        role=UserRole.USER,
+    )
+    db.add(user)
+    db.commit()
+
+    response = client.post(INVITE_URL, json={"email": deactivated_email}, headers=admin_headers)
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "USER_EMAIL_DEACTIVATED"
+    assert response.json()["error_code"] != "USER_EMAIL_ALREADY_ACTIVE"
+
+    db.expire_all()
+    assert count_users(db, deactivated_email) == 1
+    assert count_invitations(db, deactivated_email) == 0
+    assert len(email_sender.sent) == 0
+
+
 # --- AC-01 live delivery (opt-in) ----------------------------------------
 
 

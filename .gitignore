@@ -15,6 +15,10 @@ venv/
 *.sqlite
 *.sqlite3
 
+# File outbox — UM-US-01 A13. These .eml files carry live, unexpired
+# activation tokens, exactly like the .env credentials above.
+backend/var/outbox/
+
 # Test / tooling caches
 .pytest_cache/
 .mypy_cache/

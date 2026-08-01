@@ -94,3 +94,24 @@ def get_by_token_hash(db: Session, token_hash: str) -> InvitationModel | None:
     return db.scalars(
         select(InvitationModel).where(InvitationModel.token_hash == token_hash)
     ).one_or_none()
+
+def mark_accepted(db: Session, invitation: InvitationModel) -> int:
+    """Mark an invitation ACCEPTED, returning the number of rows affected.
+
+    Uses a conditional UPDATE as an atomic mutex (EC-05). If rowcount == 0,
+    the invitation was no longer PENDING (e.g. claimed concurrently or superseded).
+    Flushed, not committed (AR-06).
+    """
+    result = cast(
+        "CursorResult[Any]",
+        db.execute(
+            update(InvitationModel)
+            .where(
+                InvitationModel.id == invitation.id,
+                InvitationModel.status == InvitationStatus.PENDING,
+            )
+            .values(status=InvitationStatus.ACCEPTED)
+        ),
+    )
+    db.flush()
+    return int(result.rowcount or 0)

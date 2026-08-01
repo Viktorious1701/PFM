@@ -1,16 +1,4 @@
-"""Domain error base and the single response envelope (SDS §6.6).
-
-Every failure — domain error, validation failure, or unhandled exception —
-serialises to the same flat shape:
-
-    {"error_code": "INVITATION_TOKEN_EXPIRED", "message": "…", "details": {}}
-
-Constitution: API-02, API-04.
-
-Only the base and the generic validation error live here. Story-specific errors
-(INVITATION_TOKEN_EXPIRED, USER_EMAIL_ALREADY_ACTIVE, …) are added by the story
-whose spec names them, so this module never accumulates speculative codes.
-"""
+"""Domain error base and the single response envelope (SDS §6.6)."""
 
 from typing import Any
 
@@ -63,24 +51,73 @@ class ForbiddenError(AppError):
 
 
 class UserEmailAlreadyActiveError(AppError):
-    """spec AC-02 / FR-04 / BR-02.
-
-    Deliberately discloses that the address is already in use. Constitution
-    SEC-10 forbids account enumeration in general; this is the documented
-    exemption — an ADMIN inviting a colleague needs to know why it failed.
-    """
+    """spec AC-02 / FR-04 / BR-02."""
 
     status_code = 409
     error_code = "USER_EMAIL_ALREADY_ACTIVE"
     default_message = "An account with this email already exists"
 
 
-class EmailDeliveryError(AppError):
-    """spec EC-07 / FR-20. Only reachable in EMAIL_SEND_MODE=sync.
+class UserEmailDeactivatedError(AppError):
+    """plan.md T-18 / Finding F1. Prevents silent reactivation of disabled accounts."""
 
-    SC-09: a delivery failure never produces a silent success.
-    """
+    status_code = 409
+    error_code = "USER_EMAIL_DEACTIVATED"
+    default_message = "An account with this email has been deactivated"
+
+
+class EmailDeliveryError(AppError):
+    """spec EC-07 / FR-20. Only reachable in EMAIL_SEND_MODE=sync."""
 
     status_code = 502
     error_code = "EMAIL_DELIVERY_FAILED"
     default_message = "The invitation could not be emailed. Please try again."
+
+
+# --- UM-US-02: Activate a user account -----------------------------------
+
+
+class InvitationTokenExpiredError(AppError):
+    """spec AC-02 / FR-04 / EC-10. HTTP 400 when the token's TTL has passed."""
+
+    status_code = 400
+    error_code = "INVITATION_TOKEN_EXPIRED"
+    default_message = "The provided invitation link has expired. Please request a new invitation."
+
+
+class InvitationTokenInvalidError(AppError):
+    """spec AC-03 / AC-04 / AC-05 / EC-06 / EC-07 / EC-08 / EC-11 / BR-10.
+
+    HTTP 400 for every non-expiry refusal: token unknown, used, superseded, or user not PENDING.
+    """
+
+    status_code = 400
+    error_code = "INVITATION_TOKEN_INVALID"
+    default_message = "The provided invitation link is invalid or has already been used."
+
+
+# --- SS-US-01: Login -------------------------------------------------------
+
+
+class InvalidCredentialsError(AppError):
+    """spec AC-03 / AC-04 / FR-05 / FR-07.
+
+    One generic 401 for an unknown email, a wrong password, or a DEACTIVATED
+    account — never distinguished (constitution SEC-10).
+    """
+
+    status_code = 401
+    error_code = "INVALID_CREDENTIALS"
+    default_message = "The email or password is incorrect."
+
+
+class AccountNotActivatedError(AppError):
+    """spec AC-02 / FR-06. Only reachable with a correct password (BR-01) —
+
+    the SRS's own message, disclosed deliberately because the caller has
+    already proven they hold the right credentials.
+    """
+
+    status_code = 403
+    error_code = "ACCOUNT_NOT_ACTIVATED"
+    default_message = "Your account is not activated. Please check your email invitation."

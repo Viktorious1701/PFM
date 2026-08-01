@@ -1,7 +1,8 @@
 # 📋 Software Requirements Specification (SRS)
 ## System: Personal & Family Finance Management (PFM)
-**Document Version:** 2.0.0  
+**Document Version:** 2.2.0  
 **Status:** Approved for Development  
+**Revision History:** see [§8](#8-revision-history)  
 
 ---
 
@@ -11,6 +12,7 @@
    - 1.2 [Scope](#12-scope)
    - 1.3 [Assumptions and Constraints](#13-assumptions-and-constraints)
    - 1.4 [Definitions and Acronyms](#14-definitions-and-acronyms)
+   - 1.5 [Conceptual Domain Model](#15-conceptual-domain-model)
 2. [Functional Requirements (FR)](#2-functional-requirements-fr)
 3. [Non-Functional Requirements (NFR)](#3-non-functional-requirements-nfr)
 4. [User Experience Requirements (UXR)](#4-user-experience-requirements-uxr)
@@ -28,6 +30,7 @@
    - [Feature-10: AI Financial Assistant (Phase 2 Placeholder)](#feature-10-ai-financial-assistant-chatbot-phase-2-placeholder)
    - [Feature-11: Investment Portfolio & Goals (Phase 3 Placeholder)](#feature-11-investment-portfolio--financial-goals-phase-3-placeholder)
 7. [Feature-Level Release Roadmap](#7-feature-level-release-roadmap)
+8. [Revision History](#8-revision-history)
 
 ---
 
@@ -69,12 +72,130 @@ The PFM system supports users in:
 * **BF:** Business Flow
 * **US:** User Story
 
+### 1.5 Conceptual Domain Model
+
+*Added v2.2.0.* This is the **business-language** view of the entities every requirement below
+refers to — what each thing is and how it relates to the others, with no database column, data
+type, or API shape attached to it. That technical realisation is `SDS.md` §2 (Technical Domain
+Model), which this section deliberately does not duplicate: read §1.5 for *what the business means*
+by "a Wallet" or "a Budget," and `SDS.md` §2.1–§2.4 for how each is stored, keyed, and state-machined.
+
+Every entity here is one the SRS already requires through an FR or a Feature story — nothing is
+introduced that the requirements below don't already need. The seven entities match `SDS.md` §2.1's
+domain-layer traceability table exactly, so the two documents describe one model, not two.
+
+* **User** — The person the system knows: an account holder, invited by another User with the
+  ADMIN role, who owns Wallets and Categories, sets Budgets, logs Transactions, and receives
+  Notifications (FR-01, FR-02).
+* **Invitation** — A single email invitation attempt, distinct from the User it may create — its own
+  history survives independently of whether the invited person ever activates (FR-01; SRS §6
+  US-01-01/US-01-02).
+* **Wallet** — A named store of money a User holds — cash, a bank account, a credit line — that
+  Transactions move money into or out of (FR-03).
+* **Category** — A label a User defines to classify money movement as one kind of income or expense,
+  e.g. "Groceries" or "Salary" (FR-04).
+* **Budget** — A spending limit a User sets for one Category within one Wallet, over a monthly
+  period, that Transactions are measured against (FR-05).
+* **Transaction** — A single recorded movement of money, in or out, against one Wallet and one
+  Category, at a point in time (FR-06).
+* **Notification** — A message the system raises for a User about something that happened —
+  a budget exceeded, an invitation sent, a wallet running low — that the User can read and mark read
+  (FR-08; SRS §6 Feature-08, "List Notifications" / "Mark Notification as Read").
+
+**Relationships:**
+
+```mermaid
+classDiagram
+    class User {
+        email
+        fullName
+        status
+        role
+    }
+    class Invitation {
+        email
+        expiry
+        status
+    }
+    class Wallet {
+        name
+        type
+        currency
+        balance
+    }
+    class Category {
+        name
+        type
+    }
+    class Budget {
+        spendingLimit
+        period
+    }
+    class Transaction {
+        amount
+        type
+        timestamp
+        note
+    }
+    class Notification {
+        message
+        readStatus
+        createdAt
+    }
+
+    User "1" -- "*" Invitation : invites
+    User "1" -- "*" Wallet : owns
+    User "1" -- "*" Category : defines
+    User "1" -- "*" Notification : receives
+    Wallet "1" -- "*" Transaction : contains
+    Wallet "1" -- "*" Budget : scoped_to
+    Category "1" -- "*" Transaction : classifies
+    Category "1" -- "*" Budget : applies_to
+```
+
+| Relationship | Cardinality | Meaning |
+| :-- | :-- | :-- |
+| User invites Invitation | one User → many Invitations | A User with the ADMIN role can send any number of invitations over time (FR-01) |
+| User owns Wallet | one User → many Wallets | A User may hold several Wallets — cash, bank, credit (FR-03) |
+| User defines Category | one User → many Categories | Categories belong to the User who created them, not to a shared list (FR-04) |
+| User receives Notification | one User → many Notifications | Every Notification is raised for exactly one User (FR-08) |
+| Wallet contains Transaction | one Wallet → many Transactions | Every Transaction moves money into or out of exactly one Wallet (FR-06) |
+| Wallet scoped_to Budget | one Wallet → many Budgets | A spending limit is set against one Wallet at a time (FR-05) |
+| Category classifies Transaction | one Category → many Transactions | Every Transaction is tagged with exactly one Category (FR-06) |
+| Category applies_to Budget | one Category → many Budgets | A Budget's limit applies to spending in one Category (FR-05) |
+
+**One relationship completes a gap in `SDS.md`.** `SDS.md` §2.1 and §2.2 both list **Notification** as
+a full domain entity — with its own table, model, and DTO — but its §2.3 class diagram never draws a
+relationship for it, and neither does the §4.3.3 ERD. "User receives Notification" above is derived
+from the User-scoped `NM-US-01`/`NM-US-02`/`NM-US-03` stories (`SDS.md` §5.8: *list* notifications,
+*view a* notification, *mark* one read — each phrased for the signed-in User's own notifications), not
+invented independently of them. Carried into `SDS.md`'s own class diagram and ERD the next time that
+document is aligned, so the two stop disagreeing about whether the relationship exists.
+
+**Out of scope for this model:** Features 10 and 11 (`SRS.md` §6, the Phase 2 AI Assistant and Phase 3
+Investment Portfolio placeholders) introduce their own entities — an investment `Asset`, a `Holding`,
+a chatbot query object — that belong to a future baseline, not this one. `SDS.md` names them nowhere
+either. They are not modelled here for the same reason `SDS.md` §11 keeps them as prose bullets
+rather than domain objects: nothing in the current MVP requires them to exist yet.
+
+**Lifecycle, not shape.** How a User or an Invitation *changes state* over time — `PENDING` →
+`ACTIVE` → `DEACTIVATED`, or an Invitation's own `PENDING` → `ACCEPTED` / `EXPIRED` / `SUPERSEDED` —
+is already fully specified in `SDS.md` §2.4's state diagrams and is not repeated here; this section
+answers *what exists and how the pieces connect*, not *what state each piece can be in*.
+
 ---
 
 ## 2. Functional Requirements (FR)
 
 * **FR-01: User Onboarding & Management**  
   The System shall allow authorized users to invite new users via email. The System shall generate a secure token with a TTL (Time-To-Live) and dispatch an activation email via Gmail SMTP. Non-activated (`PENDING`) accounts shall not be permitted to log in until activated.
+
+  An account holds exactly one of three statuses: **`PENDING`** (invited, no credentials set, cannot log in), **`ACTIVE`** (activated and usable), and **`DEACTIVATED`** (access withdrawn by an administrator). An invitation may not be used to move an account out of `DEACTIVATED` — restoring withdrawn access is an administrative act, not an onboarding one. Token expiry never changes an account's status: an expired invitation leaves its account `PENDING` and re-invitable.
+
+  > *Added in v2.1.0.* `DEACTIVATED` was previously named nowhere in this document, although the
+  > design and the working artifacts both had to rule on it — what happens when a disabled address is
+  > re-invited, and when an old link belonging to a disabled account is used. Naming the three
+  > statuses here puts that vocabulary in the baseline rather than leaving it to be inferred.
 
 * **FR-02: Security & Access Control**  
   The System shall authenticate users via secure credentials (email/password), enforce JWT-based sessions, and restrict data access so users can only view data they own or are granted access to.
@@ -136,7 +257,9 @@ The PFM system supports users in:
   Submitting a transaction must immediately reflect in updated wallet totals and budget progress bars without requiring a manual page refresh.
 
 * **UXR-04: Clear Onboarding Guidance**  
-  First-time invited users clicking an activation link must be guided through a simple 1-page setup form (Name & Password) before being redirected to their dashboard.
+  First-time invited users clicking an activation link must be guided through a simple 1-page setup form (Name & Password), then directed to the **login screen** to sign in with the credentials they have just set. Where the link is no longer usable, the System must say so *before* the person fills the form in, rather than after.
+
+  > *Corrected in v2.1.0.* This requirement previously ended "before being redirected to their dashboard", which contradicted US-01-02's own scenario ("redirects the User to the Login screen") and would have required activation to issue a session. Activation deliberately issues none — authenticating is US-02-01's act — so the login screen is correct and the dashboard reference was the error.
 
 ---
 
@@ -160,11 +283,18 @@ The PFM system supports users in:
 
 ### BF-02: Supporting BF – User Invitation & Activation
 1. Admin navigates to User Management and submits an email.
-2. System validates email uniqueness and creates user with `status = PENDING`.
-3. System sends activation email containing token with TTL.
-4. User accesses activation endpoint with token.
-5. System verifies `NOW() < token_expires_at`.
-6. User submits password; status transitions to `ACTIVE`; token is invalidated.
+2. System checks the address against existing accounts. An `ACTIVE` or `DEACTIVATED` account blocks the invitation; a `PENDING` one does **not** — that address is re-invited (step 3a). Otherwise the System creates a user with `status = PENDING`.
+3. System sends an activation email containing a token with a TTL.
+   * **3a. Re-invitation.** Where the address was already `PENDING`, no second account is created: the outstanding invitation is superseded, a new token with a fresh TTL is issued, and the previously sent link stops working immediately. This is the recovery path when an invitation expired or never arrived, and it is why an expired token is no obstacle to inviting again.
+4. User accesses the activation endpoint with the token. The System can also be asked whether a token is still usable, without consuming it, so the User is told about an expired link before being asked for a password (UXR-04).
+5. System verifies that the token matches an outstanding invitation belonging to a `PENDING` user, and that `NOW() < token_expires_at`.
+6. User submits their full name and password; the password is hashed, the name is stored, status transitions to `ACTIVE`, and the token is invalidated — all in one transaction, so a usable token never survives a successful activation.
+7. User is directed to the login screen. Activation itself grants no session (US-02-01 owns authentication).
+
+> *Corrected in v2.1.0.* Step 2 previously read "validates email uniqueness", which contradicted
+> US-01-01's own scenario — that names only a *duplicate **active*** email as grounds for refusal —
+> and left no room for the re-invitation path an expired token requires. Step 6 omitted the full name
+> US-01-02 collects. Steps 3a, 4 (pre-check) and 7 were implicit in the user stories but absent here.
 
 ### BF-03: Supporting BF – Wallet & Budget Setup
 1. User creates one or more wallets with initial balances.
@@ -226,24 +356,30 @@ Feature: Invite a User
 Feature: Activate User Account
 
   Scenario: Successfully activate account within TTL
-    Given an invited User has a token "valid-uuid-token" with status "PENDING"
+    Given an invited User has an outstanding invitation token with status "PENDING"
     And the token expiration time is in the future
-    When the User accesses the activation link with token "valid-uuid-token"
+    When the User accesses the activation link with that token
     And the User enters full name "Jane Doe"
     And the User enters password "SecurePassword123!"
     And the User clicks "Activate Account"
     Then the System hashes the password using a secure algorithm
     And the System updates User status to "ACTIVE"
-    And the System invalidates the token "valid-uuid-token"
+    And the System invalidates that token
     And the System redirects the User to the Login screen with message "Account activated successfully"
 
   Scenario: Reject activation when token is expired
-    Given an invited User has a token "expired-token"
+    Given an invited User has an invitation token
     And the token expiration time has passed
-    When the User accesses the activation link with token "expired-token"
+    When the User accesses the activation link with that token
     Then the System displays error "Invitation link has expired. Please request a new invitation."
     And the account status remains "PENDING"
 ```
+
+> *Corrected in v2.1.0.* The scenarios above previously used the placeholder `"valid-uuid-token"`,
+> which implied the token is a UUID. A UUIDv4 carries roughly 122 bits of entropy, below the
+> **128-bit** floor NFR-04 sets, so naming a UUID here contradicted this document's own security
+> requirement. The token is now described by its role rather than by a format, leaving the choice of
+> a sufficiently strong opaque value to the design.
 
 #### US-01-03: View List of Users [MVP]
 * **As an** Admin  
@@ -449,3 +585,20 @@ Feature: Create Transaction
 | 10 | **AI Financial Assistant (Chatbot)** | - | ✔ | - |
 | 11 | **Financial Goals & Savings** | - | - | ✔ |
 | 12 | **Investment Portfolio & Holdings** | - | - | ✔ |
+
+---
+
+## 8. Revision History
+
+This document is the requirements baseline: where it and `SDS.md` disagree, this document wins and
+the SDS is corrected. Most edits here are **alignment** — correcting a contradiction or an imprecision
+within what has already been agreed — which the AI may make on its own initiative
+(`CLAUDE.md` §1). Adding, removing, or changing a requirement is a different act: it needs the
+product owner's decision, made explicitly, and is recorded as its own row below rather than folded
+into an alignment pass.
+
+| Version | Change |
+| :--- | :--- |
+| 2.0.0 | Approved baseline. |
+| **2.1.0** | **Alignment pass — four internal contradictions corrected, no requirement added or removed.** (1) **UXR-04** ended by redirecting an activated user to "their dashboard", contradicting US-01-02's own scenario, which redirects to the Login screen; since activation grants no session, the login screen is correct and the dashboard reference was the error. (2) **US-01-02**'s Gherkin used the placeholder `"valid-uuid-token"`, implying a UUID — whose ~122 bits of entropy fall below the **128-bit** floor this document's own NFR-04 sets; the scenarios now describe the token by role rather than format. (3) **BF-02** step 2 read "validates email uniqueness", contradicting US-01-01's scenario, which refuses only a duplicate ***active*** email, and leaving no room for the re-invitation an expired token requires; steps 2, 3a, 4, 6 and 7 now match the user stories, including the full name step 6 had omitted. (4) **FR-01** named only `PENDING`, though `DEACTIVATED` had to be ruled on during design; all three account statuses are now defined in the baseline. Each correction is annotated in place. |
+| **2.2.0** | **Added §1.5 Conceptual Domain Model, at the product owner's explicit request** — not an alignment, a commissioned addition, and recorded as such. The document had no domain model of its own; the closest thing was `SDS.md` §2's *technical* one (DB columns, SQLAlchemy types), which is the wrong altitude for a requirements document to depend on. §1.5 gives the seven entities implied by FR-01…FR-08 in business language — User, Invitation, Wallet, Category, Budget, Transaction, Notification, matching `SDS.md` §2.1's domain-layer table exactly — with a relationship diagram, a plain-language cardinality table, and one relationship (`User receives Notification`) that `SDS.md` §2.3/§4.3.3 imply through the `NM-US-*` stories but never actually draw, flagged there as a gap for `SDS.md`'s own next alignment pass. Phase 2/3 placeholder entities (Feature-10/11) are explicitly excluded, matching how `SDS.md` §11 treats them. |

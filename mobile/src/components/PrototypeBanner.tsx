@@ -30,11 +30,11 @@ const styles = StyleSheet.create({
   },
   label: {
     color: color.prototype.fg,
+    fontFamily: font.family.bodyMedium,
     fontSize: font.size.xs,
-    fontWeight: font.weight.bold,
     letterSpacing: 0.4,
   },
-  note: { color: color.prototype.fg, fontSize: font.size.xs },
+  note: { color: color.prototype.fg, fontFamily: font.family.body, fontSize: font.size.xs },
 });
 
 export const prototypeBannerRadius = radius.sm;

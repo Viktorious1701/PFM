@@ -5,12 +5,14 @@
  * Endpoint: POST /api/v1/users/invite (SDS §6.4.1)
  * Spec: specs/001-user-onboarding/spec.md
  *
- * Every branch below traces to an acceptance criterion or edge case. Because the
- * backend has no routes yet, all of them are served from src/api/mock.ts — see
- * the address list at the bottom of the screen.
+ * Every branch below traces to an acceptance criterion or edge case. The
+ * endpoint is real and verified now — with EXPO_PUBLIC_API_MOCK=1, the same
+ * branches are served from src/api/mock.ts instead (see the address list at
+ * the bottom of the screen), so this UI can still be exercised without a
+ * running backend.
  *
  * This screen does NOT satisfy any TC in test_cases.md; the `[UI]` rows there
- * remain deferred (ADR-0009).
+ * remain deferred until this UI has its own test surface.
  */
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -195,10 +197,15 @@ function MockCaseList() {
 
 const styles = StyleSheet.create({
   header: { gap: space.sm },
-  title: { fontSize: font.size.title, fontWeight: font.weight.bold, color: color.text },
-  description: { fontSize: font.size.body, color: color.textMuted, lineHeight: 20 },
-  resultRow: { fontSize: font.size.sm, color: color.success.fg },
-  resultLabel: { fontWeight: font.weight.semibold },
+  title: { fontFamily: font.family.heading, fontSize: font.size.title, color: color.text },
+  description: {
+    fontFamily: font.family.body,
+    fontSize: font.size.body,
+    color: color.textMuted,
+    lineHeight: 20,
+  },
+  resultRow: { fontFamily: font.family.body, fontSize: font.size.sm, color: color.success.fg },
+  resultLabel: { fontFamily: font.family.bodyMedium },
   cases: {
     marginTop: space.sm,
     padding: space.md,
@@ -209,13 +216,13 @@ const styles = StyleSheet.create({
     gap: space.sm,
   },
   casesTitle: {
+    fontFamily: font.family.bodyMedium,
     fontSize: font.size.xs,
-    fontWeight: font.weight.bold,
     color: color.textMuted,
     letterSpacing: 0.4,
   },
   caseRow: { gap: 1 },
   caseEmail: { fontSize: font.size.sm, color: color.text, fontFamily: 'monospace' },
-  caseOutcome: { fontSize: font.size.xs, color: color.textMuted },
+  caseOutcome: { fontFamily: font.family.body, fontSize: font.size.xs, color: color.textMuted },
   caseRef: { fontWeight: font.weight.bold },
 });

@@ -1,10 +1,3 @@
-/**
- * User Management API (UM) — SDS §6.3 UM-API-01 / UM-API-02 / UM-API-03.
- *
- * Each function dispatches to either the real endpoint or the fixture layer,
- * chosen once at the module boundary. Screens call these and never learn which
- * one answered — so flipping EXPO_PUBLIC_API_MOCK=0 requires no screen change.
- */
 import { USE_MOCK_API } from '../config';
 import { client } from './client';
 import { mockActivate, mockInviteUser, mockListUsers } from './mock';
@@ -14,15 +7,10 @@ import type {
   InvitationRead,
   InviteCreate,
   Page,
+  TokenStateRead,
   UserRead,
 } from './types';
 
-/**
- * UM-US-01 · `POST /api/v1/users/invite` (SDS §6.4.1).
- *
- * Rejects are always ApiError (see client.ts response interceptor), so callers
- * can branch on `.code` without unwrapping axios internals.
- */
 export async function inviteUser(email: string): Promise<InvitationRead> {
   if (USE_MOCK_API) return mockInviteUser(email);
 
@@ -31,7 +19,6 @@ export async function inviteUser(email: string): Promise<InvitationRead> {
   return data;
 }
 
-/** UM-US-03 · `GET /api/v1/users`. Always bounded (constitution API-06, PF-04). */
 export async function listUsers(page = 1, pageSize = 25): Promise<Page<UserRead>> {
   if (USE_MOCK_API) return mockListUsers();
 
@@ -41,7 +28,19 @@ export async function listUsers(page = 1, pageSize = 25): Promise<Page<UserRead>
   return data;
 }
 
-/** UM-US-02 · `POST /api/v1/users/activate` (SDS §6.4.2). */
+export async function checkTokenState(token: string): Promise<TokenStateRead> {
+  if (USE_MOCK_API) {
+    if (!token) return { state: 'not_usable' };
+    if (token === 'expired') return { state: 'expired' };
+    return { state: 'usable' };
+  }
+
+  const { data } = await client.get<TokenStateRead>('/users/activate', {
+    params: { token },
+  });
+  return data;
+}
+
 export async function activateAccount(payload: ActivateRequest): Promise<ActivateResponse> {
   if (USE_MOCK_API) return mockActivate(payload.token);
 

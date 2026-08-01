@@ -4,6 +4,10 @@
  * Replaces react-native's `Button`, which cannot show progress or be styled.
  * The pending state matters here: mail dispatch is off the request path
  * (spec FR-19 / NFR-01), but the request still has latency the user must see.
+ *
+ * Shape per DESIGN.md "button-primary": a pill is the one soft, obviously-
+ * tappable shape in this system. Focus uses `ink`, never `sky-deep` on
+ * `sky-deep` — a same-hue ring would be invisible.
  */
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -46,9 +50,15 @@ export function Button({
     >
       <View style={styles.content}>
         {pending ? (
-          <ActivityIndicator size="small" color={isPrimary ? color.primaryText : color.primary} />
+          <ActivityIndicator size="small" color={isBlocked ? color.textMuted : isPrimary ? color.primaryText : color.secondary} />
         ) : null}
-        <Text style={[styles.label, isPrimary ? styles.labelPrimary : styles.labelSecondary]}>
+        <Text
+          style={[
+            styles.label,
+            isPrimary ? styles.labelPrimary : styles.labelSecondary,
+            isBlocked ? styles.labelBlocked : null,
+          ]}
+        >
           {title}
         </Text>
       </View>
@@ -57,13 +67,23 @@ export function Button({
 }
 
 const styles = StyleSheet.create({
-  base: { paddingVertical: space.md + 2, borderRadius: radius.md, alignItems: 'center' },
+  base: {
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.full,
+    alignItems: 'center',
+  },
   primary: { backgroundColor: color.primary },
-  secondary: { backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
-  pressed: { opacity: 0.85 },
-  blocked: { opacity: 0.5 },
+  secondary: { backgroundColor: 'transparent', borderWidth: 1, borderColor: color.secondary },
+  pressed: { opacity: 0.88 },
+  blocked: { backgroundColor: color.surfaceSunken, borderColor: color.surfaceSunken, opacity: 1 },
   content: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  label: { fontSize: font.size.lg, fontWeight: font.weight.semibold },
+  // No `fontWeight` alongside a custom `fontFamily`: Inter_500Medium is a
+  // distinct loaded font asset, not a weight variant of a base family — RN
+  // can't synthesize a different weight from it, and asking it to try risks
+  // silently falling back to the system font on native.
+  label: { fontFamily: font.family.bodyMedium, fontSize: font.size.md },
   labelPrimary: { color: color.primaryText },
-  labelSecondary: { color: color.primary },
+  labelSecondary: { color: color.secondary },
+  labelBlocked: { color: color.textMuted },
 });

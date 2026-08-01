@@ -10,14 +10,14 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 
 | File | Owner | Rule |
 | :-- | :-- | :-- |
-| `SRS.md` v2.0.0 | the user | **Read-only. Never edit.** Requirements baseline: FR, NFR, UXR, BF, Features 01–11 with Gherkin. |
-| `SDS.md` v1.0.0 | the user | **Read-only. Never edit.** Technical baseline: domain model, ERD, architecture, API design, security design. |
+| `SRS.md` v2.2.0 | the user; AI may **align**, not extend | Requirements baseline: FR, NFR, UXR, BF, Features 01–11 with Gherkin, §1.5 Conceptual Domain Model. See *They are references, not contracts* below. |
+| `SDS.md` v1.3.0 | the user; AI may **align** | Technical baseline: domain model, ERD, architecture, API design, security design. See *They are references, not contracts* below. |
 | `aif-review-checklist.md` | the user | Run before claiming any step gate. Edited once to remove Jira and record stack adaptations; otherwise treat as the user's. |
 | `artifact-templates/*.md` | the user | **Read-only. Never edit. Never split.** The canonical shape of every artifact — see §1.1. |
 | `constitution.md` | AI + user | Project rules with stable IDs (AR/API/NC/VL/LA/PF/SEC/TST/DOD/ENV), derived from the SDS. |
 | `specs/**` | AI + user | The working artifacts, and the only ones. Design output goes here — **never** into `SDS.md`. |
 
-`SDS.md` was aligned to `SRS.md` on 2026-07-30 and bumped to v1.1.0. **`SRS.md` now wins any remaining disagreement** — the rulings that came out of that alignment are in *Resolved contradictions* below.
+`SDS.md` was aligned to `SRS.md` on 2026-07-30 (v1.1.0), to the built system on 2026-07-31 (v1.2.0), and to the `DG` diagram convention the same day (v1.3.0); `SRS.md` was aligned on 2026-07-31 (v2.1.0) and gained its conceptual domain model, §1.5, at the user's explicit request the same day (v2.2.0). **`SRS.md` wins any remaining disagreement** — the rulings are in *Resolved contradictions* below.
 
 ## 1.1 Artifact rules
 
@@ -71,9 +71,18 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 
 ### They are references, not contracts
 
-`SRS.md` and `SDS.md` were written before the code existed and they leave things open — and in places they contradict each other.
+`SRS.md` and `SDS.md` were written before the code existed and they leave things open — and in places they contradict each other, and themselves.
 
-- **Deviate freely** where implementation reality demands it, then record it in the story's `plan.md` *Gaps & Decisions (Resolved)* table — one row, with the rationale — and list it in the story's `spec.md` *Deviations* section. No separate ADR file (§1.1 rule 0).
+**Both are alignable by the AI as of 2026-07-31.** They were read-only until then, and freezing them had the opposite of the intended effect: they drifted from the system, and each drift was filed as a permanent "documented deviation" in some `plan.md` instead of being fixed at the source. A reference nobody may correct stops being a reference. So:
+
+- **Aligning** means correcting a contradiction, an outdated fact, a name that was never implemented, or an imprecision — making the document say what has already been agreed or already been built. Log every such edit in that document's own revision history (`SRS.md` §8, `SDS.md` §1.6). That table *is* the audit trail; there is no separate alignment file.
+- **Extending is not aligning.** Adding, removing, or reinterpreting a *requirement* is the product owner's decision. **Stop and ask.** Adding Gherkin scenarios to `SRS.md` is on this side of the line even when the behaviour is settled everywhere else — which is exactly why UM-US-02's four unanchored ACs are recorded as a finding (`plan.md` F1) rather than back-filled.
+- **Precedence is unchanged:** `SRS.md` → `SDS.md` → `constitution.md` → `specs/**`. Aligning the SDS *to the code* is routine. Aligning the SRS to the code is legitimate only where the SRS contradicts itself or a ruling the user has already made — when code and a requirement genuinely disagree, **the code is what changes.**
+- **The artifacts still lead.** Design output goes in `specs/**`, never into `SDS.md` (§1.1). Aligning the SDS records what a story already settled; it is never where a story gets designed.
+
+Where a deviation remains the right answer:
+
+- **Deviate freely** where implementation reality demands it, then record it in the story's `plan.md` *Gaps & Decisions (Resolved)* table — one row, with the rationale. No separate ADR file (§1.1 rule 0). Prefer aligning the reference document when the deviation is really the document being wrong.
 - **Stop and ask the user** only when a change would genuinely *break* one of them:
   - contradicts the domain model (`SDS.md` §2) or ERD (§4.3.3),
   - changes a published endpoint contract (`SDS.md` §6),
@@ -91,7 +100,12 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 | Roles | `users.role` = `ADMIN` \| `USER`, enforced now. Invite and list-users are ADMIN-only. | SDS §5.2.1, §5.2.3 |
 | Error shape | Flat: `{"error_code", "message", "details"}` — **not** nested under `"error"`. | SDS §6.6 |
 | Dev database | SQLite locally (Docker unreachable in this WSL2 setup); PostgreSQL is the target. One `DATABASE_URL` change. Record in `plan.md` *Gaps & Decisions*. | SDS §4.1 vs environment |
-| Invitation token at rest | Stored **hashed** (SHA-256); the raw token exists only in the email. Deviates from SDS §4.3.3's plain `token UK`. Record in `plan.md` *Gaps & Decisions*. | security deviation |
+| Invitation token at rest | Stored **hashed** (SHA-256); the raw token exists only in the email. No longer a deviation — SDS §2.2/§2.3/§4.3.3 were aligned to `token_hash UK` at v1.2.0. | SDS §4.3.3 v1.2.0; SEC-03 |
+| Refusal precedence on activation | Checks run in a **fixed order: invitation outstanding → user `PENDING` → expiry last.** So `expired` is reported only for a token that would otherwise have worked, and every other reason stays collapsed into one indistinguishable outcome permanently — not just for the first 24 hours. Reversing the order silently narrows the guarantee to the TTL window. | spec UM-US-02 BR-02, EC-11; plan A1 |
+| Raw token in the state-check URL | **Accepted, documented exposure.** `GET /users/activate?token=…` puts the token in the access log. FR-17's guarantee is scoped to application logs and audit records; the residual leak is bounded by single use and the 24-hour TTL, and the same token already travels in the emailed link's URL. Alternatives (POST-body check, header-borne token) were weighed and rejected. | plan UM-US-02 A10; LA-01 |
+| Audit scope on activation | Audit records cover every attempt **that reaches the service**. A `422` rejected by the Pydantic layer emits none, and is traceable through the request log instead — auditing it would mean emitting business events from `main.py`'s validation handler, against AR-01. | spec UM-US-02 FR-18; plan F2 |
+| Aligning SRS/SDS | The AI **may align** both, and **may not extend** either. Logged in each document's revision history. | §1.1 *They are references, not contracts* |
+| Sequence diagram shape | Four lanes only, `UI → API → <Name>Service → Store`. No `Repo`/`DB` lane, no SQL, no real parameter lists, every `UI→API` request answered with an HTTP status in every branch. The prior session's `plan.md` diagrams and the SDS §4.4.1 diagram violated this — an already-cited checklist rule that had been marked passed in error — and were redrawn. | constitution `DG-01`…`DG-07` |
 
 ### Story ID map
 
@@ -163,28 +177,37 @@ That is the whole artifact tree. `specs/` is the deliverable; there is no suppor
 
 ### Who does which step
 
-**Subagents do the work; the main session reviews it.** One agent per step,
-matching that step's reviewer role. Definitions live in `.claude/agents/`.
+**One agent does the work; the main session reviews it.** A general-purpose
+subagent is dispatched **twice per story**, each time with a **self-contained
+brief written by the main session** — there is no agent-definition file to read,
+and none should be created. The brief carries the phase, the rules of §1.1, the
+settled rulings, the ID/numbering state, and the design facts the phase needs:
 
-| Step | Agent | Produces |
-| :-- | :-- | :-- |
-| 1 Spec (BA) | `ba-specifier` | the story's `spec.md` section |
-| 2 Design (SE) | `se-designer` | the story's `plan.md` section |
-| 3 Quality (QC) | `qc-test-designer` | the story's `test_cases.md` section |
-| 4 Implement (SE) | `implementer` | code + tests |
-| 5 Deploy · 6 Verification (QC) | `verifier` | TC verdicts recorded in `test_cases.md` |
+| Dispatch | Phase | Produces | Then |
+| :-- | :-- | :-- | :-- |
+| 1 | `artifacts` (steps 1–3) | `spec.md` + `plan.md` + `test_cases.md` sections | review → gate |
+| 2 | `implement` (steps 4–6) | code, tests, and a verdict against every `TC-NN` | review → gate |
 
-The main session's job is **the review gate, not the writing**: dispatch the
-agent, read what it produced against the source documents, check its pasted
-evidence, and either send it back or present it for the user's gate. Writing an
-artifact directly in the main session skips the review — there is then nobody
-left to catch the mistake.
+The agent's only reading is the repo's real inputs — this file,
+`constitution.md`, `artifact-templates/`, the epic's three artifacts, and
+`backend/app/` for what already exists.
+
+**Twice, not once.** A single context writing the spec *and* the code in one
+sitting bends the spec to fit the code it already has in mind — the failure named
+at the top of this file, which already cost a deleted spike. Splitting at the
+artifact boundary keeps *documents drive code* literally true.
+
+The main session's job is **the review gate, not the writing**: dispatch, read
+what came back against the source documents, check the pasted evidence, and
+either send it back or present it for the user's gate. Writing an artifact
+directly in the main session skips the review — there is then nobody left to
+catch the mistake.
 
 Three rules keep this honest:
 
 - **An agent that hits a genuine ambiguity stops and reports it.** It never invents a ruling. A `[NEEDS RULING]` marker in an artifact is a legitimate deliverable; a silently-invented answer is not. Contradictions between `SRS.md` and `SDS.md` where the choice is material belong to the user (§1).
 - **An agent's report is evidence, not a gate.** Every claim gets checked — pasted output read, files opened, numbers re-derived. "The agent said it passed" is not verification.
-- **The `verifier` is adversarial on purpose.** It exists to find what `implementer` missed, so the two are never the same agent and never run as one step.
+- **A green test suite is necessary and not sufficient.** Two UM-US-01 defects survived a fully green run and were caught only by a live walkthrough: a response serialising timestamps with no timezone offset, and auth declared as a raw header so the documented usage failed with a misleading 401. Step 6 means real requests, real rows, real rendered docs — not just `pytest`.
 
 ### Gate cadence
 
@@ -228,6 +251,30 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Swagger at `/docs`, ReDoc at `/redoc`. FastAPI ≥0.141 makes `include_router` lazy — to list routes read `app.openapi()["paths"]`, not `app.routes`.
+
+### Checking the mermaid diagrams
+
+Run this at the **Design** gate, before claiming step 2. Both `plan.md` diagrams once shipped
+broken and rendered as an error box in every viewer, and nothing in the cycle caught it:
+
+```bash
+npm install --no-save mermaid@11 jsdom      # once, in a scratch directory
+node check.mjs specs/001-user-onboarding/plan.md SDS.md
+```
+
+`check.mjs` extracts every ` ```mermaid ` block and runs `mermaid.parse()` over it, reporting the
+starting line of any block that fails. **The trap to know about:** mermaid's message and note text
+token is `[^#\n;]+`, so a **semicolon or `#` inside a label silently ends the statement** and the
+parse fails several lines later with a misleading error. Use an em dash or a comma. Em dashes, `|`,
+`->` inside labels, multi-word participant aliases and `autonumber` are all fine.
+
+Parsing clean is necessary, not sufficient — it says the diagram renders, not that it follows
+`constitution.md`'s `DG` group. Also check by eye (or grep) that no fenced block contains `SELECT`,
+`INSERT`, `UPDATE … WHERE`, `rowcount`, a `Repo`/`DB` participant, or a real method signature (DG-01,
+DG-04), and that every `UI→API` arrow has a matching `-->>UI` return carrying an HTTP status, in
+every `alt`/`opt` branch (DG-05). A diagram that parses but shows SQL is not a passing diagram — see
+the *Sequence diagram shape* row in *Resolved contradictions* above for why this matters enough to be
+a rule and not just a preference.
 
 ---
 

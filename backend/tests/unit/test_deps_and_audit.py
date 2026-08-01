@@ -15,7 +15,14 @@ from app.services.email.smtp import GmailSmtpSender
 
 
 def test_a_real_smtp_sender_is_used_once_credentials_exist() -> None:
-    settings = Settings(smtp_user="u@example.com", smtp_password="app-password")
+    # email_transport="auto" pinned explicitly: Settings() still reads the real
+    # .env for any field not passed here, and a developer's own .env may set
+    # EMAIL_TRANSPORT=outbox (UM-US-01 A13) — this test is about the
+    # credentials branch, not the transport override, so it must not depend
+    # on incidental local configuration.
+    settings = Settings(
+        smtp_user="u@example.com", smtp_password="app-password", email_transport="auto"
+    )
     assert settings.smtp_configured
 
     assert isinstance(get_email_sender(settings), GmailSmtpSender)
@@ -33,7 +40,7 @@ def test_the_recording_double_is_used_when_credentials_are_incomplete(
     Falling back keeps the invite flow working for a developer without a Gmail
     App Password. It warns loudly so the fallback is never mistaken for delivery.
     """
-    settings = Settings(smtp_user=user, smtp_password=password)
+    settings = Settings(smtp_user=user, smtp_password=password, email_transport="auto")
     assert not settings.smtp_configured
 
     with caplog.at_level(logging.WARNING):

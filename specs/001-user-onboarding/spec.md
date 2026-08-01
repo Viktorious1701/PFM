@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-01 · SDS §5.2 (UM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** UM-US-01 *(specified)* · UM-US-02, UM-US-03 *(pending)*
+> **Stories in this file:** UM-US-01 *(implemented, verified — 86 tests, nothing skipped, 98% coverage, TC-22 confirmed by real Gmail delivery)* · UM-US-02 *(specified)* · UM-US-03 *(pending)*
 
 ---
 
@@ -180,7 +180,7 @@ As an **ADMIN**, I want to invite a prospective family member by entering their 
   - **Narrowed at the Implement step (`plan.md` A11).** What these ACs actually need is for a caller's identity and role to be *established*, not *issued*. Token **verification** therefore shipped with this story, and AC-04/AC-05 are satisfied and tested. The login **endpoint** did not, and remains SS-US-01's to deliver — so this story can be implemented and verified, but a human cannot obtain a token through the API until that story lands.
 - **A bootstrap ADMIN is required.** Registration is invitation-only, so with no `ACTIVE` ADMIN in the database nobody can authenticate to issue the first invitation. Closing that cycle is a dependency of implementation, not a requirement of this story.
 - **Working Gmail credentials are required for verification.** AC-01 and SC-01 depend on real mail delivery, which needs a Gmail account with 2FA and an App Password. Automated tests substitute a mail double; the Deploy step requires the real thing.
-- **Role vocabulary comes from the SDS.** The SRS names the actor "Admin / Account Owner" without defining a role model; SDS §5.2 supplies `ADMIN` and `USER`. Treated as an elaboration, not a conflict — see `docs/00-foundation/srs-sds-alignment.md`.
+- **Role vocabulary comes from the SDS.** The SRS names the actor "Admin / Account Owner" without defining a role model; SDS §5.2 supplies `ADMIN` and `USER`. Treated as an elaboration, not a conflict. *(SRS §2 FR-01 was aligned at v2.1.0 to name the three account statuses, so the status vocabulary no longer depends on the SDS alone; the role vocabulary still does.)*
 - **The activation link's destination is out of scope.** This story is complete when a correctly-formed link is delivered. What that link does belongs to UM-US-02.
 - **Notifications are not in scope.** SRS FR-08 mentions notifying on invitation; SRS §6 Feature-08 owns that, and no notification requirement is drawn into this story.
 
@@ -260,18 +260,18 @@ As an **invited person**, I want to open the link from my invitation email and c
 
 **AC-03: Reject a token that matches no invitation**
 **Given** a token value that corresponds to no invitation on record,
-**When** it is submitted,
-**Then** the system changes nothing and returns an error that does not reveal whether the token ever existed.
+**When** it is submitted for activation, or its state is checked (AC-11),
+**Then** the system changes nothing and refuses with the same outcome used for every other unusable token except expiry (AC-04, AC-05, EC-06, EC-07) — an unrecognised token is indistinguishable from one already used, superseded, or belonging to a user no longer `PENDING`. *(Reconciled with AC-11/EC-09 — see the note after EC-09.)*
 
 **AC-04: Reject a token that has already been used**
 **Given** an invitation already `ACCEPTED`,
 **When** the same token is submitted a second time,
-**Then** the system changes nothing and refuses. A token grants activation exactly once.
+**Then** the system changes nothing and refuses with that same generic outcome (AC-03) — a token grants activation exactly once, and a second attempt is told no more than that it no longer works.
 
 **AC-05: Reject a superseded token**
 **Given** the address was re-invited, so an earlier invitation was superseded,
 **When** the earlier token is submitted,
-**Then** the system refuses it. Only the most recently issued link can activate an account.
+**Then** the system refuses it with that same generic outcome (AC-03). Only the most recently issued link can activate an account, and an older one is indistinguishable from any other unusable token.
 
 **AC-06: Enforce the password policy**
 **Given** an otherwise usable token,
@@ -295,13 +295,13 @@ As an **invited person**, I want to open the link from my invitation email and c
 
 **AC-10: Require a full name**
 **Given** an otherwise usable token,
-**When** the submitted full name is absent, empty, or only whitespace,
+**When** the submitted full name is absent, empty, only whitespace, or longer than the account record can hold,
 **Then** the system activates nothing and returns a validation error identifying the name field.
 
 **AC-11: Report a token's usability without consuming it**
 **Given** a token,
 **When** the person's client asks for the token's state rather than submitting an activation,
-**Then** the system reports whether it is usable, expired, or already used, and **changes nothing** — the token remains exactly as usable afterwards as it was before.
+**Then** the system reports exactly one of **`usable`**, **`expired`**, or **`not usable`** (serialised `not_usable`), and **changes nothing** — the token remains exactly as usable afterwards as it was before. `not usable` is reported identically regardless of the underlying reason: the token may match no invitation at all, one already used, one superseded, or one whose user is no longer `PENDING` — the check draws no distinction between them, and does not begin to draw one once that token also passes its TTL (EC-11). The state check and the activation attempt evaluate the same conditions in the same order (BR-02), so a client can never be told one thing by the check and another by the attempt. *(Reconciled with AC-03 — see the note after EC-09.)*
 
 **AC-12: Accept the request without credentials**
 **Given** a caller presenting no credentials at all,
@@ -320,13 +320,21 @@ As an **invited person**, I want to open the link from my invitation email and c
 
 **EC-05**: **The same valid token submitted twice concurrently** — exactly one submission activates the account; the other is refused. Two callers must never both succeed against a single-use token.
 
-**EC-06**: **Token belonging to a user who is already `ACTIVE`** — refused. The account is already usable, and re-running activation would let a stale link overwrite a live password.
+**EC-06**: **Token belonging to a user who is already `ACTIVE`** — refused with the same generic outcome as AC-03. The account is already usable, and re-running activation would let a stale link overwrite a live password; whoever holds the token learns only that it does not work, not why.
 
-**EC-07**: **Token belonging to a `DEACTIVATED` user** — refused. Access was withdrawn deliberately, and an old invitation link must not restore it. Reactivation is UM-US-05's concern.
+**EC-07**: **Token belonging to a `DEACTIVATED` user** — refused with the same generic outcome as AC-03. Access was withdrawn deliberately, and an old invitation link must not restore it, nor explain why it failed. Reactivation is UM-US-05's concern.
 
-**EC-08**: **Token submitted with altered surrounding characters** — a token differing from the issued value by so much as leading or trailing whitespace does not match. Unlike an email address, a token is compared exactly and is never normalised; guessing tolerance into a secret would widen the space of values that unlock an account.
+**EC-08**: **Token submitted with altered surrounding characters** — a token differing from the issued value by so much as leading or trailing whitespace does not match. Unlike an email address, a token is compared exactly and is never normalised; guessing tolerance into a secret would widen the space of values that unlock an account. Such a token falls into AC-03's unrecognised case and is reported identically.
 
-**EC-09**: **State requested for an expired or used token** — reported accurately as expired or used, and the request still changes nothing, including not advancing the invitation's stored state.
+**EC-09**: **State requested for a token that is not currently usable** — reported as `expired` when the invitation is outstanding but past its TTL, and as the same generic `not usable` outcome in every other case (never issued, already used, superseded, or the user no longer `PENDING`) — indistinguishable from AC-03's unrecognised-token case. The request still changes nothing, including not advancing the invitation's stored state.
+
+**EC-10**: **Token at the exact instant of expiry** — a token whose expiry equals the moment of use is treated as expired, not usable. The TTL is valid strictly *until* its expiry instant, consistent with UM-US-01 BR-04; one instant past creation-plus-24-hours is already too late.
+
+**EC-11**: **Token that is expired *and* unusable for another reason** — a token that has been used, superseded, or belongs to a user no longer `PENDING`, *and* is also past its TTL, is reported as **`not usable`**, never as `expired`. The two conditions overlap constantly rather than exceptionally: every accepted or superseded invitation becomes expired 24 hours after it was issued, so this is the steady state of an old token, not a corner case. Reporting `expired` for it would make AC-04 and AC-05 hold only inside the first 24 hours and then quietly stop — whoever held a used link could tell "used" from "never issued" simply by waiting a day. `expired` is therefore reserved for a token that would otherwise have worked: outstanding, belonging to a `PENDING` user, and merely too late. See BR-02 for the resulting order of evaluation.
+
+> **Reconciling AC-03, AC-11 and EC-09.** A first pass had AC-11's state check answering `usable` / `expired` / `already used` for any token, while AC-03 required an unrecognised token's error to give no sign of whether it ever existed — so an unrecognised token and an already-used one would have answered differently, and the check would have been an oracle for which raw values were ever issued as tokens. Resolved by **collapsing every non-expiry refusal reason into one indistinguishable outcome** (`not usable`): unrecognised (AC-03), already used (AC-04), superseded (AC-05), and wrong user state (EC-06, EC-07) all report identically, on both an activation attempt and a state check. `expired` alone stays distinguishable, for two reasons together: it is a benign, expected, time-bounded fact the person was already told about (the 24-hour TTL itself, UXR-04), and — unlike an email address, which is guessable and is the reason UM-US-01 needed a documented SEC-10 exemption to disclose it — an invitation token is a 256-bit unguessable secret (SEC-02). Reaching *any* reported state beyond silence requires already possessing the genuine token, which only its legitimate holder (or someone they shared it with) can do; naming the one additional reason `expired` therefore discloses nothing to anyone who does not already hold it. This narrows, rather than removes, the non-disclosure guarantee AC-03 originally claimed in full. It is recorded here, as a spec-level decision, because it changes three ACs' Then-clauses and an edge case — not merely an implementation choice that would belong in `plan.md` alone.
+>
+> **Amended at the design review (EC-11, BR-02).** The reconciliation above says *which* outcomes exist but not which one wins when a token fails two conditions at once — and the design's first pass answered that badly, by testing expiry before everything else. Because an accepted or superseded invitation is *also* expired a day later, that order would have reported `expired` for a reused link submitted the next day and `not usable` for the same link submitted within the TTL, so the indistinguishability this note establishes would have quietly expired along with the token. The fix is an explicit order of evaluation, now part of BR-02: outstanding-state, then user-state, then expiry **last**. `expired` therefore means "this token would have worked, and you are late" and nothing else, which is the narrow, benign disclosure the paragraph above argued was safe — while every other reason stays collapsed permanently rather than for twenty-four hours.
 
 ### Requirements *(mandatory)*
 
@@ -348,16 +356,18 @@ As an **invited person**, I want to open the link from my invitation email and c
 - **FR-14**: The system must **apply** the status change and the invalidation as a single atomic outcome (AC-08).
 - **FR-15**: The system must **return** a success result confirming activation and directing the person to log in (SDS §6.4.2).
 - **FR-16**: The system must **exclude** any session token from the activation result (AC-09).
-- **FR-17**: The system must **exclude** the raw password, the stored hash, and the submitted token from every response, log entry and audit record (AC-07).
-- **FR-18**: The system must **record** an audit entry for every activation attempt, successful or refused, capturing the affected account and the outcome, and never the credential (constitution LA-02, LA-04).
-- **FR-19**: The system must **report** a token's usability on request without altering it (AC-11, EC-09).
+- **FR-17**: The system must **exclude** the raw password, the stored hash, and the submitted token from every response, every **application log entry**, and every audit record (AC-07). *Scope note:* this covers the logs the system itself writes. It does **not** extend to the web server's access log, which records request URLs and therefore captures a token supplied as a query parameter by the state check (AC-11) — an accepted, documented exposure, bounded by the token being single-use and 24-hour-lived, and by the same token already travelling inside the URL of the activation link the invitation email delivers. Recorded in this story's `plan.md` A10 with the alternatives that were weighed and rejected.
+- **FR-18**: The system must **record** an audit entry for every activation attempt **that is evaluated against a token** — successful or refused — capturing the affected account and the outcome, and never the credential (constitution LA-02, LA-04). *Scope note:* a request rejected for a malformed payload (AC-06, AC-10) is refused before any token is examined and produces **no** audit entry; such attempts are traceable through the request log, which records method, path and status without a body. Auditing them would mean emitting business events from the framework's validation layer, which the layering rules forbid. Recorded in `plan.md` F2.
+- **FR-19**: The system must **report** a token's state on request as exactly one of `usable`, `expired`, or `not usable` (serialised `not_usable`), without altering it — where `not usable` collapses every non-expiry refusal reason so an unrecognised token cannot be distinguished from one already used, superseded, or belonging to a user no longer `PENDING`, **including when that token is also past its TTL** (AC-11, EC-09, EC-11, reconciled with AC-03).
 - **FR-20**: The system must **ensure** that concurrent submissions of one token activate the account at most once (EC-05).
 - **FR-21**: The system must **refuse** an activation whose password fails policy even when every other input is valid, leaving the token still usable so the person can retry (AC-06).
+- **FR-22**: The system must **report** the same generic refusal for an unrecognised token (FR-03), an already-accepted or superseded token (FR-05), and a token whose user is no longer `PENDING` (FR-06) — never distinguishing among them, and never letting the passage of time turn one of them into a differently-reported case (EC-11) — while continuing to name expiry specifically (FR-04) for a token whose only defect is the clock (AC-03, AC-04, AC-05, EC-06, EC-07, EC-08, EC-11).
+- **FR-23**: The system must **reject** a full name longer than the maximum the account record can hold, rather than accepting it and failing during persistence. *(Enforces the width the stored record already has; it does not settle what the limit ought to be — see `test_cases.md` QF-05.)*
 
 #### Business Rules
 
 - **BR-01**: An invitation token grants activation **exactly once**. Success consumes it (FR-13, SEC-04).
-- **BR-02**: A token is usable only while **all** of the following hold: it matches an invitation, that invitation is outstanding, its expiry has not passed, and its user is `PENDING`. Failing any one makes it unusable.
+- **BR-02**: A token is usable only while **all** of the following hold: it matches an invitation, that invitation is outstanding, its user is `PENDING`, and its expiry has not passed. Failing any one makes it unusable. When more than one fails, **the reported reason is decided by a fixed order of evaluation: whether the invitation is outstanding, then whether its user is `PENDING`, then expiry — with expiry evaluated last.** So `expired` is reported only for a token that fails nothing except the clock, and every other failure reports `not usable` no matter how much time has also passed (EC-11). The order is part of the rule, not an implementation detail: a different order would narrow BR-10's guarantee to the first 24 hours of a token's life.
 - **BR-03**: Expiry is evaluated by comparison at the moment of use, never read from a stored flag (constitution SEC-05; consistent with UM-US-01 BR-04).
 - **BR-04**: Only the most recently issued invitation for an address is usable; earlier ones were superseded when it was issued (UM-US-01 FR-11).
 - **BR-05**: A refused activation leaves every stored value untouched. In particular an expired token leaves its user `PENDING`, so the address remains re-invitable.
@@ -365,6 +375,7 @@ As an **invited person**, I want to open the link from my invitation email and c
 - **BR-07**: Activation confers no session. Authentication is a separate act (AC-09).
 - **BR-08**: Activation is available to unauthenticated callers by necessity, and is the only write operation in this epic that is (constitution API-08).
 - **BR-09**: A password that satisfies every policy rule is accepted regardless of how it satisfies them; the policy defines a minimum, and no additional undocumented rule may reject a compliant password (EC-02).
+- **BR-10**: A refusal names its reason only when the reason is expiry. Every other refusal — unrecognised token, already used, superseded, or user no longer `PENDING` — reports identically, because distinguishing them would let whoever holds a token learn more than whether it works; expiry is exempted because it is a fact already disclosed by the 24-hour TTL itself, and the token's entropy (SEC-02) makes the disclosure safe regardless of who is asking.
 
 #### Key Entities
 
@@ -389,5 +400,7 @@ As an **invited person**, I want to open the link from my invitation email and c
 - **The activation link's destination is this story's endpoint.** UM-US-01 delivers a link built from `ACTIVATION_URL_TEMPLATE`; until this story ships, that link resolves to nothing. Making it resolve is the point of this story.
 - **Logging in afterwards requires SS-US-01.** SC-01 says the account is *usable*; proving a person can then log in needs the login endpoint, which is a different epic. This story is verifiable without it — the account's `ACTIVE` status and stored hash are observable directly.
 - **The password policy comes from the SDS, not the SRS.** SRS §3 requires strong hashing but sets no composition rules; SDS §7.1.5 supplies minimum length, uppercase, digit and special character. Treated as an elaboration, consistent with how the role model was handled in UM-US-01.
-- **`GET` on the activation endpoint is drawn from the constitution, not the SDS API index.** `constitution.md` API-08 lists `GET /api/v1/users/activate` as public while SDS §6.3 lists only the `POST`. Ruled in favour of the constitution: the read serves UXR-04's one-page guidance and makes API-08 true as written. Recorded in this story's `plan.md` *Gaps & Decisions*.
+- **A token pre-check that reports state without an activation attempt is in scope**, resolving a conflict between two reference documents: one names a public, read-only check for this purpose; the other's endpoint index named only the state-changing action. Ruled in favour of the more permissive document — the read serves UXR-04's one-page guidance, letting a client learn a link's outcome (AC-11) before asking someone to type a password (SC-08). The reference documents were aligned to match, so the conflict is closed rather than merely decided. The concrete contract is recorded in this story's `plan.md` *Gaps & Decisions*, not here.
+- **The pre-check discloses the token to the access log, and this is accepted.** Delivering a link a person can simply follow means the token travels in a URL, so the server's access log records it. FR-17's guarantee is scoped to the logs this system writes; the residual exposure and the alternatives that were rejected are in `plan.md` A10. It is a narrower promise than the first draft made, stated here rather than left as an implementation surprise.
+- **Four of these criteria have no scenario in the requirements baseline.** AC-04 (reuse), AC-05 (supersession), AC-06 (password policy) and AC-11 (the pre-check) derive from the technical baseline, the project rules, and UXR-04 — not from a Gherkin scenario in `SRS.md`, which covers only successful activation and expiry. The baseline was corrected where it contradicted itself but deliberately **not** extended, because adding scenarios to it is a requirements change rather than an alignment. Recorded in `plan.md` F1 so the gap stays visible.
 - **A real mailbox is not required to verify this story.** Unlike UM-US-01, activation needs only a token, which a test can obtain from the invitation it created. Live SMTP is UM-US-01's concern and is already proven.

@@ -1,27 +1,29 @@
 /**
  * Session store.
  *
- * Holds the JWT and the signed-in user, and is the single place that knows how
+ * Holds the JWT and the caller's role, and is the single place that knows how
  * to end a session. Spec AC-04/AC-05 need a caller with a role, so every screen
- * that branches on ADMIN reads it from here.
+ * that branches on ADMIN reads it from here. There is no full `UserRead` here
+ * — SS-US-01's `TokenResponse` carries only the token, its expiry, and the
+ * role (see `api/types.ts`'s `LoginResponse`); a profile is UM-US-04's
+ * concern, out of MVP scope, so nothing here can invent one.
  *
  * In mock mode this boots pre-authenticated as ADMIN. That is a prototype
- * shortcut: login (SS-US-01) belongs to a different epic and has no backend, and
- * without it the invite screen — the story actually in flight — would be
- * unreachable. Set EXPO_PUBLIC_API_MOCK=0 and the real login flow takes over.
+ * shortcut, active only while `EXPO_PUBLIC_API_MOCK=1` — with it unset (the
+ * default once the backend is real), the real login flow takes over.
  */
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { login as loginRequest } from '../api/auth';
 import { setTokenProvider, setUnauthenticatedHandler } from '../api/client';
 import { MOCK_ADMIN } from '../api/mock';
-import type { UserRead } from '../api/types';
+import type { UserRole } from '../api/types';
 import { USE_MOCK_API } from '../config';
-import { clearStoredToken, getStoredToken, setStoredToken } from './session-storage';
+import { clearStoredToken, getStoredRole, getStoredToken, setStoredRole, clearStoredRole, setStoredToken } from './session-storage';
 
 type AuthState = {
   token: string | null;
-  user: UserRead | null;
+  role: UserRole | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
@@ -33,7 +35,7 @@ const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<UserRead | null>(null);
+  const [role, setRole] = useState<UserRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // The client reads the token through a getter so this module can depend on it
@@ -44,8 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     setToken(null);
-    setUser(null);
+    setRole(null);
     await clearStoredToken();
+    await clearStoredRole();
   }, []);
 
   // AC-05: a 401 anywhere clears the session rather than failing silently.
@@ -65,10 +68,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (stored) {
         setToken(stored);
-        setUser(USE_MOCK_API ? MOCK_ADMIN : null);
+        setRole(USE_MOCK_API ? MOCK_ADMIN.role : ((await getStoredRole()) as UserRole | null));
       } else if (USE_MOCK_API) {
         setToken('mock.jwt.token');
-        setUser(MOCK_ADMIN);
+        setRole(MOCK_ADMIN.role);
       }
       setIsLoading(false);
     })();
@@ -81,21 +84,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(async (email: string, password: string) => {
     const result = await loginRequest(email, password);
     setToken(result.access_token);
-    setUser(result.user);
+    setRole(result.role);
     await setStoredToken(result.access_token);
+    await setStoredRole(result.role);
   }, []);
 
   const value = useMemo<AuthState>(
     () => ({
       token,
-      user,
+      role,
       isLoading,
       isAuthenticated: token !== null,
-      isAdmin: user?.role === 'ADMIN',
+      isAdmin: role === 'ADMIN',
       signIn,
       signOut,
     }),
-    [token, user, isLoading, signIn, signOut],
+    [token, role, isLoading, signIn, signOut],
   );
 
   return createElement(AuthContext.Provider, { value }, children);
