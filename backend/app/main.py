@@ -10,6 +10,7 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -40,6 +41,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "Round 1 scope: US-02-01 login, US-01-01 invite, US-01-02 activate, "
             "US-01-03 list users."
         ),
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allow_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     _register_exception_handlers(app)

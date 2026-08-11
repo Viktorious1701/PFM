@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-01 · SDS §5.2 (UM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** UM-US-01 *(implemented, verified — 86 tests, nothing skipped, 98% coverage, TC-22 confirmed by real Gmail delivery)* · UM-US-02 *(specified)* · UM-US-03 *(pending)*
+> **Stories in this file:** UM-US-01 *(implemented, verified — 86 tests, nothing skipped, 98% coverage, TC-22 confirmed by real Gmail delivery)* · UM-US-02 *(specified)* · UM-US-03 *(specified)*
 
 ---
 
@@ -404,3 +404,144 @@ As an **invited person**, I want to open the link from my invitation email and c
 - **The pre-check discloses the token to the access log, and this is accepted.** Delivering a link a person can simply follow means the token travels in a URL, so the server's access log records it. FR-17's guarantee is scoped to the logs this system writes; the residual exposure and the alternatives that were rejected are in `plan.md` A10. It is a narrower promise than the first draft made, stated here rather than left as an implementation surprise.
 - **Four of these criteria have no scenario in the requirements baseline.** AC-04 (reuse), AC-05 (supersession), AC-06 (password policy) and AC-11 (the pre-check) derive from the technical baseline, the project rules, and UXR-04 — not from a Gherkin scenario in `SRS.md`, which covers only successful activation and expiry. The baseline was corrected where it contradicted itself but deliberately **not** extended, because adding scenarios to it is a requirements change rather than an alignment. Recorded in `plan.md` F1 so the gap stays visible.
 - **A real mailbox is not required to verify this story.** Unlike UM-US-01, activation needs only a token, which a test can obtain from the invitation it created. Live SMTP is UM-US-01's concern and is already proven.
+
+---
+
+## UM-US-03: List Users
+
+> **IDs in this section are local to UM-US-03.** `AC-01` below is not UM-US-01's or UM-US-02's
+> `AC-01`; each story section numbers its own criteria, per `artifact-templates/spec-templates.md`.
+> Only `TC-NN` in `test_cases.md` runs continuously across the epic (`CLAUDE.md` §1.1 rule 4).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-01 · US-01-03 — View List of Users [MVP]**
+> * **As an** Admin
+> * **I want to** view a list of all invited and active users
+> * **So that** I can track who has completed onboarding.
+>
+> ```gherkin
+> Feature: List Users
+>   Scenario: Display user onboarding statuses
+>     Given an authenticated Admin is on the "User Management" screen
+>     When the Admin views the user table
+>     Then the System presents a list containing user email, full name, status ("PENDING" or "ACTIVE"), and creation date
+> ```
+
+**SDS §5.2.3 UM-US-03 (ADMIN)**
+> Goal: Display a list of all invited and active accounts.
+
+**SDS §6.2.1 DTO Registry**
+> **`UserRead`**: `{ "id": "UUID", "email": "string", "full_name": "string", "status": "string", "created_at": "datetime" }` — never `password_hash`.
+
+**SDS §6.3 / §6.5**
+> **UM-API-03** `GET` `/api/v1/users` — List all users. Traced to UM-US-03.
+
+**constitution.md API-06, PF-04**
+> List endpoints accept `page` and `page_size`; default 25, maximum 100. Responses carry a total count. List endpoints are always bounded — no unbounded result set reaches a client.
+
+### Out of scope for this story
+
+UM-US-04 (view a single user profile) · UM-US-05 (update/deactivate a user) · SS-US-02 (logout) ·
+Features 03–11 · SRS §6 Feature-10/11 placeholders · SDS-only stories DC-US-01/02.
+
+Deliberately excluded even though adjacent: filtering, searching, or sorting the list by anything
+other than creation date (SRS/SDS ask for neither); acting on a listed user (UM-US-04/05); and
+whether a `DEACTIVATED` account can even exist yet (it can't — UM-US-05 is what would create one,
+and it is out of MVP scope).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **ADMIN**, I want to view a list of every invited and active account so that I can track who
+has completed onboarding, without needing to open each account individually.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully list all users**
+**Given** an authenticated ADMIN,
+**When** the ADMIN requests the list of users,
+**Then** the system returns every user account's email, full name, status, and creation date, ordered newest first.
+
+**AC-02: Deny access to non-ADMIN callers**
+**Given** an authenticated user whose role is not ADMIN,
+**When** that user requests the list of users,
+**Then** the system denies the request and returns a forbidden error.
+
+**AC-03: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to list users,
+**Then** the system denies the request before evaluating any query parameter and returns an unauthenticated error.
+
+**AC-04: Bound and paginate the result by default**
+**Given** an authenticated ADMIN,
+**When** the ADMIN requests the list without specifying a page or page size,
+**Then** the system returns at most 25 users on the first page, together with the total number of users across all pages.
+
+**AC-05: Accept an explicit page and page size within range**
+**Given** an authenticated ADMIN,
+**When** the ADMIN requests a specific page together with a page size up to the maximum of 100,
+**Then** the system returns that page's users and the same accurate total count.
+
+**AC-06: Reject a page or page size outside the allowed range**
+**Given** an authenticated ADMIN,
+**When** the ADMIN requests a page or page size that is not a positive integer, or a page size greater than 100,
+**Then** the system rejects the request with a validation error identifying the offending parameter, and returns no users.
+
+**AC-07: Include every account regardless of status**
+**Given** user accounts exist in `PENDING`, `ACTIVE`, and `DEACTIVATED` status,
+**When** an authenticated ADMIN requests the list,
+**Then** every one of them appears on some page of the result, each carrying its actual status.
+
+### Edge Cases
+
+**EC-01**: **No users besides the caller** — when the only account in the system is the requesting ADMIN, the list contains that one account rather than an error or a null result.
+
+**EC-02**: **A page number beyond the last available page** — returns an empty list of items together with the accurate total, not a not-found error.
+
+**EC-03**: **A `PENDING` user with no full name yet** — full name has never been set (activation, UM-US-02, is what sets it), so the entry carries an empty full name rather than causing an error or being omitted from the list.
+
+**EC-04**: **More users than fit on one page** — paging through every page with a fixed page size returns every user exactly once, with no duplicate and no gap, in a stable newest-first order across the page boundaries.
+
+**EC-05**: **Page size at the exact maximum** — a page size of exactly 100 is accepted; 101 is rejected under AC-06. The cap is a ceiling, not a target.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated **ADMIN** to retrieve a list of all user accounts (SRS §6 US-01-03; SDS §5.2.3).
+- **FR-02**: The system must **include**, for every listed account, its email, full name, status, and creation date (SRS §6 US-01-03 Gherkin; SDS §6.2.1 `UserRead`).
+- **FR-03**: The system must **deny** the operation to any authenticated caller whose role is not ADMIN (SDS §5.2.3 "(ADMIN)"; constitution SEC-07).
+- **FR-04**: The system must **deny** the operation to unauthenticated callers, evaluating credentials before any query parameter (constitution API-08; mirrors UM-US-01 FR-15).
+- **FR-05**: The system must **accept** `page` and `page_size` query parameters, defaulting to page 1 and page size 25 when omitted (constitution API-06).
+- **FR-06**: The system must **reject** a `page` or `page_size` value that is not a positive integer, or a `page_size` greater than 100, with a validation error (constitution API-06, PF-04).
+- **FR-07**: The system must **return**, alongside every page, the total number of user accounts across all pages (constitution API-06).
+- **FR-08**: The system must **order** the returned accounts by creation date, newest first, consistently across pages of the same request pattern (plan.md A3).
+- **FR-09**: The system must **apply no status filter** — every account is included regardless of whether it is `PENDING`, `ACTIVE`, or `DEACTIVATED` (plan.md A1; SDS UM-API-03).
+- **FR-10**: The system must **never include** a password hash or any other credential material in the response (constitution PF-03, SEC-01).
+
+#### Business Rules
+
+- **BR-01**: Only an ADMIN may list users; no other role and no unauthenticated caller may (SDS §5.2.3).
+- **BR-02**: The list applies no status filter — every account appears regardless of `PENDING`/`ACTIVE`/`DEACTIVATED` (FR-09, plan.md A1).
+- **BR-03**: A page never carries more than 100 accounts; the default when unspecified is 25 (FR-05, FR-06).
+- **BR-04**: Accounts are ordered by creation date, newest first, and that order is stable across pages of the same request pattern (FR-08).
+
+#### Key Entities
+
+- **User**: Reused from UM-US-01/UM-US-02 with no new entity or column. This story only reads it — no state transition occurs here.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An ADMIN can retrieve every user's email, full name, status, and creation date in one call.
+- **SC-02**: Non-ADMIN and unauthenticated callers cannot list users; their attempts return nothing.
+- **SC-03**: No request to this endpoint can return an unbounded number of rows.
+- **SC-04**: An ADMIN can page through the entire user set with an accurate total and no duplicated or skipped account.
+- **SC-05**: The list reflects onboarding progress for every account regardless of its current status.
+
+### Assumptions & Dependencies
+
+- **UM-US-01 must exist first.** There is nothing to list otherwise. UM-US-01 is implemented and verified.
+- **This story does not depend on UM-US-02.** A `PENDING` user who has never activated still appears in the list, with an empty full name (EC-03) — UM-US-02 is what would eventually fill that field in, not a precondition for listing.
+- **Authentication must exist to call this endpoint in practice.** AC-02 and AC-03 require an authenticated caller with a role, which is **SS-US-01 (Login)** — a different epic. As with UM-US-01, this story is specified and can be implemented against `AdminDep` (already delivered), but a human cannot obtain a credential to call it for real until SS-US-01's login endpoint ships.
+- **`id` is included even though SRS's Gherkin names only four fields.** SDS §6.2.1 already registers `UserRead` with `id`, `email`, `full_name`, `status`, `created_at` — the spec follows the more detailed of the two documents, the same treatment UM-US-01's `InvitationRead` gave its own extra fields over the SDS's abbreviated illustration.
+- **Three of these criteria have no scenario in the requirements baseline.** AC-02 (role denial), AC-03 (auth denial), AC-04/AC-05/AC-06 (pagination and its bounds) derive from SDS §5.2.3's "(ADMIN)" annotation and from constitution API-06/PF-04/SEC-07 — not from SRS's single Gherkin scenario, which covers only the authenticated-Admin happy path. Recorded here rather than silently filled in, matching how UM-US-02's own Assumptions section flagged the same class of gap (its F1).

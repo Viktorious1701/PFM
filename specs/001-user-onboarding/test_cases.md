@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-01 · SDS §5.2 (UM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** UM-US-01 *(TC-01…TC-27, TC-27 an amendment for `plan.md` F1)* · UM-US-02 *(TC-28…TC-56)* · UM-US-03 *(pending, continue from TC-57)*
+> **Stories in this file:** UM-US-01 *(TC-01…TC-27, TC-27 an amendment for `plan.md` F1)* · UM-US-02 *(TC-28…TC-56)* · UM-US-03 *(TC-57…TC-72)*
 
 ---
 
@@ -875,4 +875,224 @@ for the response body.
 - **When:** Activation is submitted with a `full_name` of 256 characters, one past the stored width
 - **Then:** The response is `422` `VALIDATION_ERROR` identifying the `full_name` field; the user remains `PENDING` and nothing is persisted — deterministically, on SQLite and PostgreSQL alike, rather than passing locally and failing as a `500` on the deployment target (QF-05 as amended, ENV-03)
 - **AC:** AC-10, FR-23
+- **Type:** integration
+
+---
+
+## UM-US-03: List Users
+
+> **IDs in this section are local to UM-US-03** (`QF-NN`), matching `spec.md`'s per-story
+> convention. Only `TC-NN` runs continuously across the epic — this story continues from `TC-57`.
+
+### Quality Findings
+
+#### QF-01
+
+**Description.** EC-03 requires a `PENDING` user with no full name yet to appear in the list "rather than causing an error or being omitted," but neither `spec.md` nor `plan.md` states whether the response's `full_name` field is nullable (serialising JSON `null`) or coerced to an empty string. The `users.full_name` column is nullable (established by UM-US-01's schema and confirmed by UM-US-01 TC-10, which asserts an invited account's `full_name` is `null`), and no story states a rule for translating that into the list response, because `UserRead` itself does not exist yet (`plan.md` F2 — it "returns with UM-US-03").
+
+**Impact.** EC-03's assertion must pin one concrete JSON representation before the DTO is written.
+
+**Recommendation.** `TC-71` assumes the response mirrors the storage layer directly — `full_name` serialises as JSON `null`, not `""` — consistent with the nullable column and with how UM-US-01 already represents an unset name. If the Implement step instead coerces to an empty string, update `TC-71` and `schemas/user.py`'s `UserRead.full_name` type together in the same change.
+
+#### QF-02
+
+**Description.** AC-07 requires every account status — including `DEACTIVATED` — to appear in the list, but no story in this round creates a `DEACTIVATED` account through any public path: UM-US-05 (deactivate) is out of MVP scope, and `spec.md`'s own Out-of-scope note for this story says as much ("whether a `DEACTIVATED` account can even exist yet (it can't...)").
+
+**Impact.** The `DEACTIVATED` precondition AC-07 requires cannot be constructed by calling the API under test.
+
+**Recommendation.** `TC-68` sets a user row to `DEACTIVATED` directly against the store — the same construction technique UM-US-02's `TC-50`/`TC-51` already used for `ACTIVE`/`DEACTIVATED` preconditions it also could not reach through a public endpoint. This is a testing technique, not a defect; recorded so the gap in constructability stays visible rather than silently worked around.
+
+### Acceptance Criteria Classification
+
+No user-list screen exists in `mobile/` this round (`plan.md`'s Element IDs table: "N/A (mobile
+deferred)"). `[BOTH]` rows below are deferred, not skipped, on the same basis as UM-US-01/UM-US-02's:
+SRS's Gherkin names a concrete "User Management" table screen, so that UI surface is in scope
+conceptually, just not built yet. Unlike PM-US-02's list story, this story's SRS scenario names no
+pagination control at all — `plan.md` F1 records AC-04/AC-05/AC-06 as unanchored to any SRS
+scenario — so the pagination-shaped criteria are classified `[API]` rather than `[BOTH]`.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully list all users | **[BOTH]** | API: envelope + newest-first order. UI: SRS names a concrete "User Management" table screen — deferred, no screen built this round |
+| AC-02 | Deny access to non-ADMIN callers | **[API]** | 403. No UI surface: a non-ADMIN never sees the list screen — authorisation, not presentation (mirrors UM-US-01 AC-04) |
+| AC-03 | Deny access to unauthenticated callers | **[API]** | 401. UI equivalent is a redirect to login, SS-US-01 territory (mirrors UM-US-01 AC-05) |
+| AC-04 | Bound and paginate the result by default | **[API]** | Default page/page_size are a backend contract concern — this story's SRS scenario names no pagination control; unanchored per `plan.md` F1 |
+| AC-05 | Accept an explicit page and page size within range | **[API]** | Same reasoning as AC-04 — query-parameter contract, no distinct rendering path |
+| AC-06 | Reject a page or page_size outside the allowed range | **[API]** | 422 `VALIDATION_ERROR` — backend validation concern |
+| AC-07 | Include every account regardless of status | **[BOTH]** | Same table UI surface as AC-01, now including `DEACTIVATED` rows — deferred; bounded by QF-02 |
+| EC-01 | No users besides the caller | **[BOTH]** | Same table UI surface as AC-01, rendering a single row — deferred |
+| EC-02 | A page number beyond the last available page | **[API]** | Empty page, 200 — backend pagination boundary, no distinct UI surface |
+| EC-03 | A `PENDING` user with no full name yet | **[BOTH]** | Same table UI surface as AC-01, rendering an explicit empty cell — deferred; bounded by QF-01 |
+| EC-04 | More users than fit on one page | **[API]** | Cross-page completeness is a backend pagination guarantee, not a new rendering path |
+| EC-05 | Page size at the exact maximum | **[API]** | Backend boundary value |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) | Blocked on |
+|---|---|---|---|---|
+| AC-01 | [BOTH] | TC-57, TC-58 | *deferred — mobile round* | — |
+| AC-02 | [API] | TC-59 | — | — |
+| AC-03 | [API] | TC-60, TC-61 | — | — |
+| AC-04 | [API] | TC-62 | — | — |
+| AC-05 | [API] | TC-63 | — | — |
+| AC-06 | [API] | TC-64, TC-65, TC-66 | — | — |
+| AC-07 | [BOTH] | TC-68 | *deferred — mobile round* | — |
+| EC-01 | [BOTH] | TC-69 | *deferred — mobile round* | — |
+| EC-02 | [API] | TC-70 | — | — |
+| EC-03 | [BOTH] | TC-71 | *deferred — mobile round* | — |
+| EC-04 | [API] | TC-72 | — | — |
+| EC-05 | [API] | TC-67 | — | — |
+
+> Every AC and EC has at least one integration TC. `[BOTH]` rows have **no** E2E case because
+> `mobile/` has no user-list screen this round — deferred to the mobile round, not silently
+> dropped, the same treatment UM-US-01/UM-US-02 gave their own `[BOTH]` rows. **Known coverage
+> limits, accepted:** the `DEACTIVATED` precondition in AC-07/`TC-68` is constructed by direct
+> store manipulation because no public path creates one this round (QF-02, the same technique
+> UM-US-02's `TC-50`/`TC-51` used); and EC-03's empty-name representation (`TC-71`) assumes JSON
+> `null` rather than an empty string until the DTO exists (QF-01).
+
+---
+
+### TC-57: ADMIN lists all users — 200, newest-first order
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN, and three users created in sequence at distinct, controlled instants (the clock advanced between each, as UM-US-01 TC-23 did) with emails `a@x.com`, `b@x.com`, `c@x.com`
+- **When:** The ADMIN requests the list of users
+- **Then:** The response is `200`; `items` includes all three, ordered newest first — `c@x.com`, then `b@x.com`, then `a@x.com`
+- **AC:** AC-01, FR-01, FR-08, BR-04
+- **Type:** integration
+
+### TC-58: The response item exposes exactly the five documented fields, never a credential
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN and one existing user
+- **When:** The ADMIN requests the list of users
+- **Then:** The response is `200`; each item in `items` exposes **exactly** the keys `id`, `email`, `full_name`, `status`, `created_at` — no more, and in particular no `password_hash`
+- **AC:** AC-01, FR-02, FR-10, PF-03, SEC-01
+- **Type:** integration
+
+### TC-59: A non-ADMIN caller is denied with 403
+
+- **US:** UM-US-03
+- **Given:** An authenticated user whose role is `USER`
+- **When:** That user requests the list of users
+- **Then:** The response is `403` with `error_code` `FORBIDDEN`; no `items` are returned
+- **AC:** AC-02, FR-03, BR-01, SEC-07
+- **Type:** integration
+
+### TC-60: An unauthenticated or invalid-credential caller is denied with 401
+
+- **US:** UM-US-03
+- **Given:** A caller presenting no `Authorization` header, and separately a caller presenting an expired token
+- **When:** Each attempts to list users
+- **Then:** Both responses are `401` with `error_code` `NOT_AUTHENTICATED`; no `items` are returned
+- **AC:** AC-03, FR-04, SEC-07
+- **Type:** integration
+
+### TC-61: Credentials are evaluated before any query parameter
+
+- **US:** UM-US-03
+- **Given:** A caller presenting no credentials
+- **When:** The list is requested with an out-of-range `page` value (`page=0`)
+- **Then:** The response is `401` `NOT_AUTHENTICATED`, not `422` — an unauthenticated caller learns nothing about the validity of their query parameters, mirroring UM-US-01 TC-13's ordering
+- **AC:** AC-03, FR-04
+- **Type:** integration
+
+### TC-62: The default page is 1 of size 25, with an accurate total
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN and three existing users
+- **When:** The list is requested with no `page` or `page_size` supplied
+- **Then:** The response is `200`; `page` is `1`, `page_size` is `25`, `items` contains all three users (fewer than the page size), and `total` is `3`
+- **AC:** AC-04, FR-05, FR-07, BR-03
+- **Type:** integration
+
+### TC-63: An explicit page and page size within range return that page and an accurate total
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN and five existing users
+- **When:** The list is requested with `page=2` and `page_size=2`
+- **Then:** The response is `200`; `page` is `2`, `page_size` is `2`, `items` contains exactly the third- and fourth-newest users, and `total` is `5`
+- **AC:** AC-05, FR-05, FR-07
+- **Type:** integration
+
+### TC-64: A `page` that is not a positive integer is rejected with 422
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN
+- **When:** The list is requested with `page` set to each of `0`, `-1`, and `"abc"` in turn
+- **Then:** Each response is `422` with `error_code` `VALIDATION_ERROR` and a `details.fields` entry locating `page`; no `items` are returned
+- **AC:** AC-06, FR-06, BR-03
+- **Type:** integration
+
+### TC-65: A `page_size` that is not a positive integer is rejected with 422
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN
+- **When:** The list is requested with `page_size` set to each of `0`, `-1`, and `"abc"` in turn
+- **Then:** Each response is `422` with `error_code` `VALIDATION_ERROR` and a `details.fields` entry locating `page_size`; no `items` are returned
+- **AC:** AC-06, FR-06, BR-03
+- **Type:** integration
+
+### TC-66: A `page_size` above the maximum is rejected with 422
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN
+- **When:** The list is requested with `page_size=101`
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying `page_size`; the request is not silently capped at 100
+- **AC:** AC-06, EC-05, FR-06, BR-03
+- **Type:** integration
+
+### TC-67: A `page_size` of exactly 100 is accepted
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN
+- **When:** The list is requested with `page_size=100`
+- **Then:** The response is `200` — the cap is a ceiling, not a target: 100 is honoured, only 101 is rejected (TC-66)
+- **AC:** EC-05, FR-06
+- **Type:** integration
+
+### TC-68: Every account status appears in the list, carrying its actual status
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN, a `PENDING` user, an `ACTIVE` user, and a user set `DEACTIVATED` directly against the store (no public path creates one this round — QF-02)
+- **When:** The ADMIN requests the list of users
+- **Then:** The response is `200`; all three appear in `items`, each reporting its own actual `status` — `PENDING`, `ACTIVE`, and `DEACTIVATED` respectively; none is filtered out
+- **AC:** AC-07, FR-09, BR-02
+- **Type:** integration
+
+### TC-69: A caller with no one else in the system sees just their own account
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN, and no other user in the system
+- **When:** The ADMIN requests the list of users
+- **Then:** The response is `200`; `items` contains exactly one entry — the requesting ADMIN — and `total` is `1`, not an error or a null result
+- **AC:** EC-01, FR-01
+- **Type:** integration
+
+### TC-70: A page beyond the last available page returns an empty list with the accurate total
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN and three existing users
+- **When:** The list is requested with `page=5` and `page_size=25`
+- **Then:** The response is `200`, not `404`; `items` is an empty list and `total` is still `3`
+- **AC:** EC-02, FR-07
+- **Type:** integration
+
+### TC-71: A `PENDING` user with no full name yet is listed with an explicit empty name
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN and a `PENDING` user who has never activated (`full_name` is `null` in storage, per UM-US-01 TC-10)
+- **When:** The ADMIN requests the list of users
+- **Then:** The response is `200`; that user's entry is present in `items` with `full_name` equal to `null` — not omitted, and not an error (representation assumed per QF-01)
+- **AC:** EC-03, FR-02
+- **Type:** integration
+
+### TC-72: Paging through every page returns every user exactly once, in stable order
+
+- **US:** UM-US-03
+- **Given:** An authenticated ADMIN and five existing users, each created at a distinct, controlled instant
+- **When:** Every page is fetched in turn with `page_size=2` (`page=1`, `page=2`, `page=3`)
+- **Then:** The concatenation of all three pages' `items` contains every one of the five users exactly once, with no duplicate and no gap, in the same newest-first order TC-57 established, stable across the page boundaries
+- **AC:** EC-04, FR-08, BR-04
 - **Type:** integration

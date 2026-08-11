@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-01 · SDS §5.2 (UM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** UM-US-01 *(implemented, verified — plus F1's `T-18`, added and verified during UM-US-02's implementation)* · UM-US-02 *(implemented, verified — `120 passed`, 98% coverage)* · UM-US-03 *(pending)*
+> **Stories in this file:** UM-US-01 *(implemented, verified — plus F1's `T-18`, added and verified during UM-US-02's implementation)* · UM-US-02 *(implemented, verified — `120 passed`, 98% coverage)* · UM-US-03 *(planned)*
 
 ---
 
@@ -539,3 +539,167 @@ All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, API-
 | T-07 | Integration tests written from `test_cases.md` (TC-28 onward) | `backend/tests/integration/test_um_us_02_activate.py` | ✅ Done — TC-28…TC-56, 34 tests, one real LA-01 defect found and fixed while writing them (see `test_cases.md`'s Test Implementation Map) |
 | T-08 | **Deferred:** `slowapi` rate limiting on both activate routes — the unauthenticated `GET` especially, since it answers a yes/no question about a secret (SEC-11, SDS §7.3). No AC or EC requires it; raise as its own story alongside UM-US-01's T-13 rather than smuggling either in | `backend/app/main.py` | Deferred (unchanged) |
 | T-18 *(carried from UM-US-01)* | `UserEmailDeactivatedError` + `create_invitation()` DEACTIVATED branch (F1) | `backend/app/core/errors.py`, `backend/app/services/invitation_service.py` | ✅ Done — proven by `test_cases.md` TC-27 |
+
+---
+
+## UM-US-03: List Users
+
+> **IDs in this section are local to UM-US-03** (`A*`/`F*`/`T-NN`), matching `spec.md`'s
+> convention. Only `TC-NN` in `test_cases.md` runs continuously across the epic.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Code | **No status filter.** `list_users()` returns `PENDING`/`ACTIVE`/`DEACTIVATED` accounts uniformly (spec BR-02, FR-09). SDS's `UM-API-03` says "List all users" — unfiltered — which does not contradict SRS's narrower "invited and active" framing; a `DEACTIVATED` account isn't even reachable yet since UM-US-05 (deactivate) is out of MVP scope, so this is latent behaviour, not a live discrepancy. | ✅ Resolved |
+| A2 | API | **`page`/`page_size` are rejected, not clamped, when out of range.** `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)` — a non-positive or over-100 value is `422 VALIDATION_ERROR` (spec AC-06, FR-06). Matches this codebase's own precedent of rejecting rather than silently truncating out-of-range input (UM-US-01 EC-04, UM-US-02 EC-03), rather than the silent-clamp style some list endpoints elsewhere use. | ✅ Resolved |
+| A3 | Code | **Sort order fixed as `created_at DESC`** (spec BR-04, FR-08). Neither SRS nor SDS specifies an order; newest-first is the natural default for an ADMIN tracking recent onboarding activity. Requires a new index — `users.created_at` currently carries none (constitution PF-02). | ✅ Resolved |
+| A4 | Architecture | **The router issues no `db.commit()`.** This is a pure read with no write path, so AR-06's commit-ownership rule has nothing to close over — mirrors the existing `GET /users/activate` route, which also commits nothing. | ✅ Resolved |
+| A5 | Logging | **No new audit event for a list view.** Constitution LA-04 enumerates exactly three audit-worthy actions for this epic — invitations sent, activations completed, logins — and does not name list reads; no AC in this story requires a "who viewed the list" trail. Revisit if a future story needs one. | ✅ Resolved |
+| A6 | API | **New envelope `UserListRead { items, total, page, page_size }`.** SDS §6.2.1 registers only the per-item `UserRead`; constitution API-06 requires page/page_size acceptance and a total count in the response, which the SDS's DTO registry predates being made explicit for this story. Recorded here as the concrete contract. | ✅ Resolved |
+| F1 | Finding | **Three ACs have no anchor in `SRS.md`.** SRS §6 US-01-03 carries exactly one Gherkin scenario — the authenticated-Admin happy path. AC-02 (role denial), AC-03 (auth denial), and AC-04/05/06 (pagination and its bounds) are each derived from SDS §5.2.3's "(ADMIN)" annotation and constitution API-06/PF-04/SEC-07, not from a baseline scenario. Recorded so the gap stays visible, the same treatment UM-US-02's own F1 gave its four unanchored ACs. | ✅ Resolved *(recorded, not closed)* |
+
+---
+
+### Architecture
+
+**Package layout** (additions/updates only — UM-US-01/02's foundation is reused as-is unless noted).
+
+```text
+backend/app/
+├── schemas/
+│   └── user.py                       # NEW  UserRead (restored per UM-US-01 plan.md F2) + UserListRead
+├── repositories/
+│   └── user_repo.py                  # update: add list_users(db, *, page, page_size)
+├── services/
+│   └── user_service.py               # NEW  list_users()
+└── api/v1/
+    └── users.py                      # update: add GET /users (list)
+
+backend/migrations/versions/
+└── <rev>_index_users_created_at.py   # NEW  index on users.created_at (PF-02, backs the default sort — A3)
+
+backend/tests/
+└── integration/test_um_us_03_list_users.py   # NEW  written at the Implement step from test_cases.md
+```
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `UserModel` | `users` | none (read-only) | This story only reads. `created_at`, the sort key, gains an index (A3, PF-02). |
+| `UserRead` (DTO) | — | `id`, `email`, `full_name`, `status`, `created_at` | SDS §6.2.1 registry entry, restored per UM-US-01 plan.md F2. Never `password_hash` (PF-03, SEC-01). |
+| `UserListRead` (DTO) | — | `items: UserRead[]`, `total`, `page`, `page_size` | New envelope (A6) — not in SDS's registry, designed to satisfy API-06. |
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Only an ADMIN may list | BR-01, AC-02, AC-03 | `GET /api/v1/users` guarded by `require_admin` (`AdminDep`), reused verbatim from UM-US-01 — no new dependency |
+| Unauthenticated rejected before the ADMIN check | AC-03 | `get_current_user` runs before `require_admin` inside `AdminDep`'s chain — 401 precedes 403, same ordering as UM-US-01 (its A8) |
+| No status filter | BR-02, AC-07, A1 | `user_repo.list_users()` issues no predicate on `status` |
+| Bounded, paginated results | BR-03, AC-04, AC-05, AC-06, API-06, PF-04 | Router declares `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`; out-of-range is `422`, not clamped (A2) |
+| Newest-first, stable order | BR-04, EC-04, A3 | `ORDER BY created_at DESC` in `user_repo.list_users()`, backed by the new index |
+| Accurate total across pages | AC-04, AC-05, EC-02, EC-04 | `user_repo.list_users()` also computes the unfiltered row count alongside the page query |
+| Projection excludes credential material | SC-01, PF-03, SEC-01 | `UserRead` has no `password_hash` field — the same structural guard `InvitationRead`/`ActivationResult` already use |
+| Pure read, no commit | A4 | Router issues no `db.commit()` — mirrors `GET /users/activate` |
+
+**Sequence diagram — List Users**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every
+request into `API` answered back to `UI` with a status code.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Admin (mobile app)
+    participant API as API
+    participant Svc as UserService
+    participant Store as Store
+
+    Note over UI,Store: Main flow — authenticated ADMIN, page within range
+    UI->>API: GET /users
+    API->>Svc: list(input)
+    Svc->>Store: find a page of users, newest first
+    Store-->>Svc: page of users, total count
+    Svc-->>API: user list page
+    API-->>UI: 200 users — email, full name, status, created date, plus page and total
+
+    Note over UI,Store: Refusal scenarios — every branch below still returns a status to UI
+    opt Unauthenticated or expired credentials (AC-03)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+    opt Authenticated but not ADMIN (AC-02)
+        API-->>UI: 403 FORBIDDEN
+    end
+    opt page or page_size outside the accepted range (AC-06)
+        API-->>UI: 422 VALIDATION_ERROR
+    end
+```
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-03) | 401 | `NOT_AUTHENTICATED` |
+| Authenticated, role is not ADMIN (AC-02) | 403 | `FORBIDDEN` |
+| `page` or `page_size` not a positive integer, or `page_size` > 100 (AC-06) | 422 | `VALIDATION_ERROR` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+No new error class this story — all three codes already exist in `core/errors.py`, reused as-is.
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, API-02); the existing
+`RequestValidationError` handler in `main.py` already covers a `Query()` constraint failure the
+same way it covers a body validation failure — no new wiring needed.
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | Pagination arithmetic and DTO assembly live in `user_service.list_users()`, not the router |
+| AR-02 Thin router | Required | Router binds `page`/`page_size`, delegates, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `user_repo.list_users()` is a query only — ordering and limiting, no business rule |
+| AR-05 No framework objects in services | Required | `user_service` takes plain `page`/`page_size` ints; no `Request`/`Response` |
+| AR-06 One transaction per request | **N/A** | Pure read, nothing to commit (A4) |
+| AR-07 router → service → repository | Required | Router never calls `user_repo` directly, even though the service is thin |
+| API-01 Versioned plural path | Required | `GET /api/v1/users` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required | `200` read · `401` · `403` · `422` validation |
+| API-04 Prefixed error codes | Required | No new code — `NOT_AUTHENTICATED`, `FORBIDDEN`, `VALIDATION_ERROR` all already catalogued |
+| API-06 Pagination | Required | `page`/`page_size`, default 25, max 100, total count in `UserListRead` |
+| API-07 Explicit response_model | Required | `response_model=UserListRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected**; the public list is unchanged |
+| NC-02 Naming | Required | `UserRead` / `UserListRead`; no new model or table |
+| NC-05 Enum serialisation | Required | `status` serialises as `"PENDING"`/`"ACTIVE"`/`"DEACTIVATED"` literals, unchanged |
+| VL-01 Pydantic is the source of truth | Required | `Query(ge=1, le=100)` constraints are the validation, not a service-layer clamp (A2) |
+| VL-02 Errors grouped | Required | Reused `RequestValidationError` handler |
+| SEC-07 Authz proven by test | Required | 401 and 403 each get a dedicated test case, same pattern as UM-US-01 |
+| SEC-08 Ownership filter | **N/A** | Not user-owned data — an ADMIN-only view across all accounts by design |
+| SEC-10 No enumeration | **N/A** | This endpoint takes no email or identifying parameter to probe; nothing to disclose by existence |
+| SEC-11 Rate limiting | **N/A** | SDS §7.3 and constitution SEC-11 name only the invite and activate endpoints as brute-force/spam targets; an ADMIN-only authenticated list read isn't the oracle-over-a-secret shape those cover |
+| LA-01 No secrets in logs | Required | Response and any incidental log line carry no credential field — nothing new to guard, `UserRead` has none |
+| LA-02 / LA-04 Audit | **N/A** | No new audit event — list reads aren't in LA-04's enumeration (A5) |
+| PF-01 300 ms p95 | Required | No slow I/O in this path; feasibility rests on the new index (PF-02) and the narrow projection (PF-03) |
+| PF-02 Indexed lookups | Required | New index on `users.created_at`, the sort column (A3) |
+| PF-03 DTO projection | Required | `UserRead` — five fields, no ORM graph, no `password_hash` |
+| PF-04 Bounded lists | Required | Enforced by API-06's cap (A2) |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| TST-05 Boundaries | Required | EC-05 covers the exact `page_size=100` boundary |
+| DOD-02 Migration | Required | One Alembic revision adding the `created_at` index — no column change |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No user-list screen exists in `mobile/` this round. Element IDs are defined when the mobile round reaches this story. |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | Alembic revision adding an index on `users.created_at` (backs the default sort, A3, PF-02) | `backend/migrations/versions/` | Open |
+| T-02 | `schemas/user.py`: `UserRead` (restored per UM-US-01 plan.md F2) + `UserListRead` envelope (A6) | `backend/app/schemas/user.py` | Open |
+| T-03 | `user_repo.py`: `list_users(db, *, page, page_size)` — `ORDER BY created_at DESC`, `LIMIT`/`OFFSET`, plus an unfiltered total count (A1, A3) | `backend/app/repositories/user_repo.py` | Open |
+| T-04 | `user_service.py` (NEW): `list_users(db, *, page, page_size) -> UserListRead` — maps repository rows into the DTO | `backend/app/services/user_service.py` | Open |
+| T-05 | `GET /api/v1/users` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `AdminDep`, no `db.commit()` (A2, A4) | `backend/app/api/v1/users.py` | Open |
+| T-06 | Integration tests written from `test_cases.md` (next TC number onward) | `backend/tests/integration/test_um_us_03_list_users.py` | Open |

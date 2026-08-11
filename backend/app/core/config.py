@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     # Gitignored — these files carry live, unexpired activation tokens.
     outbox_dir: Path = Path("var/outbox")
 
+    # --- CORS ---------------------------------------------------------
+    # No story specifies this — it's app wiring, not a business rule. The
+    # Expo web client (localhost:8081) is a different origin than the API
+    # (localhost:8000) during local dev, so the browser blocks responses
+    # without these headers. Auth is a Bearer header, not a cookie, so no
+    # credentialed-request mode is needed.
+    cors_allow_origins: list[str] = ["http://localhost:8081"]
+
     @property
     def smtp_configured(self) -> bool:
         """EC-07: no credentials means delivery cannot succeed, and must not pretend to."""

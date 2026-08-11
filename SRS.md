@@ -1,6 +1,6 @@
 # 📋 Software Requirements Specification (SRS)
 ## System: Personal & Family Finance Management (PFM)
-**Document Version:** 2.2.0  
+**Document Version:** 2.3.0  
 **Status:** Approved for Development  
 **Revision History:** see [§8](#8-revision-history)  
 
@@ -28,7 +28,7 @@
    - [Feature-08: Notification Handling](#feature-08-notification-handling)
    - [Feature-09: Data Overview Dashboard](#feature-09-data-overview-dashboard)
    - [Feature-10: AI Financial Assistant (Phase 2 Placeholder)](#feature-10-ai-financial-assistant-chatbot-phase-2-placeholder)
-   - [Feature-11: Investment Portfolio & Goals (Phase 3 Placeholder)](#feature-11-investment-portfolio--financial-goals-phase-3-placeholder)
+   - [Feature-11: Asset & Investment Holdings Tracking](#feature-11-asset--investment-holdings-tracking)
 7. [Feature-Level Release Roadmap](#7-feature-level-release-roadmap)
 8. [Revision History](#8-revision-history)
 
@@ -40,7 +40,7 @@
 This document defines the Software Requirements Specification (SRS) for the Personal & Family Finance Management (PFM) application. The purpose of this SRS is to:
 * Define the functional, non-functional, user experience, and business flow requirements for the product.
 * Serve as an authoritative requirements baseline for development, testing, and stakeholder alignment.
-* Establish a clear MVP scope focusing on invitation-based user onboarding, low-friction expense logging, and overspending prevention, while reserving clear paths for future extensions (AI Assistant & Investments).
+* Establish a clear MVP scope focusing on invitation-based user onboarding, low-friction expense logging, and overspending prevention, while reserving clear paths for future extensions (AI Assistant & Asset Holdings).
 
 ### 1.2 Scope
 PFM is a web and mobile software system designed to help individual users and families record, track, and optimize their daily finances.
@@ -49,18 +49,19 @@ The PFM system supports users in:
 2. **Account Organization:** Managing wallets representing cash, bank accounts, and credit lines.
 3. **Transaction Logging:** Quickly recording income and expense events.
 4. **Budget Controls:** Setting monthly category caps with visual thresholds to prevent overspending.
-5. **Reporting & Insights:** Reviewing financial summaries and category trends.
+5. **Asset & Holdings Tracking:** Tracking personal holdings across various asset classes (e.g., gold, stocks, real estate, commodities, foreign currencies) to calculate comprehensive net worth.
+6. **Reporting & Insights:** Reviewing financial summaries, category trends, and asset allocation.
 
 ### 1.3 Assumptions and Constraints
 
 #### Assumptions
-* Users manually log transactions or receive invitations from account administrators/family owners.
+* Users manually log transactions, asset purchases, or receive invitations from account administrators/family owners.
 * Financial entries use standard decimal precision.
 * Initial deployment utilizes a secure monolithic web application with API integration capabilities.
 
 #### Constraints
 * **Verified Accounts Only:** Open self-registration without email verification is disabled to prevent non-existent emails in the database.
-* **MVP Focus:** Direct open-banking live feeds and stock market data feeds are deferred to future releases.
+* **MVP Focus:** Direct open-banking live feeds and automated stock exchange ticker feeds are deferred to future releases; asset values can be manually updated or batch-refreshed.
 
 ### 1.4 Definitions and Acronyms
 * **PFM:** Personal Finance Management
@@ -74,33 +75,29 @@ The PFM system supports users in:
 
 ### 1.5 Conceptual Domain Model
 
-*Added v2.2.0.* This is the **business-language** view of the entities every requirement below
-refers to — what each thing is and how it relates to the others, with no database column, data
-type, or API shape attached to it. That technical realisation is `SDS.md` §2 (Technical Domain
-Model), which this section deliberately does not duplicate: read §1.5 for *what the business means*
-by "a Wallet" or "a Budget," and `SDS.md` §2.1–§2.4 for how each is stored, keyed, and state-machined.
+This is the **business-language** view of the entities every requirement below refers to — what each
+thing is and how it relates to the others, with no database column, data type, or API shape attached
+to it. That technical realisation is `SDS.md` §2 (Technical Domain Model), which this section
+deliberately does not duplicate: read §1.5 for *what the business means* by "a Wallet" or "a Budget,"
+and `SDS.md` §2.1–§2.4 for how each is stored, keyed, and state-machined.
 
 Every entity here is one the SRS already requires through an FR or a Feature story — nothing is
-introduced that the requirements below don't already need. The seven entities match `SDS.md` §2.1's
-domain-layer traceability table exactly, so the two documents describe one model, not two.
+introduced that the requirements below don't already need. The first seven entities match `SDS.md`
+§2.1's domain-layer traceability table exactly, so the two documents describe one model, not two.
+`Asset` and `AssetHolding` are not yet in `SDS.md`'s registry — carried into that document's own model
+the next time it is aligned, the same treatment already given the `User receives Notification`
+relationship noted below.
 
-* **User** — The person the system knows: an account holder, invited by another User with the
-  ADMIN role, who owns Wallets and Categories, sets Budgets, logs Transactions, and receives
-  Notifications (FR-01, FR-02).
-* **Invitation** — A single email invitation attempt, distinct from the User it may create — its own
-  history survives independently of whether the invited person ever activates (FR-01; SRS §6
-  US-01-01/US-01-02).
-* **Wallet** — A named store of money a User holds — cash, a bank account, a credit line — that
-  Transactions move money into or out of (FR-03).
-* **Category** — A label a User defines to classify money movement as one kind of income or expense,
-  e.g. "Groceries" or "Salary" (FR-04).
-* **Budget** — A spending limit a User sets for one Category within one Wallet, over a monthly
-  period, that Transactions are measured against (FR-05).
-* **Transaction** — A single recorded movement of money, in or out, against one Wallet and one
-  Category, at a point in time (FR-06).
-* **Notification** — A message the system raises for a User about something that happened —
-  a budget exceeded, an invitation sent, a wallet running low — that the User can read and mark read
-  (FR-08; SRS §6 Feature-08, "List Notifications" / "Mark Notification as Read").
+The domain consists of nine key entities:
+* **User** — The person the system knows: an account holder, invited by another User with the ADMIN role, who owns Wallets, Categories, Asset Holdings, sets Budgets, logs Transactions, and receives Notifications (FR-01, FR-02).
+* **Invitation** — A single email invitation attempt, distinct from the User it may create — its own history survives independently of whether the invited person ever activates (FR-01; SRS §6 US-01-01/US-01-02).
+* **Wallet** — A named store of liquid money a User holds — cash, a bank account, a credit line — that Transactions move money into or out of (FR-03).
+* **Category** — A label a User defines to classify money movement as one kind of income or expense, e.g. "Groceries" or "Salary" (FR-04).
+* **Budget** — A spending limit a User sets for one Category within one Wallet, over a monthly period, that Transactions are measured against (FR-05).
+* **Transaction** — A single recorded movement of money, in or out, against one Wallet and one Category, at a point in time (FR-06).
+* **Notification** — A message the system raises for a User about something that happened — a budget exceeded, an invitation sent, a wallet running low — that the User can read and mark read (FR-08).
+* **Asset** — A classification or reference type for non-liquid or investment holdings (e.g. Gold, Stocks, Real Estate, Commodities, Crypto, Foreign Currencies).
+* **AssetHolding** — A specific quantity of an Asset held by a User in an account or portfolio, tracking quantity, total acquisition cost, current estimated unit value, and calculated current market value (FR-10).
 
 **Relationships:**
 
@@ -142,15 +139,28 @@ classDiagram
         readStatus
         createdAt
     }
+    class Asset {
+        name
+        assetClass
+        unit
+    }
+    class AssetHolding {
+        quantity
+        acquisitionCost
+        currentUnitValue
+        totalMarketValue
+    }
 
     User "1" -- "*" Invitation : invites
     User "1" -- "*" Wallet : owns
     User "1" -- "*" Category : defines
     User "1" -- "*" Notification : receives
+    User "1" -- "*" AssetHolding : holds
     Wallet "1" -- "*" Transaction : contains
     Wallet "1" -- "*" Budget : scoped_to
     Category "1" -- "*" Transaction : classifies
     Category "1" -- "*" Budget : applies_to
+    Asset "1" -- "*" AssetHolding : classifies
 ```
 
 | Relationship | Cardinality | Meaning |
@@ -159,10 +169,12 @@ classDiagram
 | User owns Wallet | one User → many Wallets | A User may hold several Wallets — cash, bank, credit (FR-03) |
 | User defines Category | one User → many Categories | Categories belong to the User who created them, not to a shared list (FR-04) |
 | User receives Notification | one User → many Notifications | Every Notification is raised for exactly one User (FR-08) |
+| User holds AssetHolding | one User → many AssetHoldings | A User tracks their personal holdings across golds, stocks, real estate, etc. (FR-10) |
 | Wallet contains Transaction | one Wallet → many Transactions | Every Transaction moves money into or out of exactly one Wallet (FR-06) |
 | Wallet scoped_to Budget | one Wallet → many Budgets | A spending limit is set against one Wallet at a time (FR-05) |
 | Category classifies Transaction | one Category → many Transactions | Every Transaction is tagged with exactly one Category (FR-06) |
 | Category applies_to Budget | one Category → many Budgets | A Budget's limit applies to spending in one Category (FR-05) |
+| Asset classifies AssetHolding | one Asset → many AssetHoldings | An Asset type (e.g. SJC Gold, AAPL Stock) categorizes an AssetHolding (FR-10) |
 
 **One relationship completes a gap in `SDS.md`.** `SDS.md` §2.1 and §2.2 both list **Notification** as
 a full domain entity — with its own table, model, and DTO — but its §2.3 class diagram never draws a
@@ -172,11 +184,12 @@ from the User-scoped `NM-US-01`/`NM-US-02`/`NM-US-03` stories (`SDS.md` §5.8: *
 invented independently of them. Carried into `SDS.md`'s own class diagram and ERD the next time that
 document is aligned, so the two stop disagreeing about whether the relationship exists.
 
-**Out of scope for this model:** Features 10 and 11 (`SRS.md` §6, the Phase 2 AI Assistant and Phase 3
-Investment Portfolio placeholders) introduce their own entities — an investment `Asset`, a `Holding`,
-a chatbot query object — that belong to a future baseline, not this one. `SDS.md` names them nowhere
-either. They are not modelled here for the same reason `SDS.md` §11 keeps them as prose bullets
-rather than domain objects: nothing in the current MVP requires them to exist yet.
+**Out of scope for this model:** Feature 10 (`SRS.md` §6, the Phase 2 AI Assistant placeholder)
+introduces its own entities — a chatbot query object — that belong to a future baseline, not this
+one. `SDS.md` names it nowhere either. It is not modelled here for the same reason `SDS.md` §11 keeps
+it as a prose bullet rather than a domain object: nothing in the current MVP requires it to exist yet.
+Feature-11 (Asset & Investment Holdings Tracking) is in scope for this model — its
+`Asset`/`AssetHolding` entities are modelled above.
 
 **Lifecycle, not shape.** How a User or an Invitation *changes state* over time — `PENDING` →
 `ACTIVE` → `DEACTIVATED`, or an Invitation's own `PENDING` → `ACCEPTED` / `EXPIRED` / `SUPERSEDED` —
@@ -191,11 +204,6 @@ answers *what exists and how the pieces connect*, not *what state each piece can
   The System shall allow authorized users to invite new users via email. The System shall generate a secure token with a TTL (Time-To-Live) and dispatch an activation email via Gmail SMTP. Non-activated (`PENDING`) accounts shall not be permitted to log in until activated.
 
   An account holds exactly one of three statuses: **`PENDING`** (invited, no credentials set, cannot log in), **`ACTIVE`** (activated and usable), and **`DEACTIVATED`** (access withdrawn by an administrator). An invitation may not be used to move an account out of `DEACTIVATED` — restoring withdrawn access is an administrative act, not an onboarding one. Token expiry never changes an account's status: an expired invitation leaves its account `PENDING` and re-invitable.
-
-  > *Added in v2.1.0.* `DEACTIVATED` was previously named nowhere in this document, although the
-  > design and the working artifacts both had to rule on it — what happens when a disabled address is
-  > re-invited, and when an old link belonging to a disabled account is used. Naming the three
-  > statuses here puts that vocabulary in the baseline rather than leaving it to be inferred.
 
 * **FR-02: Security & Access Control**  
   The System shall authenticate users via secure credentials (email/password), enforce JWT-based sessions, and restrict data access so users can only view data they own or are granted access to.
@@ -219,7 +227,10 @@ answers *what exists and how the pieces connect*, not *what state each piece can
   The System shall generate notifications when budgets are exceeded, invitations are sent, or low wallet balances occur.
 
 * **FR-09: Data Overview Dashboard**  
-  The System shall display an executive summary widget showing total net balance, recent transactions, active budget progress bars, and alerts.
+  The System shall display an executive summary widget showing total net worth (liquid wallet balances + asset holding valuations), recent transactions, active budget progress bars, and alerts.
+
+* **FR-10: Asset & Investment Holdings Tracking**  
+  The System shall allow Users to record and manage personal holdings across physical and financial asset classes (e.g., Gold, Stocks, Real Estate, Commodities, Foreign Currencies). Each holding tracks asset type, quantity held, unit of measurement, total acquisition cost, and current estimated unit valuation to calculate overall market value.
 
 ---
 
@@ -238,39 +249,37 @@ answers *what exists and how the pieces connect*, not *what state each piece can
   All user passwords shall be stored using strong one-way hashing (`bcrypt` or `Argon2`). Invitation tokens must contain at least 128 bits of entropy and strictly expire after their configured TTL (e.g., 24 hours).
 
 * **NFR-05: Data Integrity & Monetary Precision**  
-  All monetary attributes must be stored using arbitrary-precision decimal representations (`DECIMAL(15,2)`). Balance updates must execute inside ACID-compliant database transaction blocks.
+  All monetary attributes and asset valuations must be stored using arbitrary-precision decimal representations (`DECIMAL(15,2)`). Balance updates must execute inside ACID-compliant database transaction blocks.
 
 * **NFR-06: Privacy**  
-  Personal financial records shall be isolated using strict contextual user authorization (`user_id` context checks on all queries).
+  Personal financial and asset records shall be isolated using strict contextual user authorization (`user_id` context checks on all queries).
 
 ---
 
 ## 4. User Experience Requirements (UXR)
 
 * **UXR-01: Low-Friction Entry (< 10 Seconds)**  
-  Logging a new expense transaction shall require no more than 3 user taps/clicks on mobile or web interfaces.
+  Logging a new expense transaction or updating an asset holding valuation shall require no more than 3 user taps/clicks on mobile or web interfaces.
 
 * **UXR-02: At-a-Glance Financial Clarity**  
   Dashboard widgets must use strong visual hierarchy and color tokens (🟢 Green = Healthy, 🟡 Yellow = Warning, 🔴 Red = Budget Exceeded) to convey financial health instantly without reading raw data tables.
 
 * **UXR-03: Immediate Balance Feedback**  
-  Submitting a transaction must immediately reflect in updated wallet totals and budget progress bars without requiring a manual page refresh.
+  Submitting a transaction or updating an asset quantity/unit price must immediately reflect in updated net worth totals and progress bars without requiring a manual page refresh.
 
 * **UXR-04: Clear Onboarding Guidance**  
   First-time invited users clicking an activation link must be guided through a simple 1-page setup form (Name & Password), then directed to the **login screen** to sign in with the credentials they have just set. Where the link is no longer usable, the System must say so *before* the person fills the form in, rather than after.
-
-  > *Corrected in v2.1.0.* This requirement previously ended "before being redirected to their dashboard", which contradicted US-01-02's own scenario ("redirects the User to the Login screen") and would have required activation to issue a session. Activation deliberately issues none — authenticating is US-02-01's act — so the login screen is correct and the dashboard reference was the error.
 
 ---
 
 ## 5. Business Flows (BF)
 
-### BF-01: End-to-End User Journey (Invitation to Expense Logging)
+### BF-01: End-to-End User Journey (Invitation to Expense Logging & Asset Tracking)
 ```
 [Admin Invites Email] ──► [System Sends Gmail + Token] ──► [User Clicks Link & Activates]
                                                                   │
                                                                   ▼
-[Views Dashboard] ◄── [Logs Expense Transaction] ◄── [Sets Monthly Budget Cap]
+[Views Dashboard] ◄── [Tracks Asset Holdings] ◄── [Logs Expense Transaction] ◄── [Sets Monthly Budget Cap]
 ```
 1. Admin inputs a family member's email address.
 2. System generates an invitation token with a 24-hour TTL and dispatches a Gmail invitation link.
@@ -278,30 +287,32 @@ answers *what exists and how the pieces connect*, not *what state each piece can
 4. User logs in, creates/configures a **Wallet** (e.g., "Main Checking") and a **Category** (e.g., "Dining Out").
 5. User sets a **Budget** cap (e.g., $200/month for Dining Out).
 6. User logs a daily expense ($25 at a restaurant).
-7. System updates wallet balance ($200 -> $175) and updates the budget progress bar (12.5% used).
-8. User reviews the summary dashboard.
+7. User registers physical/financial **Asset Holdings** (e.g., 2 Taels of SJC Gold, 100 shares of AAPL Stock).
+8. System updates net worth calculations combining liquid wallet balances and total asset market value.
+9. User reviews the summary dashboard.
 
 ### BF-02: Supporting BF – User Invitation & Activation
 1. Admin navigates to User Management and submits an email.
 2. System checks the address against existing accounts. An `ACTIVE` or `DEACTIVATED` account blocks the invitation; a `PENDING` one does **not** — that address is re-invited (step 3a). Otherwise the System creates a user with `status = PENDING`.
 3. System sends an activation email containing a token with a TTL.
-   * **3a. Re-invitation.** Where the address was already `PENDING`, no second account is created: the outstanding invitation is superseded, a new token with a fresh TTL is issued, and the previously sent link stops working immediately. This is the recovery path when an invitation expired or never arrived, and it is why an expired token is no obstacle to inviting again.
+   * **3a. Re-invitation.** Where the address was already `PENDING`, no second account is created: the outstanding invitation is superseded, a new token with a fresh TTL is issued, and the previously sent link stops working immediately.
 4. User accesses the activation endpoint with the token. The System can also be asked whether a token is still usable, without consuming it, so the User is told about an expired link before being asked for a password (UXR-04).
 5. System verifies that the token matches an outstanding invitation belonging to a `PENDING` user, and that `NOW() < token_expires_at`.
 6. User submits their full name and password; the password is hashed, the name is stored, status transitions to `ACTIVE`, and the token is invalidated — all in one transaction, so a usable token never survives a successful activation.
 7. User is directed to the login screen. Activation itself grants no session (US-02-01 owns authentication).
 
-> *Corrected in v2.1.0.* Step 2 previously read "validates email uniqueness", which contradicted
-> US-01-01's own scenario — that names only a *duplicate **active*** email as grounds for refusal —
-> and left no room for the re-invitation path an expired token requires. Step 6 omitted the full name
-> US-01-02 collects. Steps 3a, 4 (pre-check) and 7 were implicit in the user stories but absent here.
+### BF-03: Supporting BF – Asset Holding Management
+1. User selects an Asset Class (e.g., Gold, Stock, Real Estate, Foreign Currency).
+2. User enters holding details: quantity held, unit of measure, unit acquisition cost, and current estimated market value per unit.
+3. System calculates total holding valuation (`quantity * current_unit_value`) and incorporates it into the user's Net Worth profile.
+4. User updates unit prices periodically to reflect market changes.
 
-### BF-03: Supporting BF – Wallet & Budget Setup
+### BF-04: Supporting BF – Wallet & Budget Setup
 1. User creates one or more wallets with initial balances.
 2. User defines spending categories.
 3. User attaches monthly budget limits to category/wallet combinations.
 
-### BF-04: Supporting BF – Transaction & Overspending Alert
+### BF-05: Supporting BF – Transaction & Overspending Alert
 1. User inputs a new expense transaction.
 2. System updates wallet balance atomically.
 3. System checks budget limit for the category.
@@ -374,12 +385,6 @@ Feature: Activate User Account
     Then the System displays error "Invitation link has expired. Please request a new invitation."
     And the account status remains "PENDING"
 ```
-
-> *Corrected in v2.1.0.* The scenarios above previously used the placeholder `"valid-uuid-token"`,
-> which implied the token is a UUID. A UUIDv4 carries roughly 122 bits of entropy, below the
-> **128-bit** floor NFR-04 sets, so naming a UUID here contradicted this document's own security
-> requirement. The token is now described by its role rather than by a format, leaving the choice of
-> a sufficiently strong opaque value to the design.
 
 #### US-01-03: View List of Users [MVP]
 * **As an** Admin  
@@ -563,9 +568,56 @@ Feature: Create Transaction
 
 ---
 
-### Feature-11: Investment Portfolio & Financial Goals `[Phase 3 Placeholder]`
-* **US-11-01: Track Asset Holdings:** Record stock, crypto, or real estate positions (`Asset`, `Holding`, `InvestmentPortfolio`).
-* **US-11-02: Goal Milestones:** Set long-term target amounts (e.g., Emergency Fund) and track percentage progress over time.
+### Feature-11: Asset & Investment Holdings Tracking
+
+#### US-11-01: Track Physical and Financial Assets (Golds, Stocks, Real Estate, Commodities)
+* **As an** Authenticated User  
+* **I want to** record and update my asset holdings across various asset classes (e.g. Gold taels, Stock shares, Real Estate properties)  
+* **So that** I have a clear record of non-liquid wealth and personal asset inventory alongside my cash wallets.
+
+```gherkin
+Feature: Track Asset Holdings
+
+  Scenario: Create a new Gold asset holding
+    Given the User is logged in
+    When the User enters asset name "SJC Gold 9999"
+    And the User selects asset class "GOLD"
+    And the User enters quantity 2.5
+    And the User enters unit of measurement "Tael"
+    And the User enters purchase unit cost 80000000.00
+    And the User enters current unit value 85000000.00
+    And the User clicks "Save Asset Holding"
+    Then the System records the asset holding with total valuation 212500000.00
+
+  Scenario: Record Stock holdings
+    Given the User is logged in
+    When the User enters asset name "AAPL"
+    And the User selects asset class "STOCK"
+    And the User enters quantity 100
+    And the User enters current unit value 220.00
+    And the User clicks "Save Asset Holding"
+    Then the System calculates the holding value as 22000.00
+```
+
+#### US-11-02: Track Asset Valuation & Net Worth Contribution
+* **As an** Authenticated User  
+* **I want to** view my total asset holding valuations and their breakdown by asset class  
+* **So that** I can monitor my complete personal net worth distribution across liquid and illiquid wealth.
+
+```gherkin
+Feature: Asset Valuation & Net Worth Summary
+
+  Scenario: View Net Worth breakdown
+    Given the User has wallets with total liquid balance 50000.00
+    And the User has gold holdings valued at 200000.00
+    And the User has stock holdings valued at 100000.00
+    When the User views the Net Worth Summary on the Dashboard or Asset screen
+    Then the System displays total Net Worth as 350000.00
+    And the System shows asset allocation proportions (Liquid 14.3%, Gold 57.1%, Stocks 28.6%)
+```
+
+#### US-11-03: Goal Milestones `[Phase 3 Placeholder]`
+* Set long-term target amounts (e.g., Emergency Fund) and track percentage progress over time.
 
 ---
 
@@ -583,22 +635,16 @@ Feature: Create Transaction
 | 8 | **Notification Handling** | ✔ | Smart push alerts | - |
 | 9 | **Overview Dashboard** | ✔ | AI Widget | - |
 | 10 | **AI Financial Assistant (Chatbot)** | - | ✔ | - |
-| 11 | **Financial Goals & Savings** | - | - | ✔ |
-| 12 | **Investment Portfolio & Holdings** | - | - | ✔ |
+| 11 | **Asset & Investment Holdings (Gold, Stocks, Real Estate)** | - | Portfolio Insights | Automated Market Ticker Sync |
+| 12 | **Financial Goals & Savings Milestones** | - | - | ✔ |
 
 ---
 
 ## 8. Revision History
 
-This document is the requirements baseline: where it and `SDS.md` disagree, this document wins and
-the SDS is corrected. Most edits here are **alignment** — correcting a contradiction or an imprecision
-within what has already been agreed — which the AI may make on its own initiative
-(`CLAUDE.md` §1). Adding, removing, or changing a requirement is a different act: it needs the
-product owner's decision, made explicitly, and is recorded as its own row below rather than folded
-into an alignment pass.
-
 | Version | Change |
 | :--- | :--- |
 | 2.0.0 | Approved baseline. |
-| **2.1.0** | **Alignment pass — four internal contradictions corrected, no requirement added or removed.** (1) **UXR-04** ended by redirecting an activated user to "their dashboard", contradicting US-01-02's own scenario, which redirects to the Login screen; since activation grants no session, the login screen is correct and the dashboard reference was the error. (2) **US-01-02**'s Gherkin used the placeholder `"valid-uuid-token"`, implying a UUID — whose ~122 bits of entropy fall below the **128-bit** floor this document's own NFR-04 sets; the scenarios now describe the token by role rather than format. (3) **BF-02** step 2 read "validates email uniqueness", contradicting US-01-01's scenario, which refuses only a duplicate ***active*** email, and leaving no room for the re-invitation an expired token requires; steps 2, 3a, 4, 6 and 7 now match the user stories, including the full name step 6 had omitted. (4) **FR-01** named only `PENDING`, though `DEACTIVATED` had to be ruled on during design; all three account statuses are now defined in the baseline. Each correction is annotated in place. |
-| **2.2.0** | **Added §1.5 Conceptual Domain Model, at the product owner's explicit request** — not an alignment, a commissioned addition, and recorded as such. The document had no domain model of its own; the closest thing was `SDS.md` §2's *technical* one (DB columns, SQLAlchemy types), which is the wrong altitude for a requirements document to depend on. §1.5 gives the seven entities implied by FR-01…FR-08 in business language — User, Invitation, Wallet, Category, Budget, Transaction, Notification, matching `SDS.md` §2.1's domain-layer table exactly — with a relationship diagram, a plain-language cardinality table, and one relationship (`User receives Notification`) that `SDS.md` §2.3/§4.3.3 imply through the `NM-US-*` stories but never actually draw, flagged there as a gap for `SDS.md`'s own next alignment pass. Phase 2/3 placeholder entities (Feature-10/11) are explicitly excluded, matching how `SDS.md` §11 treats them. |
+| 2.1.0 | Alignment pass — corrected UXR-04 redirect target, US-01-02 token format description, BF-02 steps, and FR-01 status vocabulary. |
+| 2.2.0 | Added §1.5 Conceptual Domain Model defining User, Invitation, Wallet, Category, Budget, Transaction, Notification. |
+| **2.3.0** | **Refined Feature-11 into Asset & Investment Holdings Tracking**, promoted from a Phase-3 placeholder to a specified feature. Added `Asset` and `AssetHolding` entities to the Conceptual Domain Model (§1.5), added `FR-10`, updated `FR-09`'s net worth calculation, added business flow `BF-03`, and specified `US-11-01`/`US-11-02` with Gherkin. `US-11-03` (Goal Milestones) carries over unchanged as a Phase-3 placeholder, renumbered from the prior `US-11-02`. Roadmap (§7) row 11 updated and split into rows 11–12 to keep both threads visible. |
