@@ -1,12 +1,13 @@
 """User Management endpoints (SDS §6.3 UM-API-01, UM-API-02, UM-API-04)."""
 
-from fastapi import APIRouter, BackgroundTasks, status
+from fastapi import APIRouter, BackgroundTasks, Query, status
 
 from app.core import clock
 from app.core.deps import AdminDep, DbDep, EmailSenderDep, SettingsDep
 from app.schemas.activation import ActivateRequest, ActivationResult, TokenStateRead
 from app.schemas.invitation import InvitationRead, InviteCreate
-from app.services import activation_service, invitation_service
+from app.schemas.user import UserListRead
+from app.services import activation_service, invitation_service, user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -117,3 +118,28 @@ def activate_user(
     )
     db.commit()
     return result
+
+
+@router.get(
+    "",
+    response_model=UserListRead,
+    status_code=status.HTTP_200_OK,
+    summary="List all users (ADMIN)",
+    description=(
+        "Returns every invited and active account's email, full name, status, "
+        "and creation date, newest first, paginated with an accurate total count."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        403: {"description": "FORBIDDEN"},
+        422: {"description": "VALIDATION_ERROR — page or page_size out of range"},
+    },
+)
+def list_users(
+    db: DbDep,
+    admin: AdminDep,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+) -> UserListRead:
+    """Pure read — no `db.commit()` (plan.md A4)."""
+    return user_service.list_users(db, page=page, page_size=page_size)

@@ -95,6 +95,7 @@ def get_by_token_hash(db: Session, token_hash: str) -> InvitationModel | None:
         select(InvitationModel).where(InvitationModel.token_hash == token_hash)
     ).one_or_none()
 
+
 def mark_accepted(db: Session, invitation: InvitationModel) -> int:
     """Mark an invitation ACCEPTED, returning the number of rows affected.
 
