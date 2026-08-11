@@ -187,9 +187,7 @@ def test_promote_admin_refuses_a_password_past_bcrypts_ceiling(
         user_repo.add_pending_user(db, "real.person@gmail.com")
         db.commit()
 
-    exit_code = main(
-        ["promote-admin", "--email", "real.person@gmail.com", "--password", "a" * 100]
-    )
+    exit_code = main(["promote-admin", "--email", "real.person@gmail.com", "--password", "a" * 100])
 
     assert exit_code == 2
     with cli_db() as db:

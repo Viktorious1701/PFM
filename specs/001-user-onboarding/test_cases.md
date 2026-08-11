@@ -951,6 +951,48 @@ scenario — so the pagination-shaped criteria are classified `[API]` rather tha
 > UM-US-02's `TC-50`/`TC-51` used); and EC-03's empty-name representation (`TC-71`) assumes JSON
 > `null` rather than an empty string until the DTO exists (QF-01).
 
+### Test Implementation Map *(filled at step 4)*
+
+`pytest` node ids for each TC. All under `backend/tests/integration/test_um_us_03_list_users.py`
+unless stated. Run one with `uv run pytest -k <fragment>`.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-57 | `test_admin_lists_all_users_newest_first_order` | PASS |
+| TC-58 | `test_response_item_exposes_exactly_five_fields_never_password_hash` | PASS |
+| TC-59 | `test_non_admin_caller_is_denied_with_403` | PASS |
+| TC-60 | `test_unauthenticated_or_invalid_credential_caller_is_denied_with_401` | PASS |
+| TC-61 | `test_credentials_are_evaluated_before_any_query_parameter` | PASS |
+| TC-62 | `test_default_page_is_1_of_size_25_with_accurate_total` | PASS |
+| TC-63 | `test_explicit_page_and_page_size_within_range_return_that_page_and_accurate_total` | PASS |
+| TC-64 | `test_a_non_positive_or_non_integer_page_is_rejected_with_422` (3 params) | PASS |
+| TC-65 | `test_a_non_positive_or_non_integer_page_size_is_rejected_with_422` (3 params) | PASS |
+| TC-66 | `test_a_page_size_above_the_maximum_is_rejected_with_422` | PASS |
+| TC-67 | `test_a_page_size_of_exactly_100_is_accepted` | PASS |
+| TC-68 | `test_every_account_status_appears_in_the_list_carrying_its_actual_status` | PASS |
+| TC-69 | `test_caller_with_no_one_else_in_the_system_sees_just_their_own_account` | PASS |
+| TC-70 | `test_a_page_beyond_the_last_available_page_returns_an_empty_list_with_accurate_total` | PASS |
+| TC-71 | `test_pending_user_with_no_full_name_yet_is_listed_with_explicit_null` | PASS |
+| TC-72 | `test_paging_through_every_page_returns_every_user_exactly_once_in_stable_order` | PASS |
+
+**A testing-technique note, not a product defect.** `UserModel.created_at`'s column default
+(`mapped_column(default=clock.utcnow)`, `app/models/user.py`) binds the *function object*
+`clock.utcnow` at import time, before any test's `frozen_now`/`advance_clock` fixture has run — so,
+unlike `invitation_service`'s own `clock.utcnow()` calls (looked up fresh on every call), a user
+row's `created_at` never observes the monkeypatched clock and is always real wall-clock time. No AC
+in this story requires a frozen `created_at`, only correct relative order and count, so
+`test_um_us_03_list_users.py`'s `_seed_user` helper sets `created_at` explicitly — anchored off
+`admin_user.created_at` with strictly increasing offsets — instead of relying on the seam. Recorded
+here because it is exactly the kind of test-infrastructure gap `test_cases.md` is supposed to surface,
+even though no `spec.md`/`plan.md` change follows from it.
+
+Full suite: `166 passed` (146 from UM-US-01/UM-US-02/SS-US-01 + 20 new). `ruff check` and
+`ruff format --check` clean, `mypy app` clean, coverage **98%** (constitution DOD-03's floor is 80%;
+`app/schemas/user.py`, `app/services/user_service.py`, and the `list_users` additions to
+`app/repositories/user_repo.py`/`app/api/v1/users.py` are all at 100%). No defect was found in the
+implementation while writing these tests — all 16 TCs (20 collected cases, counting TC-64/TC-65's
+three parametrised values each) passed against the first version of the code.
+
 ---
 
 ### TC-57: ADMIN lists all users — 200, newest-first order
