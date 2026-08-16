@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-02 · SDS §5.1 (SS)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** SS-US-01 *(implemented, verified — 14 tests, 100% coverage on new code)*
+> **Stories in this file:** SS-US-01 *(implemented, verified — 14 tests, 100% coverage on new code)* · SS-US-02 *(planned)*
 
 ---
 
@@ -182,3 +182,150 @@ All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, API-
 | T-03 | `auth_service.py`: `authenticate()` — PENDING checked first and unconditionally (F2), password-before-state for every other case (A1), dummy-hash timing guard (A1/A5) | `backend/app/services/auth_service.py` | ✅ Done |
 | T-04 | `POST /api/v1/auth/login` router + mount in `router.py` | `backend/app/api/v1/auth.py`, `backend/app/api/v1/router.py` | ✅ Done |
 | T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_ss_us_01_login.py` | ✅ Done — TC-01…TC-11, `134 passed`, one pre-existing UM-US-02 test flakiness found and fixed along the way (see `test_cases.md`'s Test Implementation Map) |
+
+---
+
+## SS-US-02: Logout
+
+> **IDs in this section are local to SS-US-02**, matching `spec.md`'s convention. Only `TC-NN` in
+> `test_cases.md` runs continuously across the epic.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | API | **Response shape is a confirmation body, `LogoutResult { status, message }`, not `204 No Content`.** This codebase already has a precedent for exactly this choice — `ActivationResult` (`schemas/activation.py`) returns a confirmation body for another security-relevant, no-session-issued action rather than an empty `204`. Reusing that shape costs nothing extra (one small DTO, same technique as `TokenResponse`/`ActivationResult` as a structural guard against ever adding a credential field by accident) and keeps the convention consistent across the two DTOs a client sees around a session's edges (`TokenResponse` in, `LogoutResult` out). A `204` was considered and rejected: it would be the only no-body success response in the API surface, breaking that consistency for no benefit, since AC-01 explicitly asks for "a success response confirming the session has ended" — a confirmation is the literal ask, not just a status code. | ✅ Resolved |
+| A2 | Logging | **No new audit event for logout.** Constitution LA-04 enumerates exactly three audit-worthy actions for this epic and its sibling: "invitations sent, activations completed, and logins (success and failure)." Logout is not named. No AC or EC in this story's `spec.md` requires a logout audit trail either — AC-01/AC-02 ask only for a response and a refusal, never a log entry. This is the same reasoning UM-US-03's `plan.md` A5 already applied to list-reads: LA-04 is a closed enumeration for this epic, not an open invitation to audit every new endpoint. Revisit if a future story needs a "who signed out and when" trail. | ✅ Resolved |
+| A3 | Testing | **EC-02 (the presented token remains valid after logout until its own natural expiry) is covered by a positive test, not left as a documentation-only note.** `TC-15` calls logout, then re-presents the same token against a protected route and asserts it still succeeds. This proves the documented scope is real — a token that is still cryptographically valid keeps working, exactly as `spec.md`'s Assumptions & Dependencies section says — rather than merely asserting the absence of a defect nobody could otherwise observe. | ✅ Resolved |
+| A4 | Code | **No new dependency, no new error class.** `CurrentUserDep` (`core/deps.py`) already resolves *any* authenticated caller — not `AdminDep`, since SRS names the caller "an Authenticated User," not an ADMIN (spec Assumptions). Its single failure mode, `NotAuthenticatedError` (401 `NOT_AUTHENTICATED`), already covers every case AC-02/EC-01 name (absent header, malformed token, bad signature, expired token) uniformly, because `get_current_user` folds all of them into one outcome by design (SEC-10). Nothing about `get_current_user`/`require_admin` changes — confirmed by the existing UM-US-01/UM-US-02/SS-US-01 suites running unmodified once this story's code lands, the same check A4 in SS-US-01's own table performed for itself. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only; UM-US-01/SS-US-01's foundation is reused as-is).
+
+```text
+backend/app/
+├── core/
+│   ├── deps.py                       # reuse, unchanged — CurrentUserDep already resolves any ACTIVE caller
+│   ├── errors.py                     # reuse, unchanged — NotAuthenticatedError already exists (A4)
+│   └── audit.py                      # reuse, unchanged — not called by this story (A2)
+├── schemas/
+│   └── auth.py                       # update: add LogoutResult
+├── services/
+│   └── auth_service.py               # update: add logout()
+└── api/v1/
+    └── auth.py                       # update: add POST /auth/logout
+
+backend/tests/
+└── integration/test_ss_us_02_logout.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No Alembic migration: no schema change, no new table, no new column — there is nothing server-side
+for this story to persist (spec FR-05). No new settings: `jwt_secret`/`jwt_ttl_minutes`/
+`jwt_algorithm` are unchanged, reused exactly as SS-US-01 configured them. No new error class: the
+one refusal this route can produce is `NotAuthenticatedError`, already shipped.
+
+**DTOs** (`app/schemas/auth.py`)
+
+```python
+class LogoutResult(BaseModel):
+    status: Literal["SUCCESS"]
+    message: str
+```
+
+Same technique as `ActivationResult` (A1): no field exists for a token, a credential, or any
+session identifier, so there is nothing to accidentally leak even if a future edit tried (spec
+FR-04, AC-01).
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Logout requires being authenticated; no unauthenticated path exists | BR-01, AC-02 | Router declares `current_user: CurrentUserDep` — `get_current_user` raises `NotAuthenticatedError` before `logout()` ever runs. Nothing inside `logout()` re-checks this; the dependency **is** the enforcement point (A4), matching SS-US-01's own table entry for "no authentication required" being the *absence* of a dependency, mirrored here by its *presence* |
+| A caller with no token, a malformed one, an invalid signature, or an expired one is refused generically | AC-02, EC-01 | `CurrentUserDep` folds every failure mode into one `NotAuthenticatedError` (401), unchanged from how it already serves every other protected route (SEC-10) |
+| A success response confirms the session ended | AC-01, FR-02 | `auth_service.logout()` returns `LogoutResult(status="SUCCESS", message=...)` once `CurrentUserDep` has already resolved the caller |
+| The response excludes the caller's token and any credential | FR-04, LA-01 | `LogoutResult` has no such field — structural guard (A1) |
+| No server-side revocation record is written | FR-05, EC-02 | `logout()` performs no repository call and no write of any kind — there is no revocation store to write to, by design (see spec Assumptions & Dependencies) |
+| A bearer token's validity is unaffected by a prior logout call | BR-02, EC-02 | Nothing this story adds touches `get_current_user`, `decode_jwt`, or any token-validity check — proven by `TC-15` re-using the same token against a protected route after logout (A3) |
+
+**Sequence diagram — Logout**
+
+Drawn to `constitution.md` DG-01…DG-07. Four lanes per DG-01 even though this story does no Store
+work — `Store` appears only to keep the fixed lane shape; the caller-resolution step it might
+otherwise suggest is `CurrentUserDep`, already built by SS-US-01/UM-US-01 (plan.md A11), not a new
+query this story adds.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as User
+    participant API as API
+    participant Svc as AuthService
+    participant Store as Store
+
+    Note over UI,Store: Main flow — caller presents a currently valid bearer token (AC-01)
+    UI->>API: POST /auth/logout
+    Note over API: Resolving the caller is CurrentUserDep, already built and verified — not new Store work (DG-01, A4)
+    API->>Svc: logout(input)
+    Svc-->>API: session ended
+    API-->>UI: 200 session ended — confirmation only, no revocation performed (FR-05)
+
+    opt No bearer token, a malformed one, an invalid signature, or an expired one (AC-02, EC-01)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+```
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| Valid bearer token presented (AC-01) | 200 | *(success — `LogoutResult`)* |
+| No bearer token, malformed, invalid signature, or expired (AC-02, EC-01) | 401 | `NOT_AUTHENTICATED` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, API-02) for the 401 case.
+No CSRF concern — stateless bearer auth, no cookie issued (SDS §7.1.9). No new error code: this
+story emits only the already-catalogued `NOT_AUTHENTICATED`.
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `logout()` is the one place that assembles the confirmation, even though there is no branching to do — keeps the router thin and the shape consistent with every other route |
+| AR-02 Thin router | Required | Router binds `CurrentUserDep`, calls the service, formats the response — no branching on business state |
+| AR-05 No framework objects in services | Required | `logout()` takes plain values (the resolved user), not `Request`/`Response` |
+| AR-06 One transaction per request | N/A | No write of any kind — nothing to commit (FR-05) |
+| API-01 Versioned plural path | Required | `POST /api/v1/auth/logout`, alongside `POST /api/v1/auth/login` |
+| API-02 Flat error envelope | Required | Reused `main.py` handlers, unchanged |
+| API-03 Status codes | Required | `200` success · `401` unauthenticated |
+| API-04 Prefixed error codes | Required (exempt) | No new error code — reuses `NOT_AUTHENTICATED`, already catalogued by SS-US-01/UM-US-01 |
+| API-07 Explicit response_model | Required | `response_model=LogoutResult`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **not** on the public list — it requires a bearer token, unlike `/auth/login` |
+| NC-02 Naming | Required | `LogoutResult`; no new model or table |
+| VL-01 Pydantic source of truth | N/A | This route takes no request body to validate |
+| SEC-06 JWT parameters | Required (reused) | HS256, 60-minute expiry — unchanged, this story issues nothing |
+| SEC-07 Authz proven by test | Required | Route resolves the caller through `CurrentUserDep`, proven by a test expecting `401` (`TC-13`/`TC-14`) |
+| SEC-10 No enumeration | N/A | No account-existence question is being answered here |
+| LA-01 No secrets in logs | Required | `LogoutResult` carries no credential; nothing is logged by this story at all (A2) |
+| LA-02 Audit five fields | N/A | No audit event is emitted by this story (A2) |
+| LA-04 Logout is auditable | N/A | LA-04's enumeration for this epic names invitations, activations, and logins only — logout is not listed (A2) |
+| PF-01 300 ms p95 | Required | No I/O at all — well inside budget |
+| PF-03 DTO projection | Required | `LogoutResult` — two fields, no ORM graph |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No logout screen exists in `mobile/` this round — `mobile/src/store/auth.ts`'s `signOut()` is a fixture-driven client action from UM-US-01's round, not wired to any real endpoint yet (spec *Out of scope*). Element IDs are defined when the mobile round reaches this story. |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `schemas/auth.py`: add `LogoutResult` | `backend/app/schemas/auth.py` | Open |
+| T-02 | `auth_service.py`: add `logout()` | `backend/app/services/auth_service.py` | Open |
+| T-03 | `POST /api/v1/auth/logout` router, guarded by `CurrentUserDep` | `backend/app/api/v1/auth.py` | Open |
+| T-04 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_ss_us_02_logout.py` | Open |

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-02 · SDS §5.1 (SS)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** SS-US-01 *(TC-01…TC-11)*
+> **Stories in this file:** SS-US-01 *(TC-01…TC-11)* · SS-US-02 *(TC-12…TC-15)*
 
 ---
 
@@ -212,4 +212,85 @@ to. Unrelated to this story's own code — recorded here because it was found wh
 - **When:** `"  Jane@Gmail.COM  "` is submitted with the correct password
 - **Then:** The response is `200` with a token for that same account
 - **AC:** EC-01, FR-03, BR-04
+- **Type:** integration
+
+---
+
+## SS-US-02: Logout
+
+> **IDs in this section are local to SS-US-02.** `AC-01`/`AC-02` below refer to `spec.md`'s
+> SS-US-02 section, not SS-US-01's. `TC-NN` continues from `TC-11`.
+
+### Acceptance Criteria Classification
+
+No logout screen exists in `mobile/` this round — `mobile/src/store/auth.ts`'s `signOut()` is a
+fixture-driven client action built during UM-US-01's round, not wired to any real endpoint yet
+(spec *Out of scope*). All rows below are `[API]`, deferred rather than skipped, on the same basis
+as SS-US-01's own login-screen rows.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successful logout for an authenticated caller | **[API]** | Response shape and confirmation only — no screen wired this round |
+| AC-02 | Reject a caller with no valid credentials | **[API]** | Authorization contract, identical shape to every other protected route's 401 |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) | Blocked on |
+|---|---|---|---|---|
+| AC-01 | [API] | TC-12 | *deferred* | — |
+| AC-02 | [API] | TC-13, TC-14 | — | — |
+| EC-01 | [API] | TC-14 | — | — |
+| EC-02 | [API] | TC-15 | — | — |
+
+> Every AC and EC has at least one integration TC. The `[API]`-only rows are deferred to the mobile
+> round for the same reason SS-US-01/UM-US-01/UM-US-02 deferred theirs: no screen in this round is
+> wired to a real endpoint yet. **No audit coverage row exists here, by design** — `plan.md` A2
+> records that constitution LA-04 does not name logout as an audit-worthy event for this epic, so
+> unlike SS-US-01's login (which has TC-07/TC-08 asserting an audit record), this story emits none
+> to test for. `TC-15` is the positive proof for EC-02's documented scope statement (`plan.md` A3):
+> it does not merely assert the absence of a defect, it re-uses the same token after logout and
+> shows it still authenticates.
+
+### TC-12: Successful logout for an authenticated caller returns a confirmation with no credential
+
+- **US:** SS-US-02
+- **Given:** An `ACTIVE` user holding a currently valid bearer token, obtained via login
+- **When:** That caller calls `POST /auth/logout` with the token
+- **Then:** The response is `200` with `{"status": "SUCCESS", "message": ...}`; the response body
+  contains no token, no `access_token` field, and no other credential of any kind
+- **AC:** AC-01, FR-02, FR-04
+- **Type:** integration
+
+### TC-13: A caller presenting no bearer token is refused with 401 NOT_AUTHENTICATED
+
+- **US:** SS-US-02
+- **Given:** A caller presenting no `Authorization` header at all
+- **When:** `POST /auth/logout` is called
+- **Then:** The response is `401` `NOT_AUTHENTICATED` — the same generic outcome every other
+  protected route in this system already returns; there is no unauthenticated path through logout
+- **AC:** AC-02, FR-01, FR-03, BR-01
+- **Type:** integration
+
+### TC-14: A malformed token, an invalid signature, or an expired token is refused identically
+
+- **US:** SS-US-02
+- **Given:** In turn — a syntactically malformed bearer token, a token whose signature does not
+  verify, and a token that is well-formed but past its 60-minute expiry
+- **When:** `POST /auth/logout` is called with each in turn
+- **Then:** Each response is `401` `NOT_AUTHENTICATED` — indistinguishable from one another and
+  from TC-13's no-token case; logout is not exempt from ordinary token verification
+- **AC:** AC-02, EC-01, FR-03
+- **Type:** integration
+
+### TC-15: A token presented at logout still authenticates afterward, until its own natural expiry
+
+- **US:** SS-US-02
+- **Given:** An `ACTIVE` user holding a currently valid bearer token
+- **When:** The caller calls `POST /auth/logout` successfully, then calls `POST /auth/logout`
+  **again** with the exact same token (chosen over a different protected route so the test needs
+  no assumption about the caller's role — `CurrentUserDep` is the only requirement either call has)
+- **Then:** The second call also succeeds with `200` — logout performed no server-side revocation,
+  exactly as `spec.md`'s Assumptions & Dependencies documents; the token continues to authenticate
+  until it expires on its own
+- **AC:** EC-02, FR-05, BR-02
 - **Type:** integration

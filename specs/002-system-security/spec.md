@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-02 · SDS §5.1 (SS)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** SS-US-01 *(implemented, verified)* · SS-US-02 *(deferred — see CLAUDE.md Story ID map)*
+> **Stories in this file:** SS-US-01 *(implemented, verified)* · SS-US-02 *(specified)*
 
 ---
 
@@ -250,3 +250,165 @@ mandated message permanently unreachable.
   refused generically, not named). Recorded here rather than assumed silently; extending `SRS.md`
   to name it explicitly would be a requirements change, which is the product owner's call, not an
   alignment the AI can make on its own (`CLAUDE.md` §1).
+
+---
+
+## SS-US-02: Logout
+
+> **IDs in this section are local to SS-US-02.** `AC-01` below is not SS-US-01's `AC-01`; each
+> story section numbers its own criteria, per `artifact-templates/spec-templates.md`. Only `TC-NN`
+> in `test_cases.md` runs continuously across the epic (`CLAUDE.md` §1.1 rule 4).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-02 · US-02-02 — Logout [MVP]**
+> * **As an** Authenticated User
+> * **I want to** log out of the system
+> * **So that** my session is terminated securely.
+
+No Gherkin accompanies this story. Unlike US-02-01's two-scenario block, `SRS.md` gives US-02-02
+exactly the one unscenario'd statement quoted above — no scenario for a successful logout, none for
+an unauthenticated caller. Stated plainly here rather than inventing scenarios the baseline does not
+contain.
+
+**SDS §5.1.2 SS-US-02 (All)**
+> * **Goal:** Invalidate local tokens and terminate user session context.
+
+No enumerated acceptance criteria accompany this goal either — unlike §5.1.1's three numbered
+criteria for login, §5.1.2 is one sentence. `SDS §6.5` (API → User Story Traceability) does not list
+a logout row at all — no `SS-API-02`, no endpoint entry — so this story's endpoint has no prior
+published contract to align to; the contract is created here, for the first time.
+
+**SDS §7.1.6 Session Management**
+> Short-lived access tokens (60 minutes).
+
+**SDS §7.1.7 Authentication Controls**
+> Endpoints check user context and reject tokens belonging to non-active user accounts.
+
+Together, these two lines are why this story is scoped the way it is: `SDS.md` describes a
+stateless-JWT architecture — no refresh token, no session table, no revocation list anywhere in the
+document — where every request re-derives its own validity from the token's signature, expiry, and
+the current row in `users` (§7.1.7). There is nothing server-side for a "logout" call to mark.
+
+**Constitution SEC-06, SEC-07** — JWT parameters (HS256, 60-minute expiry); every protected route
+resolves the caller through the auth dependency, proven by a test expecting `401`.
+
+### Out of scope for this story
+
+Features 03–11 · SRS §6 Feature-10/11 placeholders · SDS-only stories UM-US-04/05, DC-US-01/02.
+
+Deliberately excluded even though adjacent:
+
+- **A token-revocation store.** Making a still-valid JWT actually unusable before its natural
+  expiry needs somewhere to record that it was revoked — a table, or a cache keyed by token or by
+  user, consulted on every subsequent request. No AC in this story, no line in `SRS.md` or
+  `SDS.md` §5.1.2, and no constitution rule requires one. Building it now would be implementing
+  ahead of a requirement rather than behind one — see the ruling in *Assumptions & Dependencies*
+  below.
+- **Refresh tokens.** `SDS.md` §7.1.6 names none; there is nothing to revoke that a refresh flow
+  would otherwise silently re-issue.
+- **Wiring the mobile prototype's `signOut()` to a real endpoint.** `mobile/src/store/auth.ts`
+  already discards the stored token client-side, built during UM-US-01's round as a fixture-driven
+  prototype action. This story adds the backend endpoint; pointing the mobile action at it is a
+  later phase's job, mirroring how SS-US-01's own login screen wiring was deferred (`test_cases.md`
+  header note).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to end my current session with one explicit action, so that
+continuing to use this device afterward requires signing in again rather than relying on a token
+this device already holds.
+
+**Acceptance Criteria**:
+
+**AC-01: Successful logout for an authenticated caller**
+**Given** a caller presenting a currently valid bearer token,
+**When** that caller calls the logout endpoint,
+**Then** the system returns a success response confirming the session has ended, and the response
+carries no credential of any kind.
+
+**AC-02: Reject a caller with no valid credentials**
+**Given** a caller presenting no bearer token, a malformed one, or one whose signature does not
+verify,
+**When** that caller calls the logout endpoint,
+**Then** the system denies the request with the same generic unauthenticated outcome every other
+protected route in this system already returns — there is no special no-credentials-required
+carve-out for logout; a caller must already be signed in to sign out.
+
+### Edge Cases
+
+**EC-01**: **An already-expired bearer token presented at the logout endpoint** — refused with the
+same generic outcome as AC-02, identically to how any other protected route treats an expired token
+(`get_current_user`, per constitution SEC-10's non-enumeration principle already applied everywhere
+else in this codebase). Logout is not exempt from ordinary token verification merely because its
+purpose is to end a session.
+
+**EC-02**: **The presented token remains valid after a successful logout, until its own natural
+60-minute expiry** — this is not a defect. Logout in this story is a client-side action (AC-01's
+response is a confirmation, not a revocation), so a token that is copied elsewhere before logout, or
+resubmitted afterward by a caller who never discards it, continues to authenticate normally until it
+expires on its own. See *Assumptions & Dependencies* below for why this is the story's real,
+deliberately scoped contract rather than an oversight.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **accept** a logout request only from a caller presenting a currently
+  valid bearer token (AC-01, AC-02).
+- **FR-02**: The system must **return** a success response confirming the session has ended, on
+  every request that reaches the service (AC-01).
+- **FR-03**: The system must **refuse** a caller with no bearer token, a malformed one, an invalid
+  signature, or an expired one, with the same generic unauthenticated outcome used by every other
+  protected route (AC-02, EC-01).
+- **FR-04**: The system must **exclude** the caller's token and any other credential material from
+  the response (AC-01; constitution LA-01).
+- **FR-05**: The system must **not** write, mark, or otherwise persist any server-side revocation
+  record as part of this operation — there is no revocation store to write to, by design (EC-02; see
+  the scope ruling in *Assumptions & Dependencies*).
+
+#### Business Rules
+
+- **BR-01**: Logout requires being authenticated. There is no unauthenticated path through this
+  endpoint — a caller with nothing to end cannot be told an ordinary session ended (BR-01, AC-02).
+- **BR-02**: A bearer token's validity is governed entirely by its own signature and expiry,
+  unaffected by any prior logout call against it (EC-02). Nothing this story does changes what
+  `get_current_user` accepts for a token minted before or after a logout call.
+
+#### Key Entities
+
+- **Session** *(not a stored entity)*: The JWT itself is the session, exactly as SS-US-01 describes
+  it — stateless, expiring on its own after 60 minutes. This story adds the explicit client-facing
+  action of ending one; it adds no new entity and no new column, because there is nothing
+  server-side to represent a session's end.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated person can end their session with one explicit call and receive a
+  clear confirmation.
+- **SC-02**: Nobody can call this endpoint without already holding valid credentials — the same
+  authentication guarantee every other protected route in this system provides.
+- **SC-03**: The system never implies a server-side revocation it cannot perform. What "logout"
+  means here — the client discards its token, and the token otherwise expires on its own — is
+  documented plainly rather than left to be discovered by testing.
+
+### Assumptions & Dependencies
+
+- **SS-US-01 must exist first.** This story's caller presents a token that only the login endpoint
+  issues; SS-US-01 is implemented and verified, so this dependency is satisfied.
+- **This story's real contract is client-side-only token invalidation — decided, not a gap.** The
+  system's whole auth design is stateless JWTs (SDS §7.1.6: 60-minute TTL, HS256, no refresh token,
+  no session store, no revocation list — confirmed by `get_current_user` in `core/deps.py`, which
+  checks only signature, expiry, and the current row's status). A literal server-side "invalidate
+  this token" is not implementable without a new revocation store that does not exist and that no AC
+  in this round requires. `POST /api/v1/auth/logout` therefore returns a success response, and the
+  actual security action — discarding the stored token — happens on the client afterward, exactly
+  as `mobile/src/store/auth.ts`'s existing `signOut()` already does against fixtures. If a
+  revocation requirement is ever specified, this is a new design, not an extension of this one.
+- **Any authenticated User, not only ADMIN, may log out.** SRS names the caller "an Authenticated
+  User," not an ADMIN-only action — unlike UM-US-01/UM-US-03. The endpoint depends on whichever
+  dependency resolves *any* currently-authenticated caller, not the ADMIN-only one.
+- **Resolving a caller from a bearer token is already built and verified.** `get_current_user` is
+  UM-US-01's `plan.md` A11, exercised by every existing protected route. This story adds no change
+  to it — it only adds the one route whose entire job is to be called *last*, after which the caller
+  is expected to stop presenting that token.
