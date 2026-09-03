@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 from app.core import audit, security
 from app.core.config import Settings
 from app.core.errors import AccountNotActivatedError, InvalidCredentialsError
-from app.models.user import UserStatus
+from app.models.user import UserModel, UserStatus
 from app.repositories import user_repo
-from app.schemas.auth import TokenResponse
+from app.schemas.auth import LogoutResult, TokenResponse
 
 # A1/A5: a fixed dummy hash, computed once, so a login attempt against an
 # unknown email costs the same wall-clock time as one against a known email
@@ -91,3 +91,17 @@ def authenticate(
         expires_in=settings.jwt_ttl_minutes * 60,
         role=user.role.value,
     )
+
+
+def logout(current_user: UserModel) -> LogoutResult:
+    """End the caller's session (spec SS-US-02 AC-01, FR-02).
+
+    `current_user` is only accepted to keep this function's signature
+    consistent with every other service call taking a resolved caller — it is
+    not read. No repository call, no write, no audit event (plan.md A2/A4):
+    `CurrentUserDep` already did the one piece of enforcement this endpoint
+    needs (BR-01) before this function ever runs. There is no server-side
+    revocation store to write to (FR-05, EC-02) — the token presented here
+    keeps authenticating until its own natural expiry (BR-02).
+    """
+    return LogoutResult(status="SUCCESS", message="Session ended. Please discard your token.")

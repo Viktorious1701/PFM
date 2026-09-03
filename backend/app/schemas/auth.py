@@ -29,3 +29,14 @@ class TokenResponse(BaseModel):
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
     role: Literal["ADMIN", "USER"]
+
+
+class LogoutResult(BaseModel):
+    """Response DTO for POST /api/v1/auth/logout (SS-US-02 plan.md A1).
+
+    Same technique as `ActivationResult`: no field for a token or any other
+    credential, so there is nothing to leak even by accident (spec FR-04).
+    """
+
+    status: Literal["SUCCESS"]
+    message: str

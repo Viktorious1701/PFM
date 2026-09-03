@@ -6,8 +6,8 @@ and formats the response. No queries and no business rules live here.
 
 from fastapi import APIRouter, status
 
-from app.core.deps import DbDep, SettingsDep
-from app.schemas.auth import LoginRequest, TokenResponse
+from app.core.deps import CurrentUserDep, DbDep, SettingsDep
+from app.schemas.auth import LoginRequest, LogoutResult, TokenResponse
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -39,3 +39,25 @@ def login(
         password=payload.password,
         settings=settings,
     )
+
+
+@router.post(
+    "/logout",
+    response_model=LogoutResult,
+    status_code=status.HTTP_200_OK,
+    summary="End the caller's session",
+    description=(
+        "Confirms the caller's session has ended. Requires a currently valid "
+        "bearer token — any Authenticated User, not only ADMIN, may call this. "
+        "Performs no server-side revocation: the presented token continues to "
+        "authenticate normally until its own natural expiry."
+    ),
+    responses={
+        401: {
+            "description": "NOT_AUTHENTICATED — no bearer token, or one that is malformed, "
+            "has an invalid signature, or has expired"
+        },
+    },
+)
+def logout(current_user: CurrentUserDep) -> LogoutResult:
+    return auth_service.logout(current_user)

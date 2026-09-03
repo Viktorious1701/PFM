@@ -251,6 +251,27 @@ as SS-US-01's own login-screen rows.
 > it does not merely assert the absence of a defect, it re-uses the same token after logout and
 > shows it still authenticates.
 
+### Test Implementation Map *(filled at step 4)*
+
+`pytest` node ids for each TC. All under `backend/tests/integration/test_ss_us_02_logout.py`.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-12 | `test_successful_logout_returns_confirmation_with_no_credential` | PASS |
+| TC-13 | `test_no_bearer_token_is_refused_with_401_not_authenticated` | PASS |
+| TC-14 | `test_malformed_invalid_or_expired_token_refused_identically` (3 params: malformed, invalid-signature, expired) | PASS |
+| TC-15 | `test_token_still_authenticates_after_logout_until_its_own_expiry` | PASS |
+
+Full suite: `172 passed` (166 pre-existing + 6 here). `ruff check` and `ruff format --check` clean,
+`mypy app` clean, coverage **98%**; `auth_service.py` and `api/v1/auth.py` both **100%**,
+`schemas/auth.py` **100%**.
+
+Before any implementation code existed, the route was confirmed absent (`POST /auth/logout` under a
+renamed path returned `404`) so all six cases failed for the right reason — a missing route, not an
+import error or a false-positive assertion — matching this repo's TDD requirement. Adding
+`LogoutResult`, `auth_service.logout()`, and the router turned all six green on the first run; no
+rework was needed and no defect was found along the way.
+
 ### TC-12: Successful logout for an authenticated caller returns a confirmation with no credential
 
 - **US:** SS-US-02
