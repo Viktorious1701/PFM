@@ -1,6 +1,6 @@
 # Software Design Specification (SDS)
 ## Personal Finance Management (PFM) System
-**Document Version:** 1.3.0  
+**Document Version:** 1.4.0  
 **Status:** Approved for Implementation  
 **Aligned to:** SRS v2.2.0 (see §1.6 Revision History)  
 
@@ -147,6 +147,7 @@ refer to the same stories. Always cite both.
 | **1.1.0** | **Aligned to SRS v2.0.0.** User status `PENDING_INVITATION` → `PENDING` (§2.4.1, §5.1.1, §6.4.1, §7.1.2). `EXPIRED` removed from the user state machine and moved to a new invitation state machine (§2.4.1, §2.4.2) because SRS US-01-02 requires an expired token to leave the account `PENDING`. NFR matrix renumbered to the SRS §3 scheme, resolving an id collision where SDS `NFR-02` meant Security while SRS `NFR-02` means Availability (§8.1). Story ID map added (§1.5.1). SRS feature references annotated on §5 headings. Backend package layout corrected to the real repository structure (§4.3.2). |
 | **1.2.0** | **Aligned to the implemented and verified UM-US-01, and to UM-US-02's approved design.** Every change below is this document catching up to code that exists or to a design decision recorded in `specs/001-user-onboarding/plan.md` — none of it is new design. **Domain:** `InvitationToken` renamed `Invitation`; its `token` column replaced by `token_hash` (SHA-256 hex, unique) with `invited_by_id` FK and `created_at` added, in §2.2, the §2.3 class diagram and the §4.3.3 ERD, plus notes on email normalisation, nullable credential columns, and UUID-as-text (§4.3.3). **Invitation state:** §2.4.2 now says explicitly that `EXPIRED` is a derived read-state and names the fixed order of evaluation when a token fails several conditions at once. **Stories:** §5.2.2's acceptance criteria extended to cover check ordering, atomicity, the no-session rule, and the state check; its role annotation corrected from `GUEST/USER` to unauthenticated. **API:** `UM-API-04` (`GET /users/activate`) registered in §6.3 and §6.5 and specified in a new §6.4.3; §6.4.1's response corrected to the six fields actually returned; §6.4.2's UUID token example replaced, since a UUIDv4's ~122 bits fall under NFR-04's 128-bit floor; DTO registry (§6.2.1) renamed to the implemented `ActivateRequest` and completed with `InvitationRead`, `ActivationResult`, `TokenStateRead`, `UserRead`; §6.6 expanded from one example into the full nine-code catalogue with status codes. **Security:** §7.1.5 gained the 72-byte bcrypt ceiling and reject-not-truncate rule, and names bcrypt as the MVP choice; §7.1.8 lists the four public endpoints by method; §7.3's DoS row records that rate limiting is specified but deferred, and its Spoofing row corrected to bcrypt. **Other:** §4.4.1's sequence diagram redrawn to show the repository layer, token hashing, the commit boundary and post-commit mail dispatch; §8.1 gained the missing UXR-02/03/04 rows; §12.1's endpoint-naming rule reconciled with the verb segments API-05 requires. Audit trail is this table — the former pointer to an untracked process-documents directory was removed. |
 | **1.3.0** | **§4.4.1's sequence diagram redrawn to the `constitution.md` `DG` group** adopted this session: four lanes only (`UI → API → Service → Store`), no SQL or repository lane, no parameter lists, every request answered with an HTTP status. v1.2.0's diagram — while itself an improvement over v1.0.0's sketch — had reintroduced a `Repo`/`DB` lane and query-shaped labels (`INSERT x2`, `UPDATE x2, same flush`, `SELECT`), which is exactly what `DG-01`/`DG-04` now forbid. No design fact changes: the same commit boundary, the same fixed check order, the same post-commit mail dispatch — only how they are drawn. |
+| **1.4.0** | **Aligned an internal contradiction found while specifying CM-US-01** (`specs/004-category-management/`). §2.2's Category domain object and §5.4.4's CM-US-04 goal ("Modify category name, type, or icon") both already treated `icon` as a real Category attribute, but §4.3.3's `CATEGORIES` ERD block omitted it — the same class of ERD gap WM-US-01 found in `wallets.created_at`. The ERD is the one corrected: a nullable `string icon` added to §4.3.3's `CATEGORIES` block, so it matches §2.2 and §5.4.4 rather than the other way around. No requirement was added or reinterpreted — CM-US-01's own AC set (SRS Gherkin, FR-04, SDS §5.4.1) never mentions `icon`, so the `categories` table CM-US-01 itself creates still carries only `id`, `user_id`, `name`, `type`; the `icon` column is left for CM-US-04, the story whose own goal names it (see `specs/004-category-management/plan.md` G1, A4). |
 
 ---
 
@@ -431,6 +432,7 @@ erDiagram
         uuid user_id FK
         string name
         string type
+        string icon
     }
 
     TRANSACTIONS {
