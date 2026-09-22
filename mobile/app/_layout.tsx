@@ -10,19 +10,27 @@
  * signed-out visitor can still browse and gets a 401 from the API instead.
  * Adding a redirect guard is a separate decision, not yet made.
  *
- * Fonts hold the splash screen until Lora + Inter are ready — DESIGN.md
- * forbids a heading rendering in the system font even for one frame, since the
- * two families never swap roles.
+ * Fonts hold the splash screen until Courier Prime + PT Serif are ready —
+ * DESIGN.md forbids a heading rendering in the system font even for one
+ * frame, since the two families never swap roles.
  */
+import {
+  CourierPrime_400Regular,
+  CourierPrime_700Bold,
+} from '@expo-google-fonts/courier-prime';
 import { Inter_400Regular, Inter_500Medium } from '@expo-google-fonts/inter';
-import { Lora_600SemiBold, Lora_700Bold } from '@expo-google-fonts/lora';
+import {
+  PTSerif_400Regular,
+  PTSerif_400Regular_Italic,
+  PTSerif_700Bold,
+} from '@expo-google-fonts/pt-serif';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { color } from '../src/theme/tokens';
+import { color, font } from '../src/theme/tokens';
 import { AuthProvider } from '../src/store/auth';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -31,8 +39,14 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    Lora_700Bold,
-    Lora_600SemiBold,
+    CourierPrime_700Bold,
+    CourierPrime_400Regular,
+    PTSerif_400Regular,
+    PTSerif_700Bold,
+    PTSerif_400Regular_Italic,
+    // Inter is no longer used by any token or literal in this app (PT Serif
+    // took over its role — see tokens.ts) but is left installed and loaded
+    // here since only Lora's removal was asked for; see the handback report.
     Inter_400Regular,
     Inter_500Medium,
   });
@@ -54,7 +68,7 @@ export default function RootLayout() {
           screenOptions={{
             headerStyle: { backgroundColor: color.surface },
             headerTintColor: color.text,
-            headerTitleStyle: { fontFamily: 'Lora_600SemiBold', fontSize: 18 },
+            headerTitleStyle: { fontFamily: font.family.headingSemibold, fontSize: 18 },
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

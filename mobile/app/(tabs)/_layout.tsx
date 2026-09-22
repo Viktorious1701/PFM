@@ -8,13 +8,63 @@
  * the old root import — the package source is authoritative. (ADR-0009)
  *
  * Chrome per DESIGN.md "screen chrome": `surface` bar with a `border` top
- * hairline (never a shadow, per the flat-editorial depth rule), `sky-deep`
- * active tint / `ink-muted` inactive, Lora header titles.
+ * hairline (never a shadow, per the flat depth rule), ink active tint /
+ * Faded Ink inactive, Courier Prime header titles.
+ *
+ * Tab icons are the same `PostmarkIcon` + glyph system as the Dashboard's
+ * category row (DESIGN.md "postmark category glyph"), replacing the earlier
+ * raw-emoji `tabBarIcon`s. `focused` drives `active` on the icon and the
+ * glyph's own `color`, so the active tab renders as a solid stamped badge —
+ * see PostmarkIcon's own doc comment for why inactive defaults to `color.text`
+ * but this screen passes `color.textMuted` explicitly.
+ *
+ * The label weight also needs to switch with focus (Bold cut when active,
+ * Regular when not), which a static `tabBarLabelStyle` object cannot do — it
+ * is not focus-aware. `tabBarLabel` accepts a `({ focused, color, children })
+ * => ReactNode` render function in this installed expo-router/react-navigation
+ * version (confirmed from `node_modules/expo-router/build/react-navigation/
+ * bottom-tabs/types.d.ts`), so that is used instead, defined once in
+ * `screenOptions` since it already receives each screen's own title as
+ * `children`.
  */
 import { Tabs } from 'expo-router/js-tabs';
+import type { ColorValue } from 'react-native';
 import { Text } from 'react-native';
 
-import { color } from '../../src/theme/tokens';
+import {
+  BudgetsGlyph,
+  DashboardGlyph,
+  FamilyGlyph,
+  TransactionsGlyph,
+  WalletsGlyph,
+} from '../../src/components/icons/Glyphs';
+import { PostmarkIcon } from '../../src/components/icons/PostmarkIcon';
+import { color, font } from '../../src/theme/tokens';
+
+/** On-screen box size for a tab-bar postmark badge — substantial, not tiny (see PostmarkIcon's `size` prop). */
+const TAB_ICON_SIZE = 34;
+
+function TabBarLabel({
+  focused,
+  color: tint,
+  children,
+}: {
+  focused: boolean;
+  color: ColorValue;
+  children: string;
+}) {
+  return (
+    <Text
+      style={{
+        fontFamily: focused ? font.family.bodyMedium : font.family.body,
+        fontSize: 11,
+        color: tint,
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
 
 export default function TabsLayout() {
   return (
@@ -27,17 +77,21 @@ export default function TabsLayout() {
           borderTopColor: color.border,
           borderTopWidth: 1,
         },
-        tabBarLabelStyle: { fontFamily: 'Inter_500Medium', fontSize: 11 },
+        tabBarLabel: (props) => <TabBarLabel {...props} />,
         headerStyle: { backgroundColor: color.surface },
         headerTintColor: color.text,
-        headerTitleStyle: { fontFamily: 'Lora_600SemiBold', fontSize: 18 },
+        headerTitleStyle: { fontFamily: font.family.headingSemibold, fontSize: 18 },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>📊</Text>,
+          tabBarIcon: ({ focused }) => (
+            <PostmarkIcon active={focused} size={TAB_ICON_SIZE} inactiveColor={color.textMuted}>
+              <DashboardGlyph color={focused ? color.surface : color.textMuted} />
+            </PostmarkIcon>
+          ),
         }}
       />
       <Tabs.Screen
@@ -45,7 +99,11 @@ export default function TabsLayout() {
         options={{
           title: 'Transactions',
           headerTitle: 'All Transactions',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>💸</Text>,
+          tabBarIcon: ({ focused }) => (
+            <PostmarkIcon active={focused} size={TAB_ICON_SIZE} inactiveColor={color.textMuted}>
+              <TransactionsGlyph color={focused ? color.surface : color.textMuted} />
+            </PostmarkIcon>
+          ),
         }}
       />
       <Tabs.Screen
@@ -53,7 +111,11 @@ export default function TabsLayout() {
         options={{
           title: 'Wallets',
           headerTitle: 'My Wallets',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>💳</Text>,
+          tabBarIcon: ({ focused }) => (
+            <PostmarkIcon active={focused} size={TAB_ICON_SIZE} inactiveColor={color.textMuted}>
+              <WalletsGlyph color={focused ? color.surface : color.textMuted} />
+            </PostmarkIcon>
+          ),
         }}
       />
       <Tabs.Screen
@@ -61,7 +123,11 @@ export default function TabsLayout() {
         options={{
           title: 'Budgets',
           headerTitle: 'Budget Status',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🎯</Text>,
+          tabBarIcon: ({ focused }) => (
+            <PostmarkIcon active={focused} size={TAB_ICON_SIZE} inactiveColor={color.textMuted}>
+              <BudgetsGlyph color={focused ? color.surface : color.textMuted} />
+            </PostmarkIcon>
+          ),
         }}
       />
       <Tabs.Screen
@@ -69,7 +135,11 @@ export default function TabsLayout() {
         options={{
           title: 'Family',
           headerTitle: 'Family Members',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>👥</Text>,
+          tabBarIcon: ({ focused }) => (
+            <PostmarkIcon active={focused} size={TAB_ICON_SIZE} inactiveColor={color.textMuted}>
+              <FamilyGlyph color={focused ? color.surface : color.textMuted} />
+            </PostmarkIcon>
+          ),
         }}
       />
       {/* Hide sub-routes from tab bar */}

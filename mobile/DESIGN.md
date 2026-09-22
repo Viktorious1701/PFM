@@ -1,66 +1,62 @@
 ---
 name: PFM Mobile
-description: Visual identity for the PFM mobile app — "Sky & Sedge", ported from a bird-photography
-  shop theme and re-tokened for personal finance.
+description: Visual identity for the PFM mobile app — "Cash & Carry", a tactile paper-ledger /
+  receipt-stamp aesthetic, approved after a 4-mockup review of the product owner.
 status: draft — theme applied to a prototype; no screen here satisfies a TC (see CLAUDE.md §5)
-created: 2026-07-31
-ported-from: ../ux-designs/ux/DESIGN.md
+created: 2026-09-22
+supersedes: "Sky & Sedge" — this file's own previous version. Not deleted, only superseded, git
+  keeps it in full (see "What this replaces, and why").
 colors:
-  bg-page: '#FBF9F4'
-  surface: '#FFFFFF'
-  surface-sunken: '#F1EDE4'
-  border: '#E4DFD3'
-  ink: '#3B4147'
-  ink-muted: '#6B7178'
-  caption-deep: '#71736B'
-  sky-soft: '#7E9AAB'
-  sky-deep: '#4C6577'
-  sage-soft: '#8B9B7A'
-  sage-deep: '#5E6F4B'
-  success: '#4F7A52'
-  pending: '#96681F'
-  error: '#A85248'
-  info: '#4C6577'
+  kraft-board: '#E4D5B7'
+  ledger-paper: '#FBF3E3'
+  iron-gall-ink: '#2B2420'
+  faded-ink: '#8A7A63'
+  border: '#D8C79C'
+  ledger-green: '#2E5339'
+  stamp-red: '#8A3324'
+  brass-coin: '#C08A2E'
+  brass-deep: '#7A5518'
 typography:
+  hero:
+    fontFamily: Courier Prime
+    fontSize: 34px
+    fontWeight: '700'
+    lineHeight: '1.1'
   h1:
-    fontFamily: Lora
+    fontFamily: Courier Prime
     fontSize: 28px
     fontWeight: '700'
     lineHeight: '1.15'
   h2:
-    fontFamily: Lora
+    fontFamily: Courier Prime
     fontSize: 22px
-    fontWeight: '600'
+    fontWeight: '700'
     lineHeight: '1.2'
   h3:
-    fontFamily: Lora
+    fontFamily: Courier Prime
     fontSize: 18px
-    fontWeight: '600'
-    lineHeight: '1.3'
-  hero:
-    fontFamily: Lora
-    fontSize: 34px
     fontWeight: '700'
-    lineHeight: '1.1'
+    lineHeight: '1.3'
   body-lg:
-    fontFamily: Inter
+    fontFamily: PT Serif
     fontSize: 17px
     fontWeight: '400'
     lineHeight: '1.5'
   body:
-    fontFamily: Inter
+    fontFamily: PT Serif
     fontSize: 15px
     fontWeight: '400'
     lineHeight: '1.5'
   caption:
-    fontFamily: Inter
+    fontFamily: PT Serif
     fontSize: 12px
-    fontWeight: '500'
+    fontWeight: '700'
     lineHeight: '1.4'
     letterSpacing: 0.02em
 rounded:
   none: '0'
   sm: 2px
+  stamp: 4px
   DEFAULT: 6px
   md: 6px
   lg: 12px
@@ -75,193 +71,316 @@ spacing:
   base: 4px
   margin-mobile: 20px
 shadows:
-  overlay: '0 6px 24px -8px rgba(59, 65, 71, 0.18)'
+  overlay: '0 6px 24px -8px rgba(43, 36, 32, 0.18)'
 ---
 
 ## Why this document exists
 
 CLAUDE.md §5 treats `mobile/` as a UI **prototype**, not implementation: fixture-driven, satisfying
-no `TC`, with `[UI]` rows deferred until a screen is wired to a real endpoint. Porting a visual theme
-doesn't change any of that — this file is the same kind of artifact `../ux-designs/ux/DESIGN.md` is
-for its shop, scoped to the mobile app instead. It is *not* a fourth `specs/` epic (CLAUDE.md §1.1
-rule 0 still means three files, and this isn't one of them); it's the token contract the mobile code
-is checked against, the same way `src/theme/tokens.ts` already was before this pass — just with
-different values and a written rationale for them.
+no `TC`, with `[UI]` rows deferred until a screen is wired to a real endpoint. Replacing the visual
+theme doesn't change any of that — this file is still the token contract the mobile code is checked
+against, the same way it was under "Sky & Sedge," just with different values and a written rationale
+for them. It is *not* a fourth `specs/` epic (CLAUDE.md §1.1 rule 0 still means three files, and this
+isn't one of them).
 
-## What was ported, and what was dropped
+## What this replaces, and why
 
-**Kept wholesale**, because it's a visual identity independent of what's being sold: the cream field
-+ hairline-not-shadow depth system, the `ink`/`sky-deep`/`sage-deep` accent split with soft variants
-barred from text, Lora-for-headings + Inter-for-everything-else, the 4px spacing scale, the radius
-semantics (pill actions / 6px containers / sharp-and-framed media), and light-mode-only.
+The product owner reviewed four competing mockups and picked "Cash & Carry" decisively — a tactile
+paper-ledger / receipt-stamp aesthetic — over "Sky & Sedge," the cream-and-slate identity ported from
+a bird-photography shop theme. This is a full replacement, not a re-tokening: every colour, both type
+families, and one shape rule change. Nothing about *what* the app is (a personal/family finance
+prototype, English-only, mobile-only, still satisfying no `TC`) changed, so the sections below that
+were never about the old palette — Layout & Spacing, most of Components — carry over close to
+verbatim.
 
-**Dropped:**
-- **Every shop-specific component** — `product-card`, `variant-selector`, `watermark-badge`,
-  `cart-line`, `gallery-item`. Nothing in PFM sells a photograph.
-- **The bilingual layer** (`language-toggle`, the EN|VN rule, Vietnamese-first copy). No requirement
-  in `SRS.md` covers internationalisation, and adding one now would be unspecified scope. English
-  only. The two font families still load the Vietnamese subset, because UM-US-02 EC-04 requires a
-  name like `Đặng Ngọc Thịnh` to render and persist exactly as typed — that's a correctness
-  requirement about diacritics, not a bilingual UI.
-- **Desktop breakpoints, the 12-column grid, the asymmetric hero rhythm.** Mobile-first here means
-  mobile-*only* for now: this app is a single-column React Native surface, not a responsive web
-  layout. If a tablet or web-desktop target is ever added, revisit.
-- **The exact type ramp's sizes.** The source's `display`/`h1` (56px/40px) are print-magazine-hero
-  sizes for a wide desktop viewport; halved-and-under here for a phone screen carrying financial
-  figures, not a photograph. The *roles* (display → hero balance figure, h1 → screen title, h3 →
-  card heading, caption → labels/pills) carry over unchanged.
+**"Sky & Sedge" is not deleted, only superseded.** Its full rationale — the cream/slate palette, the
+Lora/Inter split, the bird-photography provenance — stays recoverable exactly the way that file itself
+promised for *its* source: `git log -- mobile/DESIGN.md` finds the commit before this one, and
+`git show <that sha>:mobile/DESIGN.md` (or the equivalent path for `tokens.ts`, `app/_layout.tsx`)
+prints it in full. Nothing here silently erases the earlier reasoning; it's superseded, not
+forgotten.
 
-**Added — finance components the source never needed**, in the same token language: `stat-tile`
-(the dashboard's net-balance figure), `wallet-card`, `budget-meter`, `transaction-row`. `status-pill`
-already existed in the source for order state and is reused as-is for user/invitation status.
+**Kept wholesale**, because it never depended on the palette: the 4px spacing scale and
+`margin-mobile`, the flat/hairline depth system (still no shadow on anything resting on the page),
+single-column mobile-only layout, English-only copy with the two type families still loading a
+Vietnamese-capable subset (UM-US-02 EC-04 still needs `Đặng Ngọc Thịnh` to round-trip exactly), and
+the same three components' worth of prototype-vs-real discipline (`PrototypeBanner`, `Placeholder`,
+the `[UI]`-deferred test rows).
 
-## One real conflict, resolved
+**Dropped:** the entire "Sky & Sedge" palette (cream/slate/sage), Lora and Inter as the app's type
+faces, and the blanket "primary actions are pills" shape rule.
 
-SRS UXR-02 and SDS §3.1 require budget health be readable **by colour alone** — 🟢 healthy /
-🟡 warning / 🔴 exceeded — while the source `DESIGN.md` restricts `success`/`pending`/`error` to
-"status affordances," not decoration, and bars a third brand accent. These don't actually conflict:
-**budget health is status vocabulary, not a brand accent** — exactly the category the source already
-carves out for order status. `success #4F7A52` / `pending #96681F` (repurposed as "warning" here,
-since PFM has no literal "pending payment" state) / `error #A85248` are the correct hues under the
-source's own rules, and `budgetHealth()`'s existing 80%/100% thresholds are untouched.
+**Added:** the ink-press gradient stamp buttons, the torn/deckle-edge ticket motif (drawn in SVG, see
+"Elevation & Depth" and "Components"), the postmark category-glyph treatment, and a genuine
+income/expense contextual colour pair where the old system only ever had one interactive brand hue.
 
-What *does* need stating: "colour alone" (UXR-02) and WCAG accessibility both matter, and a filled
-bar with no label fails a colour-blind reader on both counts. So the `budget-meter` component carries
-**fill + a text label + a percentage**, never fill alone — the same discipline the source's
-`status-pill` already applied ("the label stays `ink`, the status hues fail AA as small text on the
-sunken pill... color lives in the dot, meaning in the word"). This is the one place this port
-reinterprets a source rule rather than just re-tokening it, and it's recorded here rather than
-silently decided in a component file.
+## One rule carried over, unchanged
+
+SRS UXR-02 and SDS §3.1 require budget health to be readable **by colour alone** — 🟢 healthy /
+🟡 warning / 🔴 exceeded — and "Sky & Sedge" resolved the apparent tension between that and its own
+"no third brand accent" rule by treating budget health as *status vocabulary*, not decoration, and by
+requiring the fill to carry colour while the label and percentage stay in the neutral text colour
+(never the status hue as text) plus the percentage figure itself, so a colour-blind reader still has
+the number. That reasoning didn't depend on which hues were involved, and it doesn't change now:
+`budgetHealth()`'s 80%/100% thresholds are untouched, and the budget-thermometer component still
+renders **fill + label + percentage**, never fill alone. The hues just move — see Colors below.
 
 ## Colors
 
-Same palette, same discipline: **soft** hues are decoration/large-area only and fail AA as text;
-**deep** hues carry text and interactive fill; both are validated against `bg-page`/`surface`.
+Same discipline as before: light, paper-toned surfaces; one dark ink for nearly all text; hairlines
+instead of shadows for depth; saturated colour reserved for meaning (income, expense, budget health),
+never for large-area brand decoration.
 
-- **`bg-page` #FBF9F4** — the cream canvas behind every screen. Never behind text or over a filled
-  card.
-- **`surface` #FFFFFF** — cards, inputs, the tab bar, anything raised.
-- **`surface-sunken` #F1EDE4** — the status-pill field and any "lower layer" band. Never a primary
-  content area.
-- **`border` #E4DFD3` — the hairline. Frames cards, separates rows, replaces shadow as the depth
-  mechanism. Never fill, never text.
-- **`ink` #3B4147** — primary text, headings, and body copy. The default for anything a reader must
-  read, including a wallet balance or a transaction amount.
-- **`ink-muted` #6B7178** — secondary text: meta lines, helper copy, placeholders, inactive tab
-  labels. Also the **interactive border** for text inputs — the decorative `border` hairline is too
-  faint to meet WCAG 1.4.11's ≥3:1 edge-contrast requirement on a field a person types into.
-- **`caption-deep` #71736B** — reserved, unused in this app currently (the source used it for photo
-  captions; no direct PFM analogue yet). Kept in the palette rather than deleted, in case a future
-  screen needs a third text tier between `ink-muted` and `ink`.
-- **`sky-soft` #7E9AAB`** — decorative only: empty-state art, large calm washes. Never text, never a
-  small control.
-- **`sky-deep` #4C6577** — the **primary interactive** colour: primary-button fill, active tab,
-  focus rings, links, the balance-tile background. The one hue that means "clickable" or "current."
-- **`sage-soft` #8B9B7A`** — decorative only, reserved.
-- **`sage-deep` #5E6F4B** — the **secondary interactive** colour: secondary-button outline/text.
-  Used sparingly.
-- **`success` #4F7A52`**, **`pending`→ warning #96681F`**, **`error` #A85248`** — status vocabulary
-  for budget health and user/invitation state, never brand decoration. See *One real conflict* above.
-- **`info` #4C6577`** — same value as `sky-deep`, so an informational banner reads as part of the
-  primary voice, not a fourth accent.
+| Token | Value | Role |
+| :-- | :-- | :-- |
+| Kraft Board | `#E4D5B7` | `color.bg` — the desk/page background. Never behind text or a filled card. |
+| Ledger Paper | `#FBF3E3` | `color.surface` — every card, the ticket body, the tab bar. |
+| Iron-Gall Ink | `#2B2420` | `color.text` — primary text, headings, monetary figures. |
+| Faded Ink | `#8A7A63` | `color.textMuted` — secondary text, and the interactive border colour (below). |
+| Border | `#D8C79C` | `color.border` — the hairline. ~1.5:1 against Ledger Paper — decorative, deliberately faint. |
+| Ledger Green | `#2E5339` | `color.income` — income accent, healthy budget. ~7.9:1 on Ledger Paper — safe as text. |
+| Stamp Red | `#8A3324` | `color.expense` — expense accent, exceeded budget. ~7.4:1 on Ledger Paper — safe as text. |
+| Brass Coin | `#C08A2E` | warning budget **fill**. ~2.75:1 on Ledger Paper — fails WCAG AA as small text; see below. |
+
+**Brass Coin is a fill/large-numeral/icon-stroke colour, not a text colour.** Measured against Ledger
+Paper it's ~2.75:1 — short of the 3:1 floor WCAG treats as usable even for large text, let alone the
+4.5:1 normal-text floor. Everywhere the "warning" hue is needed as text or a small graphic — the
+budget-meter's `fg` slot, the `PENDING` status dot, the prototype banner's own lettering — this system
+uses **Brass Deep** (`#7A5518`) instead: the same family of colour, ~6.1:1 on Ledger Paper, safe as
+text. `color.budget.warning.accent` (the actual fill bar, a large area) is the one place raw Brass
+Coin is used, exactly per the brief.
+
+**There is no longer one universal "primary" brand hue** the way `sky-deep` was in "Sky & Sedge" —
+actions are contextually coloured: income green, expense red. Where a truly generic/neutral action
+needs a colour — a plain "Cancel," a settings link, a form submit that is not itself income or
+expense — it defaults to **Iron-Gall Ink text on Ledger Paper or a bordered background, never an
+invented tint**; the one nuance is that the shared `Button` component's primary variant is a *filled*
+pill, and an ink-filled pill with Ledger-Paper lettering still satisfies this (ink is the palette's own
+neutral, not a brand tint) while reading as a rubber ink stamp, which is in-theme rather than an
+exception to it.
+
+Full remap, by role:
+
+- **`bg` #E4D5B7 (Kraft Board)** — the page canvas. Same "never behind text or a filled card" rule as
+  the old `bg-page`.
+- **`surface` #FBF3E3 (Ledger Paper)** — cards, the ticket body, the tab bar, anything raised.
+- **`surfaceSunken` #F0E4C8** — a duller, sunken paper tone: the status-pill field, the budget
+  thermometer's field, a disabled button fill. Never a primary content area.
+- **`border` #D8C79C (Border)** — the hairline. Frames cards, separates rows, is the depth mechanism.
+  Never fill, never text.
+- **`text` #2B2420 (Iron-Gall Ink)** — primary text, headings, and every monetary figure.
+- **`textMuted` #8A7A63 (Faded Ink)** — secondary text: meta lines, helper copy, placeholders,
+  inactive tab labels. Also `borderInteractive` — the decorative hairline is too faint (~1.5:1) to
+  meet WCAG 1.4.11's ≥3:1 edge-contrast floor on a field a person types into; Faded Ink clears it at
+  ~3.8:1.
+- **`captionDeep` #6B5B45** — reserved, unused today, same status as before the port (a third text
+  tier, in case a future screen needs one between `textMuted` and `text`).
+- **`sageSoft` #B7C9B8** — decorative-only pale wash of Ledger Green. Never text, never a small
+  control.
+- **`brassSoft` #E6D3A3** — decorative-only pale wash of Brass Coin. Replaces `skySoft` outright:
+  "sky" has no referent left in this palette, and nothing in the app imported that key (checked by
+  grep before renaming, so this is a clean rename, not a silent break).
+- **`income` #2E5339 (Ledger Green)** / **`expense` #8A3324 (Stamp Red)** — the two contextual
+  accents: the toggle, the stamp button gradients (via the deeper ink-press pair below), transaction
+  amounts. Never used for a generic action — see the "no universal primary" note above.
+- **`brassDeep` #7A5518** — the safe-contrast stand-in for the warning hue in text/small graphics; see
+  above.
+- **`budget.{healthy,warning,exceeded}`**, **`success`**, **`error`**, **`info`** — status vocabulary,
+  never brand decoration, same as before. `info` still equals the neutral ink voice (`text`), the same
+  relationship `info` had to `sky-deep` previously — an informational banner reads as part of the
+  neutral voice, not a fourth accent.
+- **`prototype`** — deliberately loud, and still built from `brassDeep` rather than raw Brass Coin,
+  because its own label renders at caption size.
+
+**Ink-press gradients** (two, used only on the two dashboard stamp buttons, nowhere else): expense
+runs `#9C4530` → `#6B2A1C` top-to-bottom; income runs `#3C6B48` → `#1F3B27` top-to-bottom. These are
+the one place a gradient exists in the system; a flat `income`/`expense` fill is correct everywhere
+else a contextual colour is needed (the toggle segments, transaction-row amounts).
 
 ## Typography
 
-Lora (600/700) for headings and the balance hero figure; Inter (400/500) for everything else —
-body copy, labels, form text, prices, captions. Headings never sit in Inter; monetary figures and UI
-never sit in Lora. Both families load the Vietnamese subset (see *What was dropped*).
+**Courier Prime replaces Lora's role exactly** — headings and every monetary figure. A monospaced
+typewriter face reads as a typed ledger column the moment a figure sits in it, which a proportional
+serif never quite manages; that legibility-as-a-ledger read is the entire reason this face was chosen
+over keeping a proportional heading face. **PT Serif replaces Inter's role exactly** — body copy,
+labels, form text, captions. It's a warm, slightly literary book serif, deliberately distinct from the
+money-figure face so the two never get confused at a glance, the same separation of concerns Lora/Inter
+enforced before.
+
+Both are Google Fonts packages (`@expo-google-fonts/courier-prime`, `@expo-google-fonts/pt-serif`);
+neither ships a mid-weight. Confirmed from the installed packages' own generated `index.d.ts` (not
+assumed): each exports only `_400Regular`, `_400Regular_Italic`, `_700Bold`, `_700Bold_Italic`. The
+old ramp had a true semibold (Lora 600) and a true medium (Inter 500) for `headingSemibold` and
+`bodyMedium`; neither exists here, so both **collapse onto the family's Bold cut** — `headingSemibold`
+and `heading` are now the same asset (`CourierPrime_700Bold`), and `bodyMedium` maps to
+`PTSerif_700Bold` rather than a medium weight. This is a real, visible step up in weight contrast
+versus the old 500/600 mid-weights (most noticeable on button labels, chip text, and form labels,
+which all render slightly bolder now than they used to), recorded here rather than left as an
+unstated side effect of the font swap. PT Serif's italic (`PTSerif_400Regular_Italic`) is loaded too,
+per the brief, and gets a real (if sparing) use: the small label above the net-balance tape.
 
 | Role | Family | Size | Weight | Used for |
-|---|---|---|---|---|
-| `hero` | Lora | 34 | 700 | The dashboard's net-balance figure |
-| `h1` | Lora | 28 | 700 | Screen titles ("Invite Family Member", "Sign in to PFM") |
-| `h2` | Lora | 22 | 600 | Section headings within a screen |
-| `h3` | Lora | 18 | 600 | Card headings (a wallet name, a user's full name) |
-| `body-lg` | Inter | 17 | 400 | Lead paragraph / screen description |
-| `body` | Inter | 15 | 400 | Default body copy, list rows, form values |
-| `caption` | Inter | 12 | 500 | Labels, meta text, pill contents, helper/error text |
+| :-- | :-- | :-- | :-- | :-- |
+| `hero` | Courier Prime | 34 | 700 | A giant money figure (the dashboard hero ticket) |
+| `h1` | Courier Prime | 28 | 700 | Screen titles ("Invite Family Member", "Sign in to PFM") |
+| `h2` | Courier Prime | 22 | 700 | Section headings within a screen |
+| `h3` | Courier Prime | 18 | 700 | Card headings (a wallet name, a user's full name) |
+| `body-lg` | PT Serif | 17 | 400 | Lead paragraph / screen description |
+| `body` | PT Serif | 15 | 400 | Default body copy, list rows, form values |
+| `caption` | PT Serif | 12 | 700 (was 500) | Labels, meta text, pill contents, helper/error text |
+
+Headings never sit in PT Serif; monetary figures and UI chrome never sit outside Courier Prime.
+`@expo-google-fonts/lora` is fully removed (package and every `Lora_*` import) — checked by grepping
+the whole `mobile/` tree before removal, per CLAUDE.md's honesty rules, rather than assumed clean.
+`@expo-google-fonts/inter` remains installed for now (only Lora's removal was in scope for this pass);
+nothing in the app renders with it any more after this change.
 
 ## Layout & Spacing
 
-4px base scale: `1`–`6` = 4/8/12/16/24/32. `margin-mobile` (20px) is the page edge on every screen —
-`Screen.tsx`'s existing `space.lg` (16px) body padding moves to this. Single column, no horizontal
-scroll, ever. Vertical rhythm between sections uses `spacing.5`–`spacing.6` so content breathes.
+Unchanged from "Sky & Sedge": 4px base scale, `1`–`6` = 4/8/12/16/24/32, `margin-mobile` (20px) as the
+page edge on every screen. Single column, no horizontal scroll, ever. Vertical rhythm between sections
+uses `spacing.5`–`spacing.6`. None of this was ever about the old palette, so none of it moved.
 
 ## Elevation & Depth
 
-**Flat.** Depth comes from the `border` hairline and whitespace, never a shadow, on anything resting
-on the page — cards, tiles, rows. Exactly one shadow token, `shadows.overlay`, exists and is reserved
-for transient overlays (a modal, a dropdown) — this app doesn't have one yet, so it is unused but
-kept for when it does.
+Still **flat.** Depth still comes from the `border` hairline and whitespace, never a shadow, on
+anything resting on the page. `shadows.overlay` is still reserved for a transient overlay (a modal, a
+dropdown) this app doesn't have yet — recoloured to Iron-Gall Ink, otherwise untouched.
+
+The one new physical cue is the hero ticket's torn top edge, and it is deliberately **not** a shadow
+or a blur — it's geometry. React Native has no CSS `clip-path`, so the jagged silhouette is drawn as a
+thin `react-native-svg` strip: a zigzag path filled with the same Ledger Paper colour as the card body
+beneath it, sitting on the Kraft Board page colour, so the boundary between the two reads as torn
+paper without a single pixel of drop-shadow. This keeps the flat-depth rule intact rather than
+quietly breaking it for one component.
 
 ## Shapes
 
-- **Buttons → `rounded.full`** (pill). The one soft, obviously-tappable shape.
-- **Cards, tiles, inputs → `rounded.md`** (6px). The default container radius.
-- **Status pills → `rounded.full`.**
+**Primary actions move away from the old blanket "pills" rule — but only the two new stamp actions,
+not every button.** The dashboard's IN/OUT stamp button is a small-radius rectangle (`radius.stamp`,
+4px) — a "stamped ticket," not a pill — because a pill reads as a soft app button and this needed to
+read as a rubber stamp hitting paper. This is a deliberate, scoped change, not an oversight: the
+shared `Button` component (Sign In, Send Invite, Activate) is untouched by this pass and keeps its
+existing pill (`radius.full`); it wasn't part of the dashboard rebuild, and re-shaping a component
+used across screens that weren't part of this review is a separate decision, not one made silently
+here.
 
-There is no photograph-framing rule here (the source's `rounded.sm` + hairline "print" treatment) —
-PFM has no imagery to frame. The token is kept in the palette for a future avatar or receipt-image
-feature, unused today.
+- **The two stamp actions → `radius.stamp`** (4px). The one place the old pill rule no longer
+  applies.
+- **Cards, tiles, the ticket body → `radius.md`** (6px), unchanged from before.
+- **The shared `Button`, `StatusChip` → `radius.full`** (pill), unchanged — out of scope for this
+  pass.
+
+There is still no photograph-framing rule (`radius.sm` stays reserved, unused, for a future avatar or
+receipt-image feature).
 
 ## Components
 
-### stat-tile
-The dashboard's net-balance card. `sky-deep` fill, white `hero`-styled figure, a `caption`-styled
-label above it in a translucent white. Replaces the old `surfaceInverse` slate tile 1:1 — same
-position and role, new fill.
+### hero ticket *(replaces stat-tile)*
+Ledger Paper card with a torn SVG top edge (see "Elevation & Depth"), framed on the remaining three
+sides with a `border` hairline. Contains, top to bottom: the IN/OUT toggle, a giant Courier Prime
+amount on a rule line (static/placeholder — there is no real amount-entry keypad behind this screen
+yet, so it renders in `textMuted` rather than `text` to read as an empty field, with a one-line note
+saying so), the three postmark category glyphs, and the gradient stamp button. This is the dashboard's
+new focal point, replacing the old slate stat-tile in both position and role.
+
+### IN/OUT toggle
+Two segments in a hairline-framed strip. The inactive segment is Ledger Paper with ink text; the
+active segment fills with its own contextual colour (`income` green or `expense` red) with Ledger
+Paper text. OUT is the default-active segment — expense is the more frequent action, per the approved
+concept.
+
+### stamp button
+A `radius.stamp` rectangle filled with the ink-press gradient matching whichever side of the toggle is
+active, Ledger Paper lettering. Links to `/(tabs)/transactions/create` regardless of toggle state —
+that screen has no real form yet to receive a direction, so both sides of the toggle lead to the same
+placeholder. Built with `expo-linear-gradient`'s `<LinearGradient>` wrapped by `Link`'s `asChild` (a
+single `Pressable` child, confirmed from `expo-router`'s own source rather than assumed, matching
+AGENTS.md's rule about this SDK's docs being stale).
+
+### postmark category glyph
+Each category icon (groceries, transport, salary) is a `react-native-svg` `<Path>`/`<Circle>` glyph,
+~24×24, single ~1.7 stroke width, Iron-Gall Ink, ported faithfully from the approved mockup's line-art
+placeholders. It sits inside a thin dashed-stroke ring (`r=10.5`, `strokeDasharray="3 4"`) — the
+"postmark" treatment — at the same stroke width as the glyph itself, since the brief calls for "a
+single" stroke weight across the whole icon, ring included. The ring and glyph set now live in
+`src/components/icons/` (`PostmarkIcon.tsx`, `Glyphs.tsx`) as a shared definition, not copied per
+screen: the tab bar (five new nav glyphs — ledger book, torn receipt, billfold, ink-ring target, linked
+rings) uses the exact same component, with its active tab rendered as the ring turning into a solid
+ink-filled badge rather than a colour tint, since a colour swap alone would break the paper/stamp
+metaphor — it reuses the ink-press logic already established for the dashboard's stamp buttons.
+
+### balance tape *(replaces the old balance figure's standalone position)*
+A small strip styled like a piece of tape tacked onto the ledger below the hero ticket: sunken-paper
+fill, dashed top/bottom borders standing in for perforation, a slight rotation. Holds the net balance
+figure people used to find in the stat-tile.
+
+### Ledger Book *(new)*
+A tap-to-expand row (`▸`/`▾` plus a hint line, plain `useState`, no gesture library) that reveals the
+wallet cards, budget thermometers, and recent transactions beneath it when open. The three sections'
+own data and structure are unchanged from before this pass; only their being tucked behind a fold, and
+their colours, are new.
 
 ### wallet-card
-`surface` card, `rounded.md`, 1px `border` hairline (no shadow). Wallet name in `body` `ink-muted`,
-balance in `h3` `ink`.
+Ledger Paper card, `radius.md`, 1px `border` hairline (no shadow). Wallet name in `body` `textMuted`,
+balance in `headingSemibold` `text`.
 
-### budget-meter
-`surface-sunken` background at `rounded.md`. Category name + percentage in `caption`, both `ink`
-(never the status hue as text — see *One real conflict*). A 6px track beneath, filled to the used
-percentage in the status hue (`success`/`warning`/`error` from `budgetHealth()`), track background a
-low-alpha `ink`. A `caption` `ink-muted` line below showing `$used of $limit`.
+### budget-thermometer *(replaces budget-meter)*
+`surfaceSunken` background at `radius.md`. Category name + percentage in `bodyMedium`, both `text`
+(never the status hue as text — see "One rule carried over"). An 8px track beneath, filled to the used
+percentage in the status hue (`healthy`/`warning`/`exceeded` from `budgetHealth()`), track background
+a low-alpha ink. A `body` `textMuted` line below showing `$used of $limit`.
 
 ### transaction-row
-`surface` row, `rounded.md`, 1px `border` hairline. Label in `body` `ink`; amount in `body` `ink` for
-an expense, `success` for income — colour is a legitimate here because the sign is also shown
-(`+`/`-`), so it isn't the sole channel of information (unlike the budget-meter case).
+Ledger Paper row, `radius.md`, 1px `border` hairline. Label in `body` `text`; amount in `bodyMedium`,
+coloured `expense` (Stamp Red) or `income` (Ledger Green) — legitimate here because the `+`/`-` sign
+is also shown, so colour is a supplement, never the sole channel (same discipline as the old
+transaction-row, now symmetric: both directions have a real accent, where only income did before).
 
 ### status-pill *(existing `StatusChip`, re-tokened)*
-`surface-sunken` background, `rounded.full`, `caption` label always `ink`, with a leading coloured
-dot carrying the state hue: `PENDING` → `warning`, `ACTIVE` → `success`, `DEACTIVATED` → `ink-muted`.
+`surfaceSunken` background, `radius.full`, label always `text`, with a leading coloured dot carrying
+the state hue: `PENDING` → `brassDeep`, `ACTIVE` → `income` green, `DEACTIVATED` → `textMuted`.
 
-### button-primary / button-secondary *(existing `Button`)*
-Primary: `rounded.full` pill, `sky-deep` fill, white `caption`-weight label, `padding: spacing.3
-spacing.4`. Pressed darkens toward `#3D5464`. Disabled: `surface-sunken` fill, `ink-muted` label.
-Secondary: transparent fill, `sage-deep` text and 1px `sage-deep` border.
+### button-primary / button-secondary *(existing `Button`, re-tokened, shape untouched)*
+Primary: `radius.full` pill, Iron-Gall Ink fill, Ledger Paper lettering — see the "no universal
+primary" note in Colors for why a neutral fill is ink rather than an invented tint. Secondary:
+transparent fill, ink text and 1px ink border. Out of scope for the shape change (see "Shapes").
 
-### text-input *(existing `TextField`)*
-`surface` field, **1px `ink-muted` border** (not the decorative `border` hairline — see *Colors*),
-`rounded.md`, `ink` text, `ink-muted` placeholder. Focus: 2px `sky-deep` border. Error: 1px `error`
-border, helper text in `error`. Label above in `caption` `ink`.
+### text-input *(existing `TextField`, re-tokened)*
+Ledger Paper field, **1px Faded Ink border** (not the decorative `border` hairline — see Colors),
+`radius.md`, ink text, Faded Ink placeholder. Focus: 2px ink border. Error: 1px `expense`-toned border,
+helper text in the same tone.
 
-### banner *(existing `Banner`)*
-Left-border accent card, `rounded.md`, tone-coloured background + a 4px tone-coloured left edge,
-message in the tone's foreground colour. Unchanged in shape from the current implementation — only
-the tone palette (`color.success`/`.error`/`.info`) is re-tokened.
+### banner *(existing `Banner`, re-tokened)*
+Left-border accent card, `radius.md`, tone-coloured background + a 4px tone-coloured left edge,
+message in the tone's foreground colour. Unchanged in shape — only the tone palette
+(`success`/`error`/`info`) moved.
 
 ### screen chrome *(existing `Screen`, tab bar)*
-`bg-page` cream page background (not `surface` — cream is the canvas, white is for raised content).
-`margin-mobile` (20px) horizontal padding. Tab bar: `surface` background, 1px `border` top hairline,
-`sky-deep` active / `ink-muted` inactive tint, `h3`-styled (Lora) header titles.
+Kraft Board page background (not Ledger Paper — Kraft Board is the desk, Ledger Paper is what sits on
+it). `margin-mobile` (20px) horizontal padding. Tab bar: Ledger Paper background, 1px `border` top
+hairline, ink active / Faded Ink inactive tint, Courier Prime header titles.
 
 ## Do's and Don'ts
 
 **DO**
-- Keep monetary figures in `ink` — they're information, not decoration.
-- Frame every card with a `border` hairline instead of a shadow.
-- Use `sky-deep` as the single "this is clickable / this is current" signal.
-- Render budget/status hues as fill + dot, never as the only distinguishing text colour.
+- Keep monetary figures in `text` (Iron-Gall Ink) — they're information, not decoration, except the
+  dashboard's own placeholder amount, which is deliberately `textMuted` to read as empty.
+- Frame every card with a `border` hairline instead of a shadow; draw the one exception (the ticket's
+  torn edge) as SVG geometry, not a shadow.
+- Use `income`/`expense` as the only two contextual "this is clickable and it means something
+  directional" signals; fall back to ink for anything generic.
+- Render budget/status hues as fill + dot/label, never as the only distinguishing text colour.
+- Reserve raw Brass Coin for fills, large numerals, and icon strokes; use `brassDeep` anywhere it
+  would be small text.
 
 **DON'T**
-- Put `sky-soft` or `sage-soft` on text or a small control.
+- Put `sageSoft` or `brassSoft` on text or a small control.
 - Add a drop-shadow to anything resting on the page.
-- Introduce a third brand accent — status hues are vocabulary, not decoration.
-- Set a heading in Inter or a monetary figure in Lora.
-- Reach for the bilingual toggle, the shop components, or the desktop grid — they were deliberately
-  dropped; see *What was ported, and what was dropped*.
+- Invent a tinted fill for a generic/neutral action — default to ink text on paper or a bordered
+  background instead.
+- Set a heading in PT Serif or a monetary figure outside Courier Prime.
+- Assume the shared `Button` component follows the new stamp-rectangle shape — it doesn't yet; that's
+  a separate decision.
+- Reach for the bilingual toggle, the shop components, or the desktop grid — dropped before this pass
+  and still out of scope.

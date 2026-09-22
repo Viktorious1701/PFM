@@ -88,27 +88,34 @@ No category-creation screen exists in `mobile/` this round, and no SRS UXR names
 
 ### Test Implementation Map *(filled at step 4)*
 
-Not yet populated — CM-US-01 is at the Quality step (steps 1–3 of the AIF-SDLC cycle). This table is extended with real pytest node ids and PASS/FAIL/BLOCKED results once the Implement step (step 4) writes `backend/tests/integration/test_cm_us_01_create_category.py` from the test cases below, per `constitution.md` DOD-07.
+All under `backend/tests/integration/test_cm_us_01_create_category.py`. Run one with
+`uv run pytest -k <fragment>`.
 
 | TC | pytest node id | Result |
 |---|---|---|
-| TC-01 | *(pending Step 4)* | PENDING |
-| TC-02 | *(pending Step 4)* | PENDING |
-| TC-03 | *(pending Step 4)* | PENDING |
-| TC-04 | *(pending Step 4)* | PENDING |
-| TC-05 | *(pending Step 4)* | PENDING |
-| TC-06 | *(pending Step 4)* | PENDING |
-| TC-07 | *(pending Step 4)* | PENDING |
-| TC-08 | *(pending Step 4)* | PENDING |
-| TC-09 | *(pending Step 4)* | PENDING |
-| TC-10 | *(pending Step 4)* | PENDING |
-| TC-11 | *(pending Step 4)* | PENDING |
-| TC-12 | *(pending Step 4)* | PENDING |
-| TC-13 | *(pending Step 4)* | PENDING |
-| TC-14 | *(pending Step 4)* | PENDING |
-| TC-15 | *(pending Step 4)* | PENDING |
-| TC-16 | *(pending Step 4)* | PENDING |
-| TC-17 | *(pending Step 4)* | PENDING |
+| TC-01 | `test_authenticated_user_creates_an_expense_category_201_with_created_category` | PASS |
+| TC-02 | `test_authenticated_user_creates_an_income_category_201_with_created_category` | PASS |
+| TC-03 | `test_creating_a_category_persists_exactly_one_row_with_submitted_fields` | PASS |
+| TC-04 | `test_unauthenticated_caller_is_denied_with_401` | PASS |
+| TC-05 | `test_a_missing_category_name_is_rejected_with_422` | PASS |
+| TC-06 | `test_empty_or_whitespace_only_category_name_is_rejected_with_422` | PASS |
+| TC-07 | `test_a_category_name_exceeding_100_characters_is_rejected_not_truncated` | PASS |
+| TC-08 | `test_a_missing_category_type_is_rejected_with_422` | PASS |
+| TC-09 | `test_a_category_type_value_that_is_neither_income_nor_expense_is_rejected_with_422` (3 params) | PASS |
+| TC-10 | `test_a_lowercase_or_mixed_case_category_type_is_rejected_not_case_folded` (2 params) | PASS |
+| TC-11 | `test_a_category_type_with_surrounding_whitespace_is_rejected_not_trimmed` (2 params) | PASS |
+| TC-12 | `test_created_category_is_always_owned_by_caller_never_by_payload_value` | PASS |
+| TC-13 | `test_an_unrecognised_icon_field_submitted_with_the_request_is_silently_ignored` | PASS |
+| TC-14 | `test_response_exposes_exactly_the_four_documented_fields` | PASS |
+| TC-15 | `test_two_categories_with_the_same_name_for_the_same_user_both_succeed` | PASS |
+| TC-16 | `test_multiple_validation_failures_in_one_submission_are_reported_together` | PASS |
+| TC-17 | `test_a_category_name_with_surrounding_whitespace_is_stored_trimmed` | PASS |
+
+Full suite: `219 passed` (198 pre-existing + 21 new — 17 TCs, 3 parametrized with extra values).
+`ruff check`/`ruff format --check` clean, `mypy app` clean, coverage **99%** overall; `models/category.py`,
+`schemas/category.py`, `repositories/category_repo.py`, `services/category_service.py`, and
+`api/v1/categories.py` are all at **100%** (constitution DOD-03's floor is 80%). No defect found in the
+implementation while writing these tests — every TC passed against the first version of the code.
 
 ---
 
