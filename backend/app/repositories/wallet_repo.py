@@ -6,9 +6,21 @@ decides *what* to do, this module only knows *how* to ask the database.
 
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.wallet import WalletModel
+
+
+def get_owned_by_id(db: Session, *, wallet_id: str, user_id: str) -> WalletModel | None:
+    """spec FR-04, BR-01/BR-02, constitution SEC-08. Scoped by `user_id` in
+    the query itself, so "does not exist" and "belongs to someone else"
+    return the identical `None` — collapsed by construction, not by a check
+    that could be forgotten (BM-US-01 plan.md A6).
+    """
+    return db.scalar(
+        select(WalletModel).where(WalletModel.id == wallet_id, WalletModel.user_id == user_id)
+    )
 
 
 def add_wallet(

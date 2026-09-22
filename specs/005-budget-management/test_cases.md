@@ -122,11 +122,45 @@ No budget-creation screen exists in `mobile/` this round, and no SRS UXR names o
 
 ### Test Implementation Map *(filled at step 4)*
 
-Not yet implemented. This section is populated at the Implement step (step 4), from `backend/tests/integration/test_bm_us_01_create_budget.py`, with each row's real pytest node id and PASS/FAIL/BLOCKED result (constitution DOD-07). No code exists yet — steps 1–3 (this story's scope) produce `spec.md`, `plan.md`, and this file only.
+All under `backend/tests/integration/test_bm_us_01_create_budget.py`. Run one with
+`uv run pytest -k <fragment>`.
 
 | TC | pytest node id | Result |
 |---|---|---|
-| TC-01 … TC-26 | *(pending T-10)* | *(pending)* |
+| TC-01 | `test_authenticated_user_creates_a_budget_201_with_created_budget` | PASS |
+| TC-02 | `test_creating_a_budget_persists_exactly_one_row_with_submitted_fields_and_computed_period` | PASS |
+| TC-03 | `test_created_budget_period_is_first_day_of_current_month_from_frozen_clock` | PASS |
+| TC-04 | `test_unauthenticated_caller_is_denied_with_401` | PASS |
+| TC-05 | `test_a_missing_wallet_reference_is_rejected_with_422` | PASS |
+| TC-06 | `test_a_wallet_reference_matching_no_wallet_at_all_is_rejected_with_404` | PASS |
+| TC-07 | `test_a_wallet_reference_belonging_to_a_different_user_is_rejected_identically_to_not_found` | PASS |
+| TC-08 | `test_a_missing_category_reference_is_rejected_with_422` | PASS |
+| TC-09 | `test_a_category_reference_matching_no_category_at_all_is_rejected_with_404` | PASS |
+| TC-10 | `test_a_category_reference_belonging_to_a_different_user_is_rejected_identically_to_not_found` | PASS |
+| TC-11 | `test_a_malformed_wallet_reference_is_rejected_with_same_outcome_as_not_found` | PASS |
+| TC-12 | `test_a_malformed_category_reference_is_rejected_with_same_outcome_as_not_found` | PASS |
+| TC-13 | `test_a_missing_amount_limit_is_rejected_with_422` | PASS |
+| TC-14 | `test_an_amount_limit_of_exactly_zero_is_rejected_with_422` | PASS |
+| TC-15 | `test_a_negative_amount_limit_is_rejected_with_422` | PASS |
+| TC-16 | `test_an_amount_limit_of_exactly_0_01_is_accepted` | PASS |
+| TC-17 | `test_an_amount_limit_with_three_decimal_places_is_rejected_not_rounded` | PASS |
+| TC-18 | `test_an_amount_limit_exceeding_15_total_digits_is_rejected` | PASS |
+| TC-19 | `test_a_period_submitted_in_the_request_body_is_silently_ignored` | PASS |
+| TC-20 | `test_a_duplicate_budget_for_same_wallet_category_period_is_rejected_with_409` | PASS |
+| TC-21 | `test_a_second_budget_same_category_and_period_different_wallet_is_accepted` | PASS |
+| TC-22 | `test_a_second_budget_same_wallet_and_period_different_category_is_accepted` | PASS |
+| TC-23 | `test_a_second_budget_same_wallet_and_category_different_period_is_accepted` | PASS |
+| TC-24 | `test_response_exposes_exactly_the_five_documented_fields` | PASS |
+| TC-25 | `test_multiple_validation_failures_in_one_submission_are_reported_together` | PASS |
+| TC-26 | `test_wallet_ownership_is_checked_before_category_ownership_when_both_invalid` | PASS |
+
+Full suite: `245 passed` (219 pre-existing + 26 new). `ruff check`/`ruff format --check` clean, `mypy app`
+clean, coverage **99%** overall; `models/budget.py`, `schemas/budget.py`, `repositories/budget_repo.py`,
+`services/budget_service.py`, and `api/v1/budgets.py` are all at **100%** (constitution DOD-03's floor is
+80%). No defect found in the implementation while writing these tests — every TC passed against the first
+version of the code; three targeted mutation checks (reversing the wallet/category check order, widening
+the uniqueness scope to drop `period`, and diverging the not-found/not-owned response bodies) each
+confirmed the corresponding TC-26/TC-23/TC-07 fails for the right reason before being reverted.
 
 ---
 

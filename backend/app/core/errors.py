@@ -121,3 +121,33 @@ class AccountNotActivatedError(AppError):
     status_code = 403
     error_code = "ACCOUNT_NOT_ACTIVATED"
     default_message = "Your account is not activated. Please check your email invitation."
+
+
+# --- BM-US-01: Create a Budget ---------------------------------------------
+
+
+class BudgetWalletNotFoundError(AppError):
+    """spec AC-04 / FR-04. Identical for "no such wallet" and "not this
+
+    caller's wallet" (constitution VL-06's `404 if absent` branch).
+    """
+
+    status_code = 404
+    error_code = "BUDGET_WALLET_NOT_FOUND"
+    default_message = "The referenced wallet was not found."
+
+
+class BudgetCategoryNotFoundError(AppError):
+    """spec AC-06 / FR-06. Same collapsed shape as BudgetWalletNotFoundError."""
+
+    status_code = 404
+    error_code = "BUDGET_CATEGORY_NOT_FOUND"
+    default_message = "The referenced category was not found."
+
+
+class BudgetAlreadyExistsError(AppError):
+    """spec AC-11 / FR-10 / BR-05, constitution VL-05."""
+
+    status_code = 409
+    error_code = "BUDGET_ALREADY_EXISTS"
+    default_message = "A budget already exists for this wallet, category, and period."
