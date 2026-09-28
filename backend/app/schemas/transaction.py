@@ -51,3 +51,16 @@ class TransactionRead(BaseModel):
     type: TransactionType
     timestamp: datetime
     note: str | None
+
+
+class TransactionListRead(BaseModel):
+    """New envelope (TM-US-02 plan.md A8) — mirrors `WalletListRead` (WM-US-02
+    plan.md A2) and `UserListRead` (UM-US-03 plan.md A6). `TransactionRead`'s
+    own seven fields are reused unchanged as the per-item shape (TM-US-01
+    A14, this story's A8) — no embedded wallet or category name.
+    """
+
+    items: list[TransactionRead]
+    total: int
+    page: int
+    page_size: int

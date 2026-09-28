@@ -739,10 +739,61 @@ their own all-`[API]` classification.
 
 ### Test Implementation Map *(filled at step 4)*
 
-Populated at the Implement dispatch (steps 4–6), the same way TM-US-01's own map above was. Test
-cases below are written from this section, seen failing first, then implemented against
-`backend/tests/integration/test_tm_us_02_list_transactions.py`, one test per `TC-NN`, each carrying
-its `TC-NN` id in its docstring.
+Populated at the Implement dispatch (steps 4–6), the same way TM-US-01's own map above was. All 36
+test cases are implemented in `backend/tests/integration/test_tm_us_02_list_transactions.py`, one
+test per `TC-NN`, each carrying its `TC-NN` id in its docstring — `TC-44`/`TC-45` are each one
+`@pytest.mark.parametrize`d function covering three sub-cases (`0`, `-1`, `"abc"`), so the pytest
+node id column lists all three per row. Tests were written first and observed failing with `405
+Method Not Allowed` against the pre-implementation code (the `GET` route did not exist yet — same
+red state WM-US-02's own dispatch found), confirmed by temporarily stashing the implementation
+changes and running the suite before restoring them; then implemented until green. Full suite run:
+`342 passed` (302 pre-existing + 40 of them this story's, since `TC-44`/`TC-45`'s parametrization
+each contributes 3 pytest items for 1 `TC-NN`), `ruff check`/`ruff format --check` clean, `mypy app`
+clean, coverage 100% on every file this story added or modified
+(`app/models/transaction.py`, `app/schemas/transaction.py`, `app/repositories/transaction_repo.py`,
+`app/services/transaction_service.py`, `app/api/v1/transactions.py`), 99% overall. Live `curl`
+walkthrough against a running server executed per CLAUDE.md §2 Step 5 with two distinct real users —
+see the Implement dispatch's gate report for the full request/response transcript. No failures were
+found at Verification; nothing here required root-causing.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-37 | `tests/integration/test_tm_us_02_list_transactions.py::test_authenticated_user_lists_every_transaction_belonging_to_every_wallet_they_own` | PASS |
+| TC-38 | `tests/integration/test_tm_us_02_list_transactions.py::test_response_item_exposes_exactly_seven_fields_wrapped_in_paginated_envelope` | PASS |
+| TC-39 | `tests/integration/test_tm_us_02_list_transactions.py::test_user_with_no_transactions_yet_receives_empty_list_and_zero_total` | PASS |
+| TC-40 | `tests/integration/test_tm_us_02_list_transactions.py::test_unauthenticated_or_invalid_credential_caller_is_denied_with_401` | PASS |
+| TC-41 | `tests/integration/test_tm_us_02_list_transactions.py::test_credentials_are_evaluated_before_any_query_parameter` | PASS |
+| TC-42 | `tests/integration/test_tm_us_02_list_transactions.py::test_default_page_is_1_of_size_25_with_accurate_total` | PASS |
+| TC-43 | `tests/integration/test_tm_us_02_list_transactions.py::test_explicit_page_and_page_size_within_range_return_that_page_and_accurate_total` | PASS |
+| TC-44 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_non_positive_or_non_integer_page_is_rejected_with_422[0]`, `[-1]`, `[abc]` | PASS |
+| TC-45 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_non_positive_or_non_integer_page_size_is_rejected_with_422[0]`, `[-1]`, `[abc]` | PASS |
+| TC-46 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_page_size_above_the_maximum_is_rejected_with_422` | PASS |
+| TC-47 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_page_size_of_exactly_100_is_accepted` | PASS |
+| TC-48 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_user_only_ever_sees_transactions_belonging_to_wallets_they_own` | PASS |
+| TC-49 | `tests/integration/test_tm_us_02_list_transactions.py::test_reported_total_counts_only_callers_own_transactions_even_when_smaller` | PASS |
+| TC-50 | `tests/integration/test_tm_us_02_list_transactions.py::test_list_is_returned_most_recently_recorded_first_proven_against_out_of_order_creation` | PASS |
+| TC-51 | `tests/integration/test_tm_us_02_list_transactions.py::test_two_transactions_recorded_at_the_same_instant_have_deterministic_relative_order` | PASS |
+| TC-52 | `tests/integration/test_tm_us_02_list_transactions.py::test_paging_through_every_page_returns_every_transaction_exactly_once_in_stable_order` | PASS |
+| TC-53 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_page_beyond_the_last_available_page_returns_empty_list_with_accurate_total` | PASS |
+| TC-54 | `tests/integration/test_tm_us_02_list_transactions.py::test_admin_role_caller_who_also_owns_transactions_sees_only_their_own` | PASS |
+| TC-55 | `tests/integration/test_tm_us_02_list_transactions.py::test_transactions_from_every_wallet_the_caller_owns_appear_together_correctly_ordered` | PASS |
+| TC-56 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_wallet_filter_narrows_the_list_to_exactly_that_wallets_transactions` | PASS |
+| TC-57 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_wallet_filter_matching_no_wallet_at_all_returns_an_empty_result_not_an_error` | PASS |
+| TC-58 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_wallet_filter_naming_a_different_users_real_wallet_matches_tc_57` | PASS |
+| TC-59 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_category_filter_narrows_the_list_to_exactly_that_categorys_transactions` | PASS |
+| TC-60 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_category_filter_matching_no_category_at_all_returns_an_empty_result_not_an_error` | PASS |
+| TC-61 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_category_filter_naming_a_different_users_real_category_matches_tc_60` | PASS |
+| TC-62 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_date_range_filter_with_both_bounds_narrows_to_transactions_recorded_within_it` | PASS |
+| TC-63 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_date_range_with_only_a_start_bound_includes_every_transaction_from_it_onward` | PASS |
+| TC-64 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_date_range_with_only_an_end_bound_includes_every_transaction_up_to_it` | PASS |
+| TC-65 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_date_range_whose_start_equals_its_end_includes_the_transaction_at_that_instant` | PASS |
+| TC-66 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_date_range_whose_start_is_after_its_end_is_rejected_with_422` | PASS |
+| TC-67 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_date_bound_with_no_explicit_time_zone_is_interpreted_as_utc` | PASS |
+| TC-68 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_wallet_filter_and_a_category_filter_combine_to_narrow_to_matching_both` | PASS |
+| TC-69 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_wallet_filter_and_a_date_range_filter_combine_to_narrow_to_matching_both` | PASS |
+| TC-70 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_malformed_wallet_filter_value_matches_tc_57` | PASS |
+| TC-71 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_malformed_category_filter_value_matches_tc_60` | PASS |
+| TC-72 | `tests/integration/test_tm_us_02_list_transactions.py::test_a_wallet_filter_scopes_the_total_to_that_wallet_not_the_callers_full_total` | PASS |
 
 ---
 

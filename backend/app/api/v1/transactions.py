@@ -1,9 +1,11 @@
-"""Transaction Management endpoints (SDS §5.6.1 TM-US-01)."""
+"""Transaction Management endpoints (SDS §5.6.1 TM-US-01, §5.6.2 TM-US-02)."""
 
-from fastapi import APIRouter, status
+from datetime import datetime
+
+from fastapi import APIRouter, Query, status
 
 from app.core.deps import CurrentUserDep, DbDep
-from app.schemas.transaction import TransactionCreate, TransactionRead
+from app.schemas.transaction import TransactionCreate, TransactionListRead, TransactionRead
 from app.services import transaction_service
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -45,3 +47,42 @@ def create_transaction(
     )
     db.commit()
     return result
+
+
+@router.get(
+    "",
+    response_model=TransactionListRead,
+    status_code=status.HTTP_200_OK,
+    summary="List the caller's transactions",
+    description=(
+        "Returns every transaction belonging to a wallet owned by the "
+        "authenticated caller, optionally narrowed by wallet, category, or "
+        "date range, paginated, with an accurate total scoped to the caller "
+        "and to every filter supplied."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        422: {"description": "VALIDATION_ERROR"},
+    },
+)
+def list_transactions(
+    db: DbDep,
+    current_user: CurrentUserDep,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    wallet_id: str | None = Query(None),
+    category_id: str | None = Query(None),
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+) -> TransactionListRead:
+    """Pure read — no `db.commit()` (plan.md A9)."""
+    return transaction_service.list_transactions(
+        db,
+        owner=current_user,
+        page=page,
+        page_size=page_size,
+        wallet_id=wallet_id,
+        category_id=category_id,
+        date_from=date_from,
+        date_to=date_to,
+    )

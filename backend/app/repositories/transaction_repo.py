@@ -4,12 +4,15 @@ Constitution AR-03: queries only. No business rules, no commits — the service
 decides *what* to do, this module only knows *how* to ask the database.
 """
 
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.transaction import TransactionModel, TransactionType
+from app.models.wallet import WalletModel
 
 
 def add_transaction(
@@ -40,3 +43,60 @@ def add_transaction(
     db.add(transaction)
     db.flush()
     return transaction
+
+
+def list_owned(
+    db: Session,
+    *,
+    user_id: str,
+    page: int,
+    page_size: int,
+    wallet_id: str | None = None,
+    category_id: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> tuple[Sequence[TransactionModel], int]:
+    """A page of transactions belonging to a wallet owned by `user_id`, plus
+    that owner's own matching total count (spec TM-US-02 AC-01, AC-04, AC-05,
+    AC-07, AC-10, AC-12, AC-14; plan.md A2, A3, A4).
+
+    Ownership is transitive through a join to `wallets` (A2) — there is no
+    `transactions.user_id` column to filter on directly. Every optional
+    filter appends to one shared condition list, and **both** the count
+    query and the page query are built from that same list object (not two
+    independently-retyped predicates), which is what makes the two queries
+    structurally unable to drift apart the way `test_cases.md` QF-10 warns
+    against. Ordered by `timestamp` descending, `id` ascending as a
+    deterministic tie-break (A4) — the composite index (A5) is keyed to
+    serve exactly this ordering once `wallet_id` is also the join column.
+    """
+    conditions = [WalletModel.user_id == user_id]
+    if wallet_id is not None:
+        conditions.append(TransactionModel.wallet_id == wallet_id)
+    if category_id is not None:
+        conditions.append(TransactionModel.category_id == category_id)
+    if date_from is not None:
+        conditions.append(TransactionModel.timestamp >= date_from)
+    if date_to is not None:
+        conditions.append(TransactionModel.timestamp <= date_to)
+
+    joined = select(TransactionModel).join(
+        WalletModel, TransactionModel.wallet_id == WalletModel.id
+    )
+
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(TransactionModel)
+            .join(WalletModel, TransactionModel.wallet_id == WalletModel.id)
+            .where(*conditions)
+        )
+        or 0
+    )
+    items = db.scalars(
+        joined.where(*conditions)
+        .order_by(TransactionModel.timestamp.desc(), TransactionModel.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return items, total

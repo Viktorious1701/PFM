@@ -1,4 +1,4 @@
-"""Transaction business rules (spec TM-US-01, SDS §5.6.1).
+"""Transaction business rules (spec TM-US-01, TM-US-02, SDS §5.6.1, §5.6.2).
 
 Constitution:
   AR-01  the ownership/type-consistency/balance-sufficiency refusal
@@ -7,11 +7,12 @@ Constitution:
   AR-06  this module flushes; the router commits. One request, one
          transaction
 
-No audit call (plan.md A13) — transaction creation is not one of
-constitution LA-04's three named audited events, and no AC or FR in spec.md
-asks for one.
+No audit call (plan.md A13/A10) — neither creating nor listing transactions
+is one of constitution LA-04's three named audited events, and no AC or FR
+in spec.md asks for one.
 """
 
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -22,11 +23,12 @@ from app.core.errors import (
     TransactionCategoryTypeMismatchError,
     TransactionInsufficientBalanceError,
     TransactionWalletNotFoundError,
+    ValidationError,
 )
 from app.models.transaction import TransactionType
 from app.models.user import UserModel
 from app.repositories import category_repo, transaction_repo, wallet_repo
-from app.schemas.transaction import TransactionRead
+from app.schemas.transaction import TransactionListRead, TransactionRead
 
 
 def create_transaction(
@@ -89,4 +91,71 @@ def create_transaction(
         type=transaction.type,
         timestamp=clock.ensure_aware(transaction.timestamp),
         note=transaction.note,
+    )
+
+
+def list_transactions(
+    db: Session,
+    *,
+    owner: UserModel,
+    page: int,
+    page_size: int,
+    wallet_id: str | None,
+    category_id: str | None,
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> TransactionListRead:
+    """Assemble a page of the caller's own matching transactions into the
+    TransactionListRead envelope (spec TM-US-02 AC-01, AC-09; plan.md A8),
+    after resolving each date bound to an aware UTC instant (A6) and
+    rejecting an inverted range (A7).
+    """
+    if date_from is not None:
+        date_from = clock.ensure_aware(date_from)
+    if date_to is not None:
+        date_to = clock.ensure_aware(date_to)
+
+    # spec AC-15, FR-12, BR-06, plan.md A7: the one cross-field rule Pydantic
+    # cannot express alone. Reuses the existing generic ValidationError — no
+    # new TRANSACTION_-prefixed code, the identical details.fields shape the
+    # RequestValidationError handler already produces.
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise ValidationError(
+            details={
+                "fields": [
+                    {
+                        "location": ["query", "date_to"],
+                        "message": "date_to must not be earlier than date_from.",
+                        "type": "value_error",
+                    }
+                ]
+            }
+        )
+
+    items, total = transaction_repo.list_owned(
+        db,
+        user_id=owner.id,
+        page=page,
+        page_size=page_size,
+        wallet_id=wallet_id,
+        category_id=category_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return TransactionListRead(
+        items=[
+            TransactionRead(
+                id=t.id,
+                wallet_id=t.wallet_id,
+                category_id=t.category_id,
+                amount=t.amount,
+                type=t.type,
+                timestamp=clock.ensure_aware(t.timestamp),
+                note=t.note,
+            )
+            for t in items
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
     )

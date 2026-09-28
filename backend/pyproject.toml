@@ -45,6 +45,18 @@ select = ["E", "F", "I", "B", "UP", "SIM", "C4", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 "migrations/versions/*" = ["E501"]
 
+# TM-US-02: B008 (function-call-in-default-argument) skips parameters whose
+# annotated type is a recognised-immutable builtin (str, int, ...) — every
+# prior `= Query(...)` default in this codebase happened to be one of those,
+# so this never mattered before. `datetime` is not on that built-in list, so
+# `date_from`/`date_to`: `datetime | None = Query(None)` (plan.md's own
+# router sketch) is the first Query default to trip B008. `fastapi.Query`
+# genuinely is immutable-safe to call at import time the same way `Depends`
+# is, so it is added to the exemption list rather than restyled away from
+# plan.md's literal design.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Query"]
+
 [tool.mypy]
 python_version = "3.13"
 warn_unused_configs = true
