@@ -151,3 +151,49 @@ class BudgetAlreadyExistsError(AppError):
     status_code = 409
     error_code = "BUDGET_ALREADY_EXISTS"
     default_message = "A budget already exists for this wallet, category, and period."
+
+
+# --- TM-US-01: Create a Transaction -----------------------------------------
+
+
+class TransactionWalletNotFoundError(AppError):
+    """spec AC-05 / FR-04. Identical for "no such wallet" and "not this
+
+    caller's wallet" (constitution VL-06's `404 if absent` branch).
+    """
+
+    status_code = 404
+    error_code = "TRANSACTION_WALLET_NOT_FOUND"
+    default_message = "The referenced wallet was not found."
+
+
+class TransactionCategoryNotFoundError(AppError):
+    """spec AC-07 / FR-06. Same collapsed shape as TransactionWalletNotFoundError."""
+
+    status_code = 404
+    error_code = "TRANSACTION_CATEGORY_NOT_FOUND"
+    default_message = "The referenced category was not found."
+
+
+class TransactionCategoryTypeMismatchError(AppError):
+    """spec AC-08 / FR-07 / BR-03. Constitution VL-06's "409 if present but
+
+    in the wrong state" branch — the first story in this codebase to
+    exercise it: the category exists and is owned by the caller, but its
+    own type disagrees with the submitted transaction type.
+    """
+
+    status_code = 409
+    error_code = "TRANSACTION_CATEGORY_TYPE_MISMATCH"
+    default_message = "The transaction type does not match the referenced category's type."
+
+
+class TransactionInsufficientBalanceError(AppError):
+    """spec AC-14 / FR-11 / BR-05. The SRS's own "(MVP Rule)" scenario and
+
+    its own literal message.
+    """
+
+    status_code = 409
+    error_code = "TRANSACTION_INSUFFICIENT_BALANCE"
+    default_message = "Insufficient balance."

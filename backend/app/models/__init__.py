@@ -8,6 +8,7 @@ are registered on `Base.metadata`, and that registration happens at import time
 from app.models.budget import BudgetModel
 from app.models.category import CategoryModel, CategoryType
 from app.models.invitation import InvitationModel, InvitationStatus
+from app.models.transaction import TransactionModel, TransactionType
 from app.models.user import UserModel, UserRole, UserStatus, new_uuid
 from app.models.wallet import WalletModel
 
@@ -17,6 +18,8 @@ __all__ = [
     "CategoryType",
     "InvitationModel",
     "InvitationStatus",
+    "TransactionModel",
+    "TransactionType",
     "UserModel",
     "UserRole",
     "UserStatus",
