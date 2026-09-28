@@ -4,10 +4,11 @@ Constitution AR-03: queries only. No business rules, no commits — the service
 decides *what* to do, this module only knows *how* to ask the database.
 """
 
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
@@ -76,6 +77,34 @@ def decrement_balance(db: Session, *, wallet_id: str, amount: Decimal) -> int:
     )
     db.flush()
     return int(result.rowcount or 0)
+
+
+def list_owned(
+    db: Session, *, user_id: str, page: int, page_size: int
+) -> tuple[Sequence[WalletModel], int]:
+    """A page of wallets owned by `user_id`, plus that owner's own total count
+    (spec WM-US-02 AC-01, AC-04, AC-05, AC-07; plan.md A1, A3).
+
+    Both queries carry the identical `user_id` predicate (constitution
+    SEC-08) — the total is the caller's own wallet count, never the
+    system-wide row count (test_cases.md QF-05). Ordered by `id`, the one
+    column guaranteed to exist and be unique without a schema change (A1);
+    this order carries no chronological meaning.
+    """
+    total = (
+        db.scalar(
+            select(func.count()).select_from(WalletModel).where(WalletModel.user_id == user_id)
+        )
+        or 0
+    )
+    items = db.scalars(
+        select(WalletModel)
+        .where(WalletModel.user_id == user_id)
+        .order_by(WalletModel.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return items, total
 
 
 def increment_balance(db: Session, *, wallet_id: str, amount: Decimal) -> None:

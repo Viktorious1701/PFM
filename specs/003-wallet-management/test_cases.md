@@ -599,3 +599,37 @@ story has no Gherkin at all, so there is no illustrative screen to defer against
 - **Then:** The response is `200`; `items` contains exactly the ADMIN's own one wallet — never either of the other User's — and `total` is `1`
 - **AC:** EC-04, FR-10, BR-01 *(assertion technique per QF-07)*
 - **Type:** integration
+
+### Test Implementation Map *(filled at step 4)*
+
+All under `backend/tests/integration/test_wm_us_02_list_wallets.py`. Run one with
+`uv run pytest -k <fragment>`.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-23 | `test_authenticated_user_lists_every_wallet_they_own_with_accurate_total` | PASS |
+| TC-24 | `test_response_item_exposes_exactly_six_fields_wrapped_in_paginated_envelope` | PASS |
+| TC-25 | `test_user_with_no_wallets_yet_receives_empty_list_and_zero_total` | PASS |
+| TC-26 | `test_unauthenticated_or_invalid_credential_caller_is_denied_with_401` | PASS |
+| TC-27 | `test_credentials_are_evaluated_before_any_query_parameter` | PASS |
+| TC-28 | `test_default_page_is_1_of_size_25_with_accurate_total` | PASS |
+| TC-29 | `test_explicit_page_and_page_size_within_range_return_that_page_and_accurate_total` | PASS |
+| TC-30 | `test_a_user_only_ever_sees_their_own_wallets_never_another_users` | PASS |
+| TC-31 | `test_reported_total_counts_only_callers_own_wallets_even_when_smaller` | PASS |
+| TC-32 | `test_list_is_returned_in_stable_order_matching_ids_sorted_ascending` | PASS |
+| TC-33 | `test_a_non_positive_or_non_integer_page_is_rejected_with_422` (3 params) | PASS |
+| TC-34 | `test_a_non_positive_or_non_integer_page_size_is_rejected_with_422` (3 params) | PASS |
+| TC-35 | `test_a_page_size_above_the_maximum_is_rejected_with_422` | PASS |
+| TC-36 | `test_a_page_beyond_the_last_available_page_returns_an_empty_list_with_accurate_total` | PASS |
+| TC-37 | `test_a_page_size_of_exactly_100_is_accepted` | PASS |
+| TC-38 | `test_paging_through_every_page_returns_every_wallet_exactly_once_in_stable_order` | PASS |
+| TC-39 | `test_admin_role_caller_who_also_owns_a_wallet_sees_only_their_own` | PASS |
+
+Full suite: `302 passed` (281 pre-existing + 21 new — 17 TCs, 2 parametrized with extra values —
+TC-33/TC-34 each carry 3 param cases). `ruff check`/`ruff format --check` clean, `mypy app` clean,
+coverage **99%** overall; `schemas/wallet.py`, `repositories/wallet_repo.py`,
+`services/wallet_service.py`, and `api/v1/wallets.py` are all at **100%** (constitution DOD-03's floor
+is 80%). No defect found in the implementation while writing these tests — every TC passed against
+the first version of the code. Live-verification walkthrough (step 5) additionally confirmed ownership
+scoping, pagination, and validation against a running server with two real, distinct users — see the
+gate message for the full pasted `curl` transcript.

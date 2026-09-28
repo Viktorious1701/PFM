@@ -56,3 +56,16 @@ class WalletRead(BaseModel):
     type: str
     currency: str
     balance: Decimal
+
+
+class WalletListRead(BaseModel):
+    """New envelope (WM-US-02 plan.md A2) — mirrors `UserListRead` (UM-US-03
+    plan.md A6) exactly. Not in SDS's DTO registry, which names only
+    `WalletCreate` directly in §6.2.1; `WalletRead`'s own six fields were
+    settled in WM-US-01 and are reused unchanged here as the per-item shape.
+    """
+
+    items: list[WalletRead]
+    total: int
+    page: int
+    page_size: int

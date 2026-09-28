@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.models.user import UserModel
 from app.repositories import wallet_repo
-from app.schemas.wallet import WalletRead
+from app.schemas.wallet import WalletListRead, WalletRead
 
 
 def create_wallet(
@@ -54,4 +54,31 @@ def create_wallet(
         type=wallet.type,
         currency=wallet.currency,
         balance=wallet.balance,
+    )
+
+
+def list_wallets(db: Session, *, owner: UserModel, page: int, page_size: int) -> WalletListRead:
+    """Assemble a page of the caller's own wallets into the `WalletListRead`
+    envelope (spec WM-US-02 AC-01, AC-04, AC-05, AC-07, AC-09; plan.md A2,
+    A3).
+
+    Unlike `user_service.list_users`, this calls no `clock.ensure_aware()` —
+    `WalletRead` carries no datetime field to normalise (WM-US-01 A5).
+    """
+    items, total = wallet_repo.list_owned(db, user_id=owner.id, page=page, page_size=page_size)
+    return WalletListRead(
+        items=[
+            WalletRead(
+                id=w.id,
+                user_id=w.user_id,
+                name=w.name,
+                type=w.type,
+                currency=w.currency,
+                balance=w.balance,
+            )
+            for w in items
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
     )
