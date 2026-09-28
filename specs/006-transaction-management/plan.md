@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** TM-US-01 *(planned)*
+> **Stories in this file:** TM-US-01 *(planned)* · TM-US-02 *(planned)*
 
 ---
 
@@ -507,3 +507,426 @@ All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, cons
 | T-09 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_01_create_transaction.py` | Open |
 
 **Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`, scratch install per `CLAUDE.md` §3) before this gate was claimed. It parses cleanly. By eye/grep: no `Repo`/`DB` lane (four lanes only — `UI`, `API`, `Svc`, `Store`), no `SELECT`/`INSERT`/`UPDATE … WHERE`/`rowcount`/table-and-column syntax in any arrow label (the conditional-UPDATE mechanism is described in prose in a `Note`, per DG-04's own allowance, not spelled out as SQL), and every `UI→API` request (there is exactly one: `POST /transactions`) is answered by exactly one of the eight terminal branches, each carrying an HTTP status back to `UI`.
+
+---
+
+## TM-US-02: List Transactions
+
+> **IDs in this section are local to TM-US-02** (`A*`/`T-NN`), matching `spec.md`'s convention. Only
+> `TC-NN` in `test_cases.md` continues across this epic file — this story continues from `TC-37`.
+> **`QF-NN` also continues here**, from `QF-09` (TM-US-01 used `QF-01`…`QF-08`) — see
+> `test_cases.md`'s own header note for the full reasoning. This is the first decision point in this
+> epic file where the convention actually has to be chosen (TM-US-01 was the epic's first story, so
+> nothing distinguished "reset" from "continue" for it); it is decided here by matching
+> `artifact-templates/`'s own worked example (`PM-US-02`'s Quality Findings continue from `QF-08`,
+> confirmed by inspecting `test-case-templates.md` directly rather than only taking WM-US-02's word
+> for it) and `specs/003-wallet-management/test_cases.md`'s own precedent and reasoning — the more
+> recently-established, more thoroughly-reasoned convention of this codebase's two competing ones.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Domain / API | **All three filter dimensions SDS §5.6.2 names — wallet, category, and date range — are built now, as independent, combinable, optional query parameters on this same `GET /transactions` endpoint.** SDS §5.6.2's own goal sentence for *this* story (not a future one) is explicit: "Query and filter logged transactions by wallet, category, or date range." This is a materially different situation from WM-US-02, whose own SDS goal ("Display all wallets owned by the logged-in user") named no filter at all — WM-US-02 correctly declared filtering out of scope because nothing asked for it. Here the opposite condition holds, and there is no separate, later-numbered "Filter Transactions" story in SDS §5.6 (unlike TM-US-03/04/05, each its own distinct, separately-numbered operation) for this language to be deferred to. Building fewer than all three would be declining scope SDS already assigns to *this* story number, with no source disagreement to justify the narrowing — not scope creep, but its mirror-image failure. Not escalated as `[NEEDS RULING]`: SRS and SDS do not disagree here: SRS says nothing (bare header), and SDS's own text is unambiguous once read as this-story-scoped rather than deferred. | ✅ Resolved |
+| A2 | Security / Architecture | **A single `JOIN` from `transactions` to `wallets` is both necessary and sufficient to enforce ownership on every query this endpoint issues — no second join to `categories` is needed.** `TransactionModel` carries no `user_id` (TM-US-01 A11); ownership is entirely transitive through `wallet_id` → `wallets.user_id`. Both the bounded page-of-items query and the total-count query carry the identical join-plus-predicate (`transactions.wallet_id = wallets.id AND wallets.user_id = :caller_id`) — the same both-queries discipline WM-US-02 A3 established for a single-table filter, now extended to a join, because scoping only one of the two queries would leak a system-wide (or wrong-wallet) count next to a caller-scoped list, or vice versa (`test_cases.md` QF-10). A **category** filter needs no analogous join to `categories` to stay safe: TM-US-01 BR-01 already guarantees, at the moment a transaction is created, that its `category_id` belongs to the same User who owns its `wallet_id` — there is no code path today that can produce a `transactions` row whose wallet and category belong to different Users. Consequently, filtering `transactions.category_id = :filter` **on top of** the wallet-ownership join can never surface a transaction through a foreign category id — the wallet-ownership predicate alone already excludes it, regardless of which category is named. This is a standing dependency on TM-US-01's own invariant, not a new one this story introduces; if a future story ever allows reassigning a wallet's or a category's owner, this reasoning must be revisited (recorded so it is not silently relied on forever). Not escalated as `[NEEDS RULING]`: this is a real, answerable question about what TM-US-01's own BR-01 already guarantees, not a case where sources disagree. | ✅ Resolved |
+| A3 | Domain | **A `wallet_id` or `category_id` filter value that does not resolve to a row the caller owns — whether absent altogether, malformed, or belonging to a different User — produces an empty result (`200`, `items: []`, `total: 0`), never a `404` and never any other distinguishing signal.** Three readings were available: (a) mirror TM-US-01's create-time behaviour and return `404`; (b) return `200` with an empty result; (c) validate the filter shape and `422` on anything malformed. Rejected (a): TM-US-01's `404` exists for a reference the caller is *acting on* (creating a row against it) — VL-06's "404 if absent" branch is about an entity the request depends on existing, not a search predicate that may legitimately match nothing. Returning `404` here would also require a *second*, purely diagnostic ownership-scoped lookup query whose only job is deciding whether to 404 — the exact kind of redundant, independently-maintained query this design otherwise avoids (A2), and it would reintroduce the drift risk QF-05-style findings exist to catch, this time between "the lookup that decides the error" and "the filter that shapes the result." Rejected (c): TM-US-01 A8 already establishes this codebase's convention that a reference field carries no shape validation — a malformed value simply fails to match, which a filter parameter should do too, for the same reason. Accepted (b): a filter matching zero of the caller's own rows is exactly WM-US-02 EC-01's own "page beyond the last page" philosophy — a legitimate, non-error empty outcome — extended from a pagination parameter to a content filter. It also has a security benefit A2 would otherwise have to argue for separately: a caller cannot learn whether a `wallet_id`/`category_id` belongs to a real, different User, because "belongs to someone else" and "does not exist at all" are, by construction, the identical response (constitution SEC-10). | ✅ Resolved |
+| A4 | Domain | **Order by `timestamp` descending (most recently recorded first), tie-broken by `id` ascending.** Unlike `WalletModel` (no `created_at`, forcing WM-US-02 A1 to fall back to the primary key with no chronological meaning at all), `TransactionModel.timestamp` is a real, meaningful instant TM-US-01 BR-06 already guarantees is always the moment of creation. "View list of transactions" for a ledger has an obvious, conventional reading — most recent first — and it is the same direction UM-US-03 already chose for `users.created_at`, the only other story in this codebase with a genuine creation timestamp to order by. A tie-break is still needed: two transactions can share an identical `timestamp` (the system clock's resolution is finite, and TM-US-01 TC-35 already proves two transactions can be created back-to-back), and `timestamp` alone is not unique the way `WalletModel.id` was for WM-US-02, so `id` (always unique) is appended as the second sort key — chosen or, ascending, for the same "otherwise arbitrary, pick one and be consistent" reasoning WM-US-02 A1 used for its own single sort key. | ✅ Resolved |
+| A5 | Architecture / Performance | **One new composite index, `ix_transactions_wallet_id_timestamp` on (`wallet_id`, `timestamp`), replacing the existing plain `ix_transactions_wallet_id`; `ix_transactions_category_id` is left unchanged.** TM-US-01's own `plan.md` named this story as the one with "an actual query to justify" indexing `timestamp` (constitution PF-02: "Columns used in `WHERE`, `JOIN`, or `ORDER BY` carry an index"). Three shapes were weighed. **Plain index on `timestamp` alone:** would serve a fully cross-wallet, unfiltered, globally-time-ordered scan, but every query this endpoint issues is *already* scoped by the wallet-ownership join (A2) to a small set of the caller's own wallets — a plain global `timestamp` index would not let the database seek directly to "this caller's rows in order," and for a caller who owns a small fraction of a large system-wide `transactions` table, a deep page (`OFFSET`) could force scanning far more rows than necessary before collecting enough owned ones. **Composite (`category_id`, `timestamp`):** symmetric to the chosen design but for the weaker dimension — SDS names wallet, category, and date range as co-equal filters, but this codebase's own ownership design (A2) already makes `wallet_id` the column present in *every* query this endpoint issues (via the join), never optional, whereas `category_id` is only ever an optional narrowing filter; indexing the dimension that is always present pays off on every request, not only filtered ones. **Composite (`wallet_id`, `timestamp`), chosen:** the leading column exactly matches what the ownership join already keys on, so this composite is a strict superset of what the plain `ix_transactions_wallet_id` index already provided — no existing query pattern regresses — and appending `timestamp` means the database can retrieve each of the caller's owned wallets' transactions **already in the required sort order**, needing only a cheap merge across the caller's own (typically few) wallets rather than an unindexed sort of the whole caller-owned result, and it directly serves the wallet-filtered case (A1) as a pure index range scan with no extra sort step at all. `category_id` keeps its existing plain index (equality filter only; no compound-ordering case is forced on it the way the ownership join forces one onto `wallet_id`). A new Alembic migration is required — `backend/` is out of this dispatch's scope, so it is recorded as open task T-02 for the Implement dispatch, not created here. | ✅ Resolved |
+| A6 | Domain | **A date-range boundary is interpreted as UTC when the submitted value carries no explicit time zone offset**, reusing `app.core.clock.ensure_aware()`'s existing "naive means UTC" convention (`CLAUDE.md` §4: "SQLite returns naive datetimes — pass them through `clock.ensure_aware()` before comparing") rather than inventing a new rule. Every stored `timestamp` value is already UTC by construction (TM-US-01 BR-06, A5: always `clock.utcnow()`), so treating a naive filter boundary as UTC keeps the filter's meaning consistent with what is actually stored, on both SQLite (dev) and PostgreSQL (target) per constitution ENV-03. Both bounds are inclusive (`timestamp >= date_from` and `timestamp <= date_to`) — the plainest reading of "transactions between these two dates," and the one that makes EC-07 (`date_from == date_to`) a real, satisfiable, non-empty range rather than a degenerate one. | ✅ Resolved |
+| A7 | Architecture | **The `date_from > date_to` cross-field check is a plain conditional in `transaction_service.list_transactions()`, raising the existing generic `app.core.errors.ValidationError` (`422 VALIDATION_ERROR`) — no new error class, and no query-parameters Pydantic model.** Two placements were weighed. A `Depends`-bound Pydantic model wrapping all the query parameters would let a `model_validator` express the cross-field rule declaratively (closer to VL-01's spirit), but this codebase's existing `401`-before-`422` ordering for query parameters (proven by WM-US-02 TC-27 and UM-US-03 TC-61) rests on `CurrentUserDep` being declared, and therefore resolved, before any plain `Query()` parameter in the router's own signature — a behaviour this design does not risk disturbing by introducing a new kind of dependency into that same signature, for a cross-field rule that is not otherwise expressible as a single field's `Query(...)` constraint anyway. The service-layer check keeps every router in this endpoint's family declared identically (`db`, then `current_user`, then plain `Query()` parameters), and reuses `ValidationError` — already defined in `core/errors.py`, already `422`, already the flat envelope — building its `details` in the same `{"fields": [{"location", "message", "type"}]}` shape `main.py`'s own `RequestValidationError` handler already produces, so a client cannot tell a Pydantic-caught shape error from this one. No `TRANSACTION_`-prefixed code is minted, because this is not a domain conflict the way `TRANSACTION_INSUFFICIENT_BALANCE` is — it is a relationship between two already-valid inputs, squarely `VALIDATION_ERROR`'s own territory. | ✅ Resolved |
+| A8 | Domain / API | **New envelope `TransactionListRead { items, total, page, page_size }`, mirroring `WalletListRead` (WM-US-02 A2) and `UserListRead` (UM-US-03 A6) exactly. `TransactionRead` is reused unchanged as the per-item shape — no embedded wallet or category name.** Considered and rejected: enriching each item with its wallet's/category's own `name` so a client would not need separate lookups to render a human-readable row. Rejected because it would break an unbroken precedent — every existing list in this codebase (`WalletListRead`, `UserListRead`) reuses its single-item `Read` DTO **unchanged**, and TM-US-01 A14 already ruled, for this exact entity, that "no other entity's data folded in" is the correct shape (constitution PF-03) — and because no source document asks for it: SDS §5.6.2's own goal sentence is about filtering, not about response enrichment, and no UXR names a transaction-list screen this round (mobile is fixture-driven and out of scope, `CLAUDE.md` §5). If a real screen later needs display names, that is a new, explicit design question for whichever story builds it — not a default this story should reach for. | ✅ Resolved |
+| A9 | Architecture | **The router issues no `db.commit()`.** Pure read, nothing to commit — mirrors `GET /wallets` (WM-US-02 A4) and `GET /users`. | ✅ Resolved |
+| A10 | Logging | **No new audit event for a list view.** Constitution LA-04 names exactly three audited event families (invitations sent, activations completed, logins); listing is further still from any of them, the same reasoning WM-US-02 A5 and TM-US-01 A13 already gave their own list/create operations. No AC or FR here asks for one. | ✅ Resolved |
+| A11 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.6.2 tags this story "(USER)", identical to TM-US-01's own "(USER)" tag: any authenticated account, scoped to what it owns — not an ADMIN-wide view the way UM-US-03 is. An ADMIN caller who also owns wallets and transactions sees, through this route, only their own (spec EC-04, BR-01; `test_cases.md` QF derived from WM-US-02 QF-07's own precedent); nothing elevates an ADMIN's visibility here. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions/updates only — TM-US-01's foundation is reused as-is unless noted).
+
+```text
+backend/app/
+├── schemas/
+│   └── transaction.py                # update: add TransactionListRead (A8)
+├── repositories/
+│   └── transaction_repo.py           # update: add list_owned(db, *, user_id, page, page_size, wallet_id, category_id, date_from, date_to)
+└── services/
+    └── transaction_service.py        # update: add list_transactions()
+
+backend/app/api/v1/
+└── transactions.py                   # update: add GET /transactions (list)
+
+backend/app/core/
+└── errors.py                         # no new class — A7 reuses the existing generic ValidationError
+
+backend/migrations/versions/
+└── <rev>_index_transactions_wallet_id_timestamp.py   # NEW  composite index (A5), down_revision = e33a7c97dab4 (current head)
+
+backend/tests/
+└── integration/test_tm_us_02_list_transactions.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No change to `core/deps.py` — `CurrentUserDep` is reused exactly as TM-US-01 already established (A11).
+`category_repo.py` is **not** modified — this story issues no query against `categories` at all (A2).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `TransactionModel` | `transactions` | none (read-only) | This story only reads. No new column. `timestamp` gains an index for the first time, as a composite with `wallet_id` (A5) — the exact gap TM-US-01's own `plan.md` flagged by name for this story to resolve. |
+| `WalletModel` | `wallets` | none (read-only, join only) | Joined, never selected from directly — only `wallets.user_id` participates in the query, to prove ownership (A2). `wallets.user_id` already carries an index (WM-US-01), and `wallets.id` (the join key on the other side) is the primary key, indexed by construction. |
+| `TransactionRead` (DTO) | — | `id`, `wallet_id`, `category_id`, `amount`, `type`, `timestamp`, `note` | Reused unchanged from TM-US-01 — the same seven fields; no list-specific per-item variant (A8). |
+| `TransactionListRead` (DTO) | — | `items: TransactionRead[]`, `total`, `page`, `page_size` | New envelope (A8), mirrors `WalletListRead`/`UserListRead` — not in SDS's registry (§6.2.1 names only `TransactionCreate`). |
+
+**DTOs** (`app/schemas/transaction.py`, addition)
+
+```python
+class TransactionListRead(BaseModel):
+    """New envelope (A8) — mirrors WalletListRead (WM-US-02 plan.md A2) and
+    UserListRead (UM-US-03 plan.md A6). TransactionRead's own seven fields
+    are reused unchanged as the per-item shape (TM-US-01 A14, this story's
+    A8) — no embedded wallet or category name.
+    """
+
+    items: list[TransactionRead]
+    total: int
+    page: int
+    page_size: int
+```
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Any authenticated User of any role may list transactions belonging to wallets they own | AC-01, FR-01, A11 | `GET /api/v1/transactions` guarded by `CurrentUserDep` — not `AdminDep`, mirrors TM-US-01's own route guard |
+| Unauthenticated caller denied before any query parameter is evaluated | AC-03, FR-03 | `CurrentUserDep` resolves before FastAPI validates any `Query()` parameter — identical ordering to `GET /wallets` (WM-US-02 TC-27) |
+| Every transaction query scoped to the caller via a join to `wallets` — items and total alike | AC-07, FR-07, FR-15, A2, constitution SEC-08 | `transaction_repo.list_owned()` — both queries `JOIN wallets` on `transactions.wallet_id = wallets.id` and filter `wallets.user_id = :owner_id`, built from one shared predicate list so the two queries cannot drift apart |
+| Bounded, paginated results | AC-04, AC-05, AC-06, API-06, PF-04 | Router declares `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)` — out-of-range is `422`, not clamped, matching WM-US-02/UM-US-03's precedent |
+| Most-recent-first order, deterministic tie-break | AC-08, EC-08, BR-03, A4 | `ORDER BY timestamp DESC, id ASC` in `transaction_repo.list_owned()` |
+| Accurate, caller-and-filter-scoped total | AC-01, AC-02, AC-04, AC-05, AC-10, AC-12, AC-14, EC-01, A2, BR-04 | `transaction_repo.list_owned()` computes the count under the identical join-plus-predicate list as the page query |
+| Projection reused unchanged | AC-09, FR-02, PF-03 | `TransactionRead` — the same seven fields TM-US-01 defined, no new or missing field |
+| Optional wallet filter, empty-not-error on miss | AC-10, AC-11, EC-09, FR-09, A3 | `wallet_id: str \| None = Query(None)` appended to the shared predicate list only when supplied; no shape validation (mirrors TM-US-01 A8) |
+| Optional category filter, empty-not-error on miss | AC-12, AC-13, EC-10, FR-10, A2, A3 | `category_id: str \| None = Query(None)` — same treatment; no join to `categories` needed (A2) |
+| Optional date-range filter, inclusive bounds, UTC-naive normalisation | AC-14, EC-05, EC-06, EC-07, FR-11, FR-13, A6 | `date_from`/`date_to`: `datetime \| None = Query(None)`; each passed through `clock.ensure_aware()` before use |
+| Reject an inverted date range | AC-15, FR-12, BR-06, A7 | `transaction_service.list_transactions()` raises `ValidationError` when both bounds are given and `date_from > date_to` |
+| Filters combine with AND semantics | AC-16, FR-14, BR-07 | Every supplied filter appends to the same predicate list — the query is satisfied only when all are true at once |
+| Pure read, no commit | A9 | Router issues no `db.commit()` — mirrors `GET /wallets` |
+
+**Repository** (`app/repositories/transaction_repo.py`, addition)
+
+```python
+def list_owned(
+    db: Session,
+    *,
+    user_id: str,
+    page: int,
+    page_size: int,
+    wallet_id: str | None = None,
+    category_id: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> tuple[Sequence[TransactionModel], int]:
+    """A page of transactions belonging to a wallet owned by `user_id`, plus
+    that owner's own matching total count (spec AC-01, AC-04, AC-05, AC-07,
+    AC-10, AC-12, AC-14; plan.md A2, A3, A4).
+
+    Ownership is transitive through a join to `wallets` (A2) — there is no
+    `transactions.user_id` column to filter on directly. Every optional
+    filter appends to one shared condition list, and **both** the count
+    query and the page query are built from that same list object (not two
+    independently-retyped predicates), which is what makes the two queries
+    structurally unable to drift apart the way `test_cases.md` QF-10 warns
+    against. Ordered by `timestamp` descending, `id` ascending as a
+    deterministic tie-break (A4) — the composite index `A5` adds is keyed to
+    serve exactly this ordering once `wallet_id` is also the join column.
+    """
+    conditions = [WalletModel.user_id == user_id]
+    if wallet_id is not None:
+        conditions.append(TransactionModel.wallet_id == wallet_id)
+    if category_id is not None:
+        conditions.append(TransactionModel.category_id == category_id)
+    if date_from is not None:
+        conditions.append(TransactionModel.timestamp >= date_from)
+    if date_to is not None:
+        conditions.append(TransactionModel.timestamp <= date_to)
+
+    joined = select(TransactionModel).join(
+        WalletModel, TransactionModel.wallet_id == WalletModel.id
+    )
+
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(TransactionModel)
+            .join(WalletModel, TransactionModel.wallet_id == WalletModel.id)
+            .where(*conditions)
+        )
+        or 0
+    )
+    items = db.scalars(
+        joined.where(*conditions)
+        .order_by(TransactionModel.timestamp.desc(), TransactionModel.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return items, total
+```
+
+**Service** (`app/services/transaction_service.py`, addition)
+
+```python
+def list_transactions(
+    db: Session,
+    *,
+    owner: UserModel,
+    page: int,
+    page_size: int,
+    wallet_id: str | None,
+    category_id: str | None,
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> TransactionListRead:
+    """Assemble a page of the caller's own matching transactions into the
+    TransactionListRead envelope (A8), after resolving each date bound to an
+    aware UTC instant (A6) and rejecting an inverted range (A7).
+    """
+    if date_from is not None:
+        date_from = clock.ensure_aware(date_from)
+    if date_to is not None:
+        date_to = clock.ensure_aware(date_to)
+
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise ValidationError(
+            details={
+                "fields": [
+                    {
+                        "location": ["query", "date_to"],
+                        "message": "date_to must not be earlier than date_from.",
+                        "type": "value_error",
+                    }
+                ]
+            }
+        )
+
+    items, total = transaction_repo.list_owned(
+        db,
+        user_id=owner.id,
+        page=page,
+        page_size=page_size,
+        wallet_id=wallet_id,
+        category_id=category_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return TransactionListRead(
+        items=[
+            TransactionRead(
+                id=t.id,
+                wallet_id=t.wallet_id,
+                category_id=t.category_id,
+                amount=t.amount,
+                type=t.type,
+                timestamp=clock.ensure_aware(t.timestamp),
+                note=t.note,
+            )
+            for t in items
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+```
+
+**Router** (`app/api/v1/transactions.py`, addition)
+
+```python
+@router.get(
+    "",
+    response_model=TransactionListRead,
+    status_code=status.HTTP_200_OK,
+    summary="List the caller's transactions",
+    description=(
+        "Returns every transaction belonging to a wallet owned by the "
+        "authenticated caller, optionally narrowed by wallet, category, or "
+        "date range, paginated, with an accurate total scoped to the caller "
+        "and to every filter supplied."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        422: {"description": "VALIDATION_ERROR"},
+    },
+)
+def list_transactions(
+    db: DbDep,
+    current_user: CurrentUserDep,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    wallet_id: str | None = Query(None),
+    category_id: str | None = Query(None),
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+) -> TransactionListRead:
+    """Pure read — no `db.commit()` (A9)."""
+    return transaction_service.list_transactions(
+        db,
+        owner=current_user,
+        page=page,
+        page_size=page_size,
+        wallet_id=wallet_id,
+        category_id=category_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+```
+
+**Migration** (`backend/migrations/versions/<rev>_index_transactions_wallet_id_timestamp.py`, sketch — created at the Implement step, T-02)
+
+```python
+"""index transactions (wallet_id, timestamp)
+
+TM-US-02 T-02 (plan.md A5, constitution PF-02). Every query this story
+issues joins through `wallet_id` (A2) and orders by `timestamp` (A4); the
+existing plain `ix_transactions_wallet_id` (TM-US-01) is a strict subset of
+what this composite already provides, so it is dropped rather than kept
+alongside the new one. `ix_transactions_category_id` is untouched — see A5
+for why `category_id` does not get its own `timestamp` composite.
+
+Revision ID: <rev>
+Revises: e33a7c97dab4
+"""
+
+def upgrade() -> None:
+    with op.batch_alter_table("transactions", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_transactions_wallet_id"))
+        batch_op.create_index(
+            batch_op.f("ix_transactions_wallet_id_timestamp"),
+            ["wallet_id", "timestamp"],
+            unique=False,
+        )
+
+
+def downgrade() -> None:
+    with op.batch_alter_table("transactions", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_transactions_wallet_id_timestamp"))
+        batch_op.create_index(batch_op.f("ix_transactions_wallet_id"), ["wallet_id"], unique=False)
+```
+
+**Sequence diagram — List Transactions**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request
+into `API` answered back to `UI` with a status code.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as TransactionService
+    participant Store as Store
+
+    Note over UI,Store: Main flow — authenticated caller, parameters within range
+    UI->>API: GET /transactions
+    API->>Svc: list(input)
+    Note over Svc: A date range whose start is after its end is refused before any lookup runs (AC-15)
+    Note over Svc,Store: Both the page and the total are scoped to wallets the caller owns, narrowed by whichever filters were supplied, ordered most-recently-recorded first with a stable tie-break (BR-01, BR-03, BR-05, BR-07)
+    Svc->>Store: find a page of the caller's own matching transactions, plus the caller's own matching total
+    Store-->>Svc: page of transactions, total count
+    Svc-->>API: transaction list page
+    API-->>UI: 200 transactions — id, wallet, category, amount, type, timestamp, note, plus page and total
+
+    Note over UI,Store: Refusal scenarios — every branch below still returns a status to UI
+    opt Unauthenticated or expired credentials (AC-03)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+    opt page or page_size outside the accepted range, or the date range's start is after its end (AC-06, AC-15)
+        API-->>UI: 422 VALIDATION_ERROR
+    end
+```
+
+Only one workflow is drawn (DG-07), the same shape TM-US-01/WM-US-02's own diagrams already
+established for a story with no recovery path or background step. Verified with `check.mjs`
+(`mermaid.parse()`) — see *Verification note* below.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-03) | 401 | `NOT_AUTHENTICATED` |
+| `page`/`page_size` not a positive integer or over the cap, or date range start after end (AC-06, AC-15) | 422 | `VALIDATION_ERROR` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+No new error class this story — both codes already exist in `core/errors.py`, reused as-is (A7). All
+in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02). No `403`
+(A11: no role restriction), no `404` (a filter that matches nothing is an empty result, not a missing
+resource — A3), and no `409` (a read has nothing to conflict on).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `transaction_service.list_transactions()` normalises the date bounds, decides the inverted-range refusal, and assembles the DTO; the repository does not decide *what* to enforce |
+| AR-02 Thin router | Required | Router binds `page`/`page_size`/four filter parameters, resolves `CurrentUserDep`, delegates, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `transaction_repo.list_owned()` is a query only — join, filtering, ordering, limiting, no business rule |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | `TransactionModel` → `TransactionRead` mapping happens in `transaction_service.list_transactions()`, not the router or the repository |
+| AR-05 No framework objects in services | Required | `list_transactions()` takes plain `owner: UserModel`, `page`, `page_size`, four filter values; no `Request`/`Response` |
+| AR-06 One transaction per request | N/A | Pure read, nothing to commit (A9) |
+| AR-07 router → service → repository | Required | Router never calls `transaction_repo`/`wallet_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only to existing modules |
+| API-01 Versioned plural path | Required | `GET /api/v1/transactions` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required | `200` read · `401` · `422` validation |
+| API-04 Prefixed error codes | N/A | No new error code — `NOT_AUTHENTICATED` and the generic `VALIDATION_ERROR` are already catalogued |
+| API-05 No generic status endpoint | Required | `GET /transactions` is a plain resource-listing route, not a status-transition endpoint |
+| API-06 Pagination | Required | `page`/`page_size`, default 25, max 100, total count in `TransactionListRead` |
+| API-07 Explicit response_model | Required | `response_model=TransactionListRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `transaction_repo.py`/`transaction_service.py`/`transactions.py` |
+| NC-02 Naming | Required | `TransactionListRead` (SDS §2.1 names `TransactionRead`; the envelope is new, A8) |
+| NC-04 Column naming | N/A | No column change this story — the new index adds no column |
+| NC-06 Concise service methods | Required | `transaction_service.list_transactions`, matching this codebase's own established style (`wallet_service.list_wallets`, `user_service.list_users`) |
+| VL-01 Pydantic is the source of truth | Required | `Query(ge=1, le=100)` constraints are the validation for pagination; the one rule Pydantic cannot express alone (the cross-field date range) is reasoned through explicitly in A7 rather than silently left to chance |
+| VL-02 Errors grouped | Required | Reused `RequestValidationError` handler for per-field errors; the hand-raised `ValidationError` (A7) uses the identical `details.fields` shape |
+| VL-06 Referenced entities verified before use | N/A | A `wallet_id`/`category_id` filter is a search predicate a caller supplies to narrow a read, not a referenced entity the request is acting on the way a create payload's foreign key is — so VL-06's `404`-if-absent branch is deliberately not extended to it; an unresolvable filter value is an empty result instead (A3) |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case in this story (A11 — no role restriction) |
+| SEC-08 Ownership filter | Required | First **join-based** ownership filter in this codebase (A2) — both the page query and the total-count query carry the identical join-plus-predicate |
+| SEC-10 No enumeration | N/A (reasoning reused) | SEC-10's own text is scoped to account existence; the identical protection is reused by analogy for a wallet/category filter (same treatment TM-US-01 gave this citation) — a real row owned by someone else is indistinguishable from one naming nothing at all (A3) |
+| SEC-11 Rate limiting | N/A | Scoped by its own text to the invitation and activation endpoints |
+| LA-01 No secrets in logs | N/A | No credential or token is handled by this story |
+| LA-02 / LA-04 Audit | N/A (by decision) | Listing is not one of LA-04's three named audited events (A10) |
+| PF-01 300 ms p95 | Required | No slow I/O in this path; a two-query read, both indexed via the join key and the new composite |
+| PF-02 Indexed lookups | Required | New composite `ix_transactions_wallet_id_timestamp` (A5) serves the join, the wallet filter, and the order; `ix_transactions_category_id` (TM-US-01) serves the category filter; `wallets.user_id` (WM-US-01) and `wallets.id` (primary key) serve the join's other side |
+| PF-03 DTO projection | Required | `TransactionRead` — seven fields, no ORM graph, no embedded Wallet/Category object (A8) |
+| PF-04 Bounded lists | Required | Enforced by API-06's cap |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| TST-05 Boundaries | Required | EC-02 covers `page_size=100`; EC-07 covers `date_from == date_to`; AC-06 covers zero/negative page values |
+| TST-06 Deterministic time | Required | `TC-50`/`TC-51`/`TC-67` each monkeypatch `app.core.clock.utcnow` to explicit instants — no reliance on wall-clock time or on creation-call ordering (QF-09) |
+| DOD-02 Migration | Required | One Alembic revision replacing `ix_transactions_wallet_id` with the composite (A5); `down_revision = e33a7c97dab4` (current head) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No transaction-list screen exists this round — `mobile/`'s fixture-driven prototype covers only UM-US-01's invite screen (`CLAUDE.md` §5); no SRS UXR names a transaction-list screen either. |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `TransactionListRead` envelope (A8) | `backend/app/schemas/transaction.py` | Open |
+| T-02 | Alembic revision: drop `ix_transactions_wallet_id`, add composite `ix_transactions_wallet_id_timestamp` on (`wallet_id`, `timestamp`) (A5), `down_revision = e33a7c97dab4` | `backend/migrations/versions/` | Open |
+| T-03 | `transaction_repo.list_owned(db, *, user_id, page, page_size, wallet_id, category_id, date_from, date_to)` — join-based ownership scope, shared predicate list for both queries (A2, A3) | `backend/app/repositories/transaction_repo.py` | Open |
+| T-04 | `transaction_service.list_transactions(db, *, owner, page, page_size, wallet_id, category_id, date_from, date_to) -> TransactionListRead` — UTC normalisation, inverted-range rejection (A6, A7, A8) | `backend/app/services/transaction_service.py` | Open |
+| T-05 | `GET /api/v1/transactions` router — `Query()` for `page`/`page_size`/`wallet_id`/`category_id`/`date_from`/`date_to`, guarded by `CurrentUserDep`, no `db.commit()` (A9, A11) | `backend/app/api/v1/transactions.py` | Open |
+| T-06 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_02_list_transactions.py` | Open |
+
+**Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram
+above was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`, scratch install
+already present in this session's scratchpad per `CLAUDE.md` §3) before this gate was claimed. It
+parses cleanly. By eye/grep: four lanes only (`UI`, `API`, `Svc`, `Store`), no `Repo`/`DB` lane, no
+`SELECT`/`INSERT`/`UPDATE … WHERE`/`JOIN`/`rowcount`/table-and-column syntax in any arrow label (the
+join-based ownership scope is described in prose in a `Note`, per DG-04's own allowance), no `;` or
+`#` in any label (DG-06), and the one `UI→API` request (`GET /transactions`) is answered by exactly
+one of the three terminal branches, each carrying an HTTP status back to `UI` (DG-05). One workflow
+only (DG-07).
