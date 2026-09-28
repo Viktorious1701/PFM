@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** WM-US-01 *(specified)*
+> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(specified)*
 
 ---
 
@@ -192,3 +192,276 @@ As an **authenticated User**, I want to create a new wallet by giving it a name,
 - **The `wallets` table's ERD (SDS §4.3.3) carries no `created_at` column** — unlike `users` and `invitations`, which both have one. This is very likely an oversight rather than a deliberate omission, but correcting it is a domain-model change (CLAUDE.md's "changes the domain model or ERD" threshold), not something this story may decide on its own. No `created_at` is added; `WalletRead` therefore cannot report a creation timestamp, and no ordering guarantee exists for a future list story. Recorded, not silently patched — see `plan.md` A5.
 - **No audit event is required for wallet creation.** Constitution LA-04 names invitations, activations, and logins as the events this codebase audits; it does not name wallet creation, and no AC or FR here asks for one. Extending LA-04 to a fourth event type would itself be a rule change beyond this story's scope.
 - **Reading a created wallet back is out of scope.** This story is verified through what `POST /api/v1/wallets` itself returns and through direct inspection of the stored row — there is no `GET` endpoint yet (WM-US-02/03).
+
+---
+
+## WM-US-02: List Wallets
+
+> **IDs in this section are local to WM-US-02.** `AC-01` below is not WM-US-01's `AC-01`; each
+> story section numbers its own criteria, per `artifact-templates/spec-templates.md`. Only
+> `TC-NN` in `test_cases.md` runs continuously across the epic (`CLAUDE.md` §1.1 rule 4).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-03 — the three headers surrounding this story, quoted in full**
+> #### US-03-01: Create a Wallet [MVP]
+> *(complete Gherkin scenario — already quoted in this file's WM-US-01 section above)*
+>
+> #### US-03-02: View List of Wallets [MVP]
+>
+> #### US-03-03: Update a Wallet
+
+The line `#### US-03-02: View List of Wallets [MVP]` is quoted in full — it **is** the entire SRS
+entry for this story. No "As a/I want/So that" statement, no Gherkin scenario, nothing else. This is
+not the "under-illustrated Gherkin" situation reasoned through for WM-US-01 A1/A2 (a scenario existed
+there, just not exhaustive) — there is no scenario here to read economy-of-example into. `US-03-03`
+immediately below it is equally bare, so this thinness is specific to these two stories, not a
+transcription error isolated to this one.
+
+**SDS §5.3.2 WM-US-02 (USER)**
+> #### 5.3.2 WM-US-02: List Wallets (USER)
+> * **Goal:** Display all wallets owned by the logged-in user.
+
+One sentence — the entire technical baseline for this story.
+
+**SDS §2.1 Domain Layer Traceability**
+> | **Wallet** | `wallets` | `WalletModel` | `WalletRead`, `WalletCreate` |
+
+**SDS §6.3 API Index**
+> | **WM-API-02** | `GET` | `/api/v1/wallets` | List user wallets |
+
+*(Observation, not acted on: SDS §6.5's own API → User Story Traceability table lists `WM-API-01`
+against WM-US-01 but has no corresponding row for `WM-API-02`/WM-US-02, even though §6.3 above lists
+it. A small pre-existing gap in `SDS.md` itself, left as-is — this dispatch's scope is limited to the
+three files in `specs/003-wallet-management/` and does not extend to editing `SDS.md`.)*
+
+**constitution.md API-06, PF-04, SEC-08**
+> **API-06** List endpoints accept `page` and `page_size`; default 25, maximum 100. Responses carry
+> a total count.
+> **PF-04** List endpoints are always bounded (see API-06). No unbounded result set reaches a client.
+> **SEC-08** Queries for user-owned data filter on the authenticated `user_id` at the repository
+> layer (SDS §7.2, SRS NFR-06).
+
+### Out of scope for this story
+
+WM-US-01 (create a wallet) · WM-US-03 (view a single wallet) · WM-US-04 (update a wallet) ·
+WM-US-05 (delete a wallet) · UM-US-04/05, DC-US-01/02 · Features 04–11 · SRS §6 Feature-10/11
+placeholders.
+
+Deliberately excluded even though adjacent: filtering, searching, or sorting the list by anything
+other than the fixed, stable order this story defines (neither SRS nor SDS names any other); viewing
+a single wallet's full detail or transaction history (WM-US-03); renaming, retyping, or archiving a
+wallet (WM-US-04/05); and any transaction moving money into or out of a wallet (SRS §6 Feature-06,
+Transaction Management).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to view the list of wallets I own, so that I can see every
+account I track — cash, bank, or card — without opening each one individually.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully list every wallet the caller owns**
+**Given** an authenticated User who owns one or more wallets, of different types and currencies,
+**When** the User requests the list of wallets,
+**Then** the system returns every wallet owned by that User, each carrying its identifier, owner,
+name, type, currency, and balance, together with the total number of wallets that User owns.
+
+**AC-02: Return an empty list for a User with no wallets yet**
+**Given** an authenticated User who owns no wallets,
+**When** the User requests the list,
+**Then** the system returns an empty list of wallets together with a total of zero, not an error.
+
+**AC-03: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to list wallets,
+**Then** the system denies the request before evaluating any query parameter, returns nothing, and
+returns an unauthenticated error.
+
+**AC-04: Bound and paginate the result by default**
+**Given** an authenticated User,
+**When** the User requests the list without specifying a page or page size,
+**Then** the system returns at most 25 of that User's wallets on the first page, together with the
+total number of wallets that User owns.
+
+**AC-05: Accept an explicit page and page size within range**
+**Given** an authenticated User,
+**When** the User requests a specific page together with a page size up to the maximum of 100,
+**Then** the system returns that page of the User's own wallets and the same accurate total.
+
+**AC-06: Reject a page or page size outside the allowed range**
+**Given** an authenticated User,
+**When** the requested page or page size is zero, negative, otherwise not a positive integer, or a
+page size greater than 100,
+**Then** the system rejects the request with a validation error identifying the offending parameter,
+and returns no wallets.
+
+**AC-07: A User only ever sees their own wallets**
+**Given** at least two Users, each owning one or more wallets,
+**When** one of them requests the list,
+**Then** the response's wallets are exactly the ones owned by the requesting User — none belonging to
+any other User appears — and the reported total counts only the requesting User's own wallets, never
+every wallet in the system.
+
+**AC-08: Return the list in a stable, deterministic order**
+**Given** an authenticated User who owns two or more wallets, with nothing created, changed, or
+removed in between,
+**When** the User requests the same page more than once, or requests adjacent pages of one paging
+sequence,
+**Then** the system returns the same wallets in the same relative order every time, consistently
+across those adjacent pages.
+
+**AC-09: Reuse the documented per-wallet fields, wrapped in a paginated envelope**
+**Given** an authenticated User requests the list,
+**When** the system returns the result,
+**Then** each entry carries exactly the fields a created wallet already carries — identifier, owner
+identifier, name, type, currency, and balance — no more, no other User's data, and no field this
+story invents — and the overall response additionally carries the total count, the page number, and
+the page size.
+
+### Edge Cases
+
+**EC-01**: **A page number beyond the last available page** — returns an empty list of wallets
+together with the accurate, caller-scoped total, not a not-found error.
+
+**EC-02**: **Page size at the exact maximum** — a page size of exactly 100 is accepted; 101 is
+rejected under AC-06. The cap is a ceiling, not a target.
+
+**EC-03**: **More wallets than fit on one page** — paging through every page with a fixed page size
+returns every one of the caller's own wallets exactly once, with no duplicate and no gap, in the same
+stable order AC-08 establishes.
+
+**EC-04**: **A caller whose role is ADMIN, who also owns wallets** — sees, through this endpoint,
+only the wallets that caller owns. Nothing about this endpoint grants an ADMIN visibility into
+another User's wallets; unlike UM-US-03, which is deliberately ADMIN-wide, this route has no
+ADMIN-wide sense at all — it is scoped to the caller regardless of role.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to retrieve the list of
+  wallets they own (SDS §5.3.2; mirrors WM-US-01 FR-01's "any role" treatment).
+- **FR-02**: The system must **include**, for every listed wallet, its identifier, owner identifier,
+  name, type, currency, and balance — the same fields WM-US-01 already defined for a single created
+  wallet (SDS §2.1, §6.2.1; WM-US-01 AC-11; constitution PF-03).
+- **FR-03**: The system must **deny** the operation to unauthenticated callers, evaluating
+  credentials before any query parameter (constitution API-08; mirrors WM-US-01 FR-02, UM-US-03
+  FR-04).
+- **FR-04**: The system must **accept** `page` and `page_size` query parameters, defaulting to page 1
+  and page size 25 when omitted (constitution API-06).
+- **FR-05**: The system must **reject** a `page` or `page_size` value that is not a positive integer,
+  or a `page_size` greater than 100, with a validation error (constitution API-06, PF-04).
+- **FR-06**: The system must **return**, alongside every page, the total number of wallets the caller
+  owns (constitution API-06).
+- **FR-07**: The system must **filter** every wallet query this endpoint issues — both the bounded
+  page of items and the total count — to only the wallets owned by the authenticated caller
+  (constitution SEC-08; plan.md A3).
+- **FR-08**: The system must **order** the returned wallets by a stable, deterministic key,
+  consistently across pages of the same request pattern (plan.md A1).
+- **FR-09**: The system must **apply no filter** based on a wallet's type, currency, or balance —
+  every wallet the caller owns appears somewhere in the paginated result (mirrors UM-US-03 FR-09's
+  "no status filter," applied here to the absence of any type-based filter).
+- **FR-10**: The system must **never include**, in either the returned wallets or the reported total,
+  any wallet owned by a User other than the caller, regardless of the caller's role (constitution
+  SEC-08; AC-07, EC-04).
+
+#### Business Rules
+
+- **BR-01**: Only the wallets owned by the authenticated caller are ever returned by this endpoint;
+  no role — including ADMIN — grants visibility into another User's wallets through this route (SDS
+  §5.3.2 "(USER)"; constitution SEC-08; EC-04).
+- **BR-02**: A page never carries more than 100 wallets; the default when unspecified is 25 (FR-04,
+  FR-05; mirrors UM-US-03 BR-03).
+- **BR-03**: Wallets are ordered by a stable key, consistently across pages of the same request
+  pattern; this story establishes no chronological ordering guarantee, because no creation timestamp
+  exists on `Wallet` (FR-08; plan.md A1; see Assumptions & Dependencies).
+- **BR-04**: The reported total always equals the count of wallets owned by the caller, never the
+  system-wide wallet count (FR-06, FR-07, FR-10).
+- **BR-05**: The endpoint applies no content-based filter — every wallet the caller owns is subject
+  only to pagination, never to a filter on type, currency, or balance (FR-09).
+
+#### Key Entities
+
+- **Wallet**: A named store of liquid money a User holds — cash, a bank account, a credit line (SRS
+  §1.5). Carries `id`, `user_id`, `name`, `type`, `currency`, and `balance` (SDS §2.2, §4.3.3;
+  WM-US-01). This story only reads wallets WM-US-01 already created — it creates, renames, and
+  deletes none.
+- **User**: Reused from Feature-01/Feature-02 with no new column. The authenticated caller's own
+  identifier is the only scope this story ever queries by (constitution SEC-08).
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can retrieve every wallet they own, carrying the same per-wallet
+  fields WM-US-01 already established, in one call.
+- **SC-02**: No request to this endpoint can return an unbounded number of rows.
+- **SC-03**: No User can see another User's wallet, or another User's wallet count, through this
+  endpoint, regardless of role.
+- **SC-04**: A User can page through their entire wallet set with an accurate total and no duplicated
+  or skipped wallet.
+- **SC-05**: A User with no wallets yet receives an empty list and a zero total, never an error.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01) and WM-US-01 (Create a Wallet) are already implemented** — there is nothing to
+  list otherwise, and both dependencies are real, not merely designed against, mirroring how UM-US-03
+  depended on UM-US-01 (`specs/001-user-onboarding/spec.md` UM-US-03 Assumptions).
+
+- **`SRS.md` §6 US-03-02 carries no Gherkin at all** — only the bare header. `SDS.md` §5.3.2 supplies
+  exactly one sentence. Every AC above beyond the bare "list the caller's own wallets" goal
+  (pagination, ordering, the empty case, the envelope shape) is derived from constitution
+  API-06/PF-04/SEC-08 and from the UM-US-03 precedent, not from either reference document directly.
+  Recorded once, here, rather than against each individual AC, because the situation is uniform
+  across nearly all of them — this is the expected condition for this story, not a source
+  contradiction, so no `[NEEDS RULING]` follows from it.
+
+- **The ordering decision.** `WalletModel` has no `created_at` column — SDS §4.3.3's ERD lists
+  `wallets` with exactly `id`, `user_id`, `name`, `type`, `balance`, `currency`, and WM-US-01
+  `plan.md` A5 already flagged the gap and deliberately left it unfixed, reasoning that adding a
+  column the ERD does not list is a domain-model change this codebase requires stopping to ask about,
+  not something a single story may decide unilaterally (`CLAUDE.md` §1, "contradicts the domain model
+  (SDS §2) or ERD (§4.3.3)"). That reasoning still applies here. Unlike UM-US-03, which could reach
+  for `created_at DESC` because `users.created_at` already existed for reasons unrelated to that story
+  (audit trail, uniqueness support) and because SRS's own Gherkin for that story named "creation date"
+  as a column to display — this story has neither a column nor a source document naming any order at
+  all. Adding `created_at` now, solely to give this story a sort key, would still be exactly the ERD
+  change `CLAUDE.md` reserves for the user's own decision, and no AC in either reference document asks
+  for chronological order specifically — only *a* list, full stop. This story therefore orders by the
+  one key every wallet already has, unconditionally, without any schema change: the primary key `id`
+  (`ORDER BY id ASC` — ascending only because the two directions are otherwise equally arbitrary over
+  random UUIDs). This satisfies everything pagination correctness actually requires — a total,
+  stable, gap-free, duplicate-free order across pages (AC-08, EC-03) — at the acknowledged cost of
+  carrying no chronological or otherwise human-meaningful signal: two wallets created seconds apart in
+  either order will not reliably appear "newest first" or "oldest first." That limitation is accepted
+  and recorded, not silently shipped (`plan.md` A1; `test_cases.md` QF-06). If a future story needs
+  creation-order (or any other explicit sort), adding `created_at` — or a narrower, purpose-built
+  ordering column — is that story's own decision to raise, exactly as WM-US-01 `plan.md` A5 already
+  anticipated for "a future list story."
+
+- **Pagination combined with ownership filtering, for the first time in this codebase.** UM-US-03 is
+  the only precedent for `page`/`page_size` (constitution API-06), but it lists every account
+  system-wide — an ADMIN-only, unscoped query. WM-US-01 is the only precedent for filtering by owner
+  (constitution SEC-08), but only as a single-row lookup (`wallet_repo.get_owned_by_id`) with nothing
+  to paginate. This story combines both for the first time: the bounded page of items *and* the total
+  count must each carry the same `user_id` predicate, or the reported total would silently mean
+  something different from what the items show (`plan.md` A3; `test_cases.md` QF-05 records the
+  specific risk of copying UM-US-03's `list_users` shape without also copying WM-US-01's ownership
+  predicate onto the count query).
+
+- **The response envelope.** `SDS.md` §6.2.1's DTO registry never enumerated `WalletRead`'s fields
+  directly (only `WalletCreate`'s); the six-field shape in use today (`id`, `user_id`, `name`, `type`,
+  `currency`, `balance`) was itself settled during WM-US-01's own Design step, per §2.1's traceability
+  row naming `WalletRead` as Wallet's read DTO. This story reuses that DTO **unchanged** as the
+  per-item shape — no new or missing field — and wraps it in a new envelope, `WalletListRead {
+  items, total, page, page_size }`, mirroring `UserListRead` exactly (UM-US-03 `plan.md` A6). Neither
+  envelope is in SDS's registry; both exist to satisfy constitution API-06, which predates either
+  being made concrete.
+
+- **No wallet `type`/`currency` vocabulary question to re-litigate.** WM-US-01 already settled that
+  `type` and `currency` carry no closed enum (its own `plan.md` A1, A2). This story only reads
+  existing rows through fields already validated at creation time; it introduces no new validation
+  surface for either.
+
+- **Reading a single wallet's full detail, and any transaction history, is out of scope.** This story
+  is verified through the list endpoint's own envelope; there is no `GET /wallets/{id}` yet
+  (WM-US-03).

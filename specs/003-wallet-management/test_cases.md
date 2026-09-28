@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** WM-US-01 *(TC-01…TC-22)*
+> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39)*
 
 ---
 
@@ -330,4 +330,272 @@ implementation while writing these tests — every TC passed against the first v
 - **When:** A wallet is submitted with `type` `"Piggy Bank"` — neither the Gherkin's `"BANK"` nor SDS §5.3.1's `"Checking, Cash, Credit Card"` examples
 - **Then:** The response is `201`; the created wallet's `type` is `"Piggy Bank"` exactly — demonstrating the bound is length-only, not a closed vocabulary (plan.md A1, QF-03)
 - **AC:** EC-05, FR-04, BR-04
+- **Type:** integration
+
+---
+
+## WM-US-02: List Wallets
+
+> **IDs in this section are local to WM-US-02** — except `TC-NN`, which continues this epic file's
+> own numbering: WM-US-01 used `TC-01`…`TC-22`, so this story continues from `TC-23`. **`QF-NN` also
+> continues here** (WM-US-01 used `QF-01`…`QF-04`; this story continues from `QF-05`) — unlike
+> `specs/001-user-onboarding/test_cases.md`, which explicitly resets `QF-NN` per story. Both are
+> legitimate readings of `CLAUDE.md`'s ID schemes table, which names only `TC-NN` as continuous; this
+> epic file adopts the continuing convention for `QF-NN` too, matching `artifact-templates/`'s own
+> worked example (`PM-US-02`'s Quality Findings continue from `QF-08`, implying a prior story used
+> `QF-01`…`QF-07` in the same file).
+
+### Quality Findings
+
+#### QF-05
+
+**Description.** `plan.md` A3 requires the total-count query in `wallet_repo.list_owned()` to carry
+the same `user_id` predicate as the bounded page query. The closest precedent, `user_repo.list_users()`
+(UM-US-03), computes an entirely unfiltered count by design — that story lists every account
+system-wide. A test that only checks the returned `items` are scoped to the caller would not catch a
+copy-paste of `list_users()`'s count query that forgot to add the ownership predicate: `items` would
+look correct while `total` silently leaked the system-wide wallet count.
+
+**Impact.** A weaker test suite could pass with a `total` that counts every User's wallets, not just
+the caller's — wrong, but not obviously wrong from `items` alone, especially in a test that seeds
+wallets for only one User.
+
+**Recommendation.** `TC-30` (ownership scoping) and `TC-31` (empty-for-one, populated-for-another)
+both seed a **second** User's wallets alongside the caller's own, and assert `total` equals only the
+caller's own count — distinct from the combined count across both Users — proving the count query is
+scoped, not merely the item query.
+
+#### QF-06
+
+**Description.** `plan.md` A1 orders wallets by `id` because no `created_at` column exists (WM-US-01
+A5). `id` is a randomly generated UUID (`app.models.user.new_uuid`), so its sort order has no
+relationship to creation time. A test asserting only "the order is consistent" could pass even if a
+future change swapped in a different, equally-arbitrary-but-different order (e.g. unindexed scan
+order) — "stable within a single run" is a weaker claim than "actually sorted by `id`."
+
+**Impact.** Without pinning the expected order to a concrete, independently-computable key, a test
+could not tell "genuinely ordered by `id`" apart from "happened to come back in insertion order this
+one time" — exactly the false impression of meaningful order `spec.md`'s Assumptions section warns
+against.
+
+**Recommendation.** `TC-32`/`TC-38` assert the returned order equals the wallets' own `id` values
+sorted ascending as plain strings (computed independently in the test from the ids the creation calls
+actually returned), not merely "some order that stays the same" — and both create the wallets in an
+order that does **not** already match ascending `id` order, so the test cannot pass by coincidence if
+the implementation actually sorted by insertion order instead of `id`.
+
+#### QF-07
+
+**Description.** `spec.md` EC-04 requires an ADMIN-role caller to see only their own wallets through
+this endpoint, but no existing test in this codebase exercises an ADMIN account that also owns a
+wallet — UM-US-03's ADMIN fixtures never create a wallet for the ADMIN, and WM-US-01's tests use a
+generic authenticated caller without asserting on role.
+
+**Impact.** Without a dedicated case, a future change that special-cased ADMIN visibility (plausible,
+since UM-US-03 already established an ADMIN-sees-everything pattern for users) could pass every other
+test in this file while silently breaking BR-01 for this endpoint specifically.
+
+**Recommendation.** `TC-39` creates an ADMIN-role User with one wallet alongside a second User (any
+role) with wallets of their own, and asserts the ADMIN's request returns exactly the ADMIN's own
+wallet — never the other User's — despite the elevated role.
+
+### Acceptance Criteria Classification
+
+No wallet-list screen exists in `mobile/` this round, and no SRS UXR names one — the same basis
+WM-US-01 used for its own all-`[API]` classification. Unlike UM-US-01/02/03's UXR-04 deferrals, this
+story has no Gherkin at all, so there is no illustrative screen to defer against even conceptually.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully list every wallet the caller owns | **[API]** | No UI surface exists or is named by any UXR this round |
+| AC-02 | Return an empty list for a User with no wallets yet | **[API]** | Backend response-shape contract |
+| AC-03 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-04 | Bound and paginate the result by default | **[API]** | Query-parameter contract; unanchored to any SRS scenario (no Gherkin exists for this story) |
+| AC-05 | Accept an explicit page and page size within range | **[API]** | Same reasoning as AC-04 |
+| AC-06 | Reject a page or page size outside the allowed range | **[API]** | 422 `VALIDATION_ERROR` — backend validation concern |
+| AC-07 | A User only ever sees their own wallets | **[API]** | Persistence/ownership contract; bounded by QF-05 |
+| AC-08 | Return the list in a stable, deterministic order | **[API]** | Backend contract; bounded by QF-06 |
+| AC-09 | Reuse the documented per-wallet fields, wrapped in a paginated envelope | **[API]** | Response-payload contract |
+| EC-01 | A page number beyond the last available page | **[API]** | Boundary value |
+| EC-02 | Page size at the exact maximum | **[API]** | Boundary value |
+| EC-03 | More wallets than fit on one page | **[API]** | Cross-page completeness; bounded by QF-06 |
+| EC-04 | A caller whose role is ADMIN, who also owns wallets | **[API]** | Ownership contract independent of role; bounded by QF-07 |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-23, TC-24 | — |
+| AC-02 | [API] | TC-25, TC-31 | — |
+| AC-03 | [API] | TC-26, TC-27 | — |
+| AC-04 | [API] | TC-28 | — |
+| AC-05 | [API] | TC-29 | — |
+| AC-06 | [API] | TC-33, TC-34, TC-35 | — |
+| AC-07 | [API] | TC-30, TC-31 | — |
+| AC-08 | [API] | TC-32 | — |
+| AC-09 | [API] | TC-24 | — |
+| EC-01 | [API] | TC-36 | — |
+| EC-02 | [API] | TC-37 | — |
+| EC-03 | [API] | TC-38 | — |
+| EC-04 | [API] | TC-39 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no
+> wallet-list screen exists this round, and no SRS UXR names one (WM-US-01's own precedent).
+> **Known coverage limits, accepted:** the sort key (`id`) carries no chronological meaning, so no
+> test asserts anything about creation order — only that the order matches an independently-computed
+> ascending sort of the returned ids (QF-06).
+
+---
+
+### TC-23: An authenticated User lists every wallet they own — 200 with all wallets and an accurate total
+
+- **US:** WM-US-02
+- **Given:** An authenticated User who owns three wallets of different types and currencies, created via `POST /api/v1/wallets`
+- **When:** The User requests the list of wallets
+- **Then:** The response is `200`; `items` contains all three wallets, each carrying `id`, `user_id` equal to the caller's id, `name`, `type`, `currency`, and `balance`; `total` is `3`
+- **AC:** AC-01, FR-01, FR-02, FR-06, FR-09, BR-05
+- **Type:** integration
+
+### TC-24: The response item exposes exactly the six documented fields, wrapped in the paginated envelope
+
+- **US:** WM-US-02
+- **Given:** An authenticated User with one existing wallet
+- **When:** The User requests the list of wallets
+- **Then:** The response is `200`; the top-level body exposes exactly the keys `items`, `total`, `page`, `page_size`; each entry in `items` exposes **exactly** the keys `id`, `user_id`, `name`, `type`, `currency`, `balance` — no more, and in particular no field this story invents
+- **AC:** AC-01, AC-09, FR-02, PF-03
+- **Type:** integration
+
+### TC-25: A User with no wallets yet receives an empty list and a zero total
+
+- **US:** WM-US-02
+- **Given:** An authenticated User who owns no wallets
+- **When:** The User requests the list of wallets
+- **Then:** The response is `200`, not an error; `items` is an empty list and `total` is `0`
+- **AC:** AC-02, FR-01
+- **Type:** integration
+
+### TC-26: An unauthenticated or invalid-credential caller is denied with 401
+
+- **US:** WM-US-02
+- **Given:** A caller presenting no `Authorization` header, and separately a caller presenting an expired token
+- **When:** Each attempts to list wallets
+- **Then:** Both responses are `401` with `error_code` `NOT_AUTHENTICATED`; no `items` are returned
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-27: Credentials are evaluated before any query parameter
+
+- **US:** WM-US-02
+- **Given:** A caller presenting no credentials
+- **When:** The list is requested with an out-of-range `page` value (`page=0`)
+- **Then:** The response is `401` `NOT_AUTHENTICATED`, not `422` — an unauthenticated caller learns nothing about the validity of their query parameters, mirroring UM-US-03 TC-61's ordering
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-28: The default page is 1 of size 25, with an accurate total
+
+- **US:** WM-US-02
+- **Given:** An authenticated User and three existing wallets they own
+- **When:** The list is requested with no `page` or `page_size` supplied
+- **Then:** The response is `200`; `page` is `1`, `page_size` is `25`, `items` contains all three wallets, and `total` is `3`
+- **AC:** AC-04, FR-04, FR-06, BR-02
+- **Type:** integration
+
+### TC-29: An explicit page and page size within range return that page and an accurate total
+
+- **US:** WM-US-02
+- **Given:** An authenticated User and five wallets they own
+- **When:** The list is requested with `page=2` and `page_size=2`
+- **Then:** The response is `200`; `page` is `2`, `page_size` is `2`, `items` contains exactly two of the User's own wallets, and `total` is `5`
+- **AC:** AC-05, FR-04, FR-06
+- **Type:** integration
+
+### TC-30: A User only ever sees their own wallets, never another User's
+
+- **US:** WM-US-02
+- **Given:** Two authenticated Users, `A` (two wallets) and `B` (three wallets)
+- **When:** `A` requests the list of wallets
+- **Then:** The response is `200`; `items` contains exactly `A`'s two wallets — none of `B`'s three — and `total` is `2`, not `5`
+- **AC:** AC-07, FR-07, FR-10, BR-01, BR-04 *(assertion technique per QF-05)*
+- **Type:** integration
+
+### TC-31: The reported total counts only the caller's own wallets, even when it is the smaller number
+
+- **US:** WM-US-02
+- **Given:** Two authenticated Users, `A` (no wallets) and `B` (four wallets)
+- **When:** `A` requests the list of wallets
+- **Then:** The response is `200`; `items` is empty and `total` is `0` — not `4`, and not any count reflecting `B`'s wallets
+- **AC:** AC-02, AC-07, FR-07, FR-10, BR-04 *(assertion technique per QF-05)*
+- **Type:** integration
+
+### TC-32: The list is returned in a stable order matching the wallets' ids sorted ascending
+
+- **US:** WM-US-02
+- **Given:** An authenticated User who creates five wallets in an order that does not already match ascending id order (confirmed from the ids the creation calls actually returned)
+- **When:** The User requests the list of wallets twice, with nothing created, changed, or removed in between
+- **Then:** Both responses return the same five wallets in the same relative order, and that order equals the five ids sorted ascending as strings — not the order the wallets were created in
+- **AC:** AC-08, FR-08, BR-03 *(assertion technique per QF-06)*
+- **Type:** integration
+
+### TC-33: A `page` that is not a positive integer is rejected with 422
+
+- **US:** WM-US-02
+- **Given:** An authenticated User
+- **When:** The list is requested with `page` set to each of `0`, `-1`, and `"abc"` in turn
+- **Then:** Each response is `422` with `error_code` `VALIDATION_ERROR` and a `details.fields` entry locating `page`; no `items` are returned
+- **AC:** AC-06, FR-05, BR-02
+- **Type:** integration
+
+### TC-34: A `page_size` that is not a positive integer is rejected with 422
+
+- **US:** WM-US-02
+- **Given:** An authenticated User
+- **When:** The list is requested with `page_size` set to each of `0`, `-1`, and `"abc"` in turn
+- **Then:** Each response is `422` with `error_code` `VALIDATION_ERROR` and a `details.fields` entry locating `page_size`; no `items` are returned
+- **AC:** AC-06, FR-05, BR-02
+- **Type:** integration
+
+### TC-35: A `page_size` above the maximum is rejected with 422
+
+- **US:** WM-US-02
+- **Given:** An authenticated User
+- **When:** The list is requested with `page_size=101`
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying `page_size`; the request is not silently capped at 100
+- **AC:** AC-06, EC-02, FR-05, BR-02
+- **Type:** integration
+
+### TC-36: A page beyond the last available page returns an empty list with the accurate total
+
+- **US:** WM-US-02
+- **Given:** An authenticated User and three wallets they own
+- **When:** The list is requested with `page=5` and `page_size=25`
+- **Then:** The response is `200`, not `404`; `items` is an empty list and `total` is still `3`
+- **AC:** EC-01, FR-06
+- **Type:** integration
+
+### TC-37: A `page_size` of exactly 100 is accepted
+
+- **US:** WM-US-02
+- **Given:** An authenticated User
+- **When:** The list is requested with `page_size=100`
+- **Then:** The response is `200` — the cap is a ceiling, not a target: 100 is honoured, only 101 is rejected (TC-35)
+- **AC:** EC-02, FR-05
+- **Type:** integration
+
+### TC-38: Paging through every page returns every wallet exactly once, in stable order
+
+- **US:** WM-US-02
+- **Given:** An authenticated User and five wallets they own, created in an order that does not already match ascending id order
+- **When:** Every page is fetched in turn with `page_size=2` (`page=1`, `page=2`, `page=3`)
+- **Then:** The concatenation of all three pages' `items` contains every one of the five wallets exactly once, with no duplicate and no gap, in the same ascending-id order TC-32 established, stable across the page boundaries
+- **AC:** EC-03, FR-08, BR-03 *(assertion technique per QF-06)*
+- **Type:** integration
+
+### TC-39: An ADMIN-role caller who also owns a wallet sees only their own through this endpoint
+
+- **US:** WM-US-02
+- **Given:** An authenticated User whose role is `ADMIN` and owns one wallet, and a second User (any role) who owns two wallets of their own
+- **When:** The ADMIN requests the list of wallets
+- **Then:** The response is `200`; `items` contains exactly the ADMIN's own one wallet — never either of the other User's — and `total` is `1`
+- **AC:** EC-04, FR-10, BR-01 *(assertion technique per QF-07)*
 - **Type:** integration
