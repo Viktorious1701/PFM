@@ -208,14 +208,42 @@ No summary-report screen exists in `mobile/` this round, and no SRS UXR names on
 
 ### Test Implementation Map *(filled at step 4)*
 
-Not yet populated. This story has completed only the Spec, Design, and Quality steps (1–3) — the
-Implement dispatch fills this table with real `pytest` node ids (all expected under
-`backend/tests/integration/test_fr_us_01_view_summary_report.py`) and a PASS/FAIL/BLOCKED result
-against every `TC-NN` below, per `CLAUDE.md` §2 step 6 and constitution DOD-07.
+All 28 test cases are implemented in
+`backend/tests/integration/test_fr_us_01_view_summary_report.py`, one test function per `TC-NN`,
+each carrying its `TC-NN` id in its docstring. Full suite run: `370 passed` (342 pre-existing + these
+28), `ruff check`/`ruff format --check`/`mypy app` all clean, coverage 100% on every file this story
+touched. See the Implement-step gate message for full pasted evidence.
 
 | TC | pytest node id | Result |
 |---|---|---|
-| TC-01…TC-28 | *(assigned at Implement)* | *(assigned at Verification)* |
+| TC-01 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_authenticated_user_retrieves_a_populated_summary_report` | PASS |
+| TC-02 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_unauthenticated_caller_is_denied_with_401_and_nothing_computed` | PASS |
+| TC-03 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_report_aggregates_expense_transactions_across_two_wallets_the_same_user_owns` | PASS |
+| TC-04 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_another_users_wallet_and_transactions_are_excluded` | PASS |
+| TC-05 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_reports_period_is_the_first_day_of_the_frozen_instants_calendar_month` | PASS |
+| TC-06 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_caller_with_no_transactions_this_month_receives_a_zero_valued_report` | PASS |
+| TC-07 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_total_income_reflects_only_income_transactions` | PASS |
+| TC-08 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_total_expenses_reflects_only_expense_transactions` | PASS |
+| TC-09 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_net_savings_is_negative_when_expenses_exceed_income` | PASS |
+| TC-10 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_net_savings_is_positive_when_income_exceeds_expenses` | PASS |
+| TC-11 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_net_savings_is_exactly_zero_when_income_equals_expenses` | PASS |
+| TC-12 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_top_spending_categories_select_and_order_the_highest_five_of_six` | PASS |
+| TC-13 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_a_category_with_no_expense_activity_this_period_is_omitted` | PASS |
+| TC-14 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_categories_tied_on_total_expense_amount_are_ordered_by_ascending_category_id` | PASS |
+| TC-15 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_each_ranked_category_carries_both_an_identifier_and_a_name` | PASS |
+| TC-16 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_a_transaction_dated_in_a_prior_month_never_affects_the_report` | PASS |
+| TC-17 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_response_exposes_exactly_the_documented_fields` | PASS |
+| TC-18 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_a_caller_who_owns_no_wallets_at_all_still_receives_a_zero_valued_report` | PASS |
+| TC-19 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_a_caller_with_only_income_transactions_this_period_reports_zero_expenses` | PASS |
+| TC-20 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_a_caller_with_only_expense_transactions_this_period_reports_zero_income` | PASS |
+| TC-21 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_exactly_five_distinct_nonzero_expense_categories_all_appear` | PASS |
+| TC-22 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_fewer_than_five_distinct_nonzero_expense_categories_are_never_padded` | PASS |
+| TC-23 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_a_transaction_at_the_first_instant_of_the_current_month_is_included` | PASS |
+| TC-24 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_a_transaction_at_the_first_instant_of_the_following_month_is_excluded` | PASS |
+| TC-25 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_a_transaction_in_the_immediately_preceding_month_is_excluded` | PASS |
+| TC-26 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_the_reporting_period_rolls_over_correctly_from_december_into_january` | PASS |
+| TC-27 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_classic_float_trap_decimal_amounts_sum_exactly_end_to_end` | PASS |
+| TC-28 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_cross_wallet_aggregation_and_cross_user_isolation_with_overlapping_data` | PASS |
 
 ---
 

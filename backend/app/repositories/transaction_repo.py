@@ -11,6 +11,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.category import CategoryModel
 from app.models.transaction import TransactionModel, TransactionType
 from app.models.wallet import WalletModel
 
@@ -100,3 +101,64 @@ def list_owned(
         .limit(page_size)
     ).all()
     return items, total
+
+
+def get_summary_totals(
+    db: Session, *, user_id: str, period_start: datetime, period_end: datetime
+) -> dict[TransactionType, Decimal]:
+    """Sum the caller's own transactions in [period_start, period_end), one
+    entry per TransactionType actually present (spec AC-07, AC-08, BR-03;
+    plan.md A4).
+
+    A type with no qualifying transactions in the period produces no row at
+    all -- GROUP BY omits empty groups (plan.md A7, empirically confirmed) --
+    so the caller (report_service.get_summary_report) must default an absent
+    key to Decimal("0.00"); a missing key is never an error.
+    """
+    conditions = [
+        WalletModel.user_id == user_id,
+        TransactionModel.timestamp >= period_start,
+        TransactionModel.timestamp < period_end,
+    ]
+    rows = db.execute(
+        select(TransactionModel.type, func.sum(TransactionModel.amount))
+        .join(WalletModel, TransactionModel.wallet_id == WalletModel.id)
+        .where(*conditions)
+        .group_by(TransactionModel.type)
+    ).all()
+    return {row[0]: row[1] for row in rows}
+
+
+def get_top_expense_categories(
+    db: Session,
+    *,
+    user_id: str,
+    period_start: datetime,
+    period_end: datetime,
+    limit: int,
+) -> Sequence[tuple[str, str, Decimal]]:
+    """The caller's own top `limit` expense categories in
+    [period_start, period_end), highest total first, category_id ascending
+    as a deterministic tie-break (spec AC-10, AC-12, BR-05; plan.md A5).
+
+    Grouped by both categories.id and categories.name -- not id alone -- so
+    this stays correct on PostgreSQL without relying on its primary-key
+    functional-dependency allowance for GROUP BY (constitution ENV-03).
+    """
+    conditions = [
+        WalletModel.user_id == user_id,
+        TransactionModel.type == TransactionType.EXPENSE,
+        TransactionModel.timestamp >= period_start,
+        TransactionModel.timestamp < period_end,
+    ]
+    total = func.sum(TransactionModel.amount)
+    rows = db.execute(
+        select(CategoryModel.id, CategoryModel.name, total)
+        .join(WalletModel, TransactionModel.wallet_id == WalletModel.id)
+        .join(CategoryModel, TransactionModel.category_id == CategoryModel.id)
+        .where(*conditions)
+        .group_by(CategoryModel.id, CategoryModel.name)
+        .order_by(total.desc(), CategoryModel.id.asc())
+        .limit(limit)
+    ).all()
+    return [(row[0], row[1], row[2]) for row in rows]
