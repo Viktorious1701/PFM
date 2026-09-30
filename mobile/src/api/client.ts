@@ -50,7 +50,18 @@ client.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
     const apiError = toApiError(error);
-    if (apiError.isUnauthenticated && onUnauthenticated) {
+
+    // A 401 only means "your session just became invalid" if the request
+    // actually carried a token to be rejected. A request that went out with
+    // no Authorization header at all (this module's own `getToken()` still
+    // returning null) is expected the instant a screen fetches on mount
+    // before `AuthProvider`'s boot rehydration has read the stored token —
+    // real bug, found live: a direct deep link or hard reload into any
+    // authenticated tab could race this and self-log-out the caller, wiping
+    // a perfectly valid stored session. Only a 401 on a request that DID
+    // carry a token is a real "session rejected" signal worth acting on.
+    const hadAuthHeader = axios.isAxiosError(error) && Boolean(error.config?.headers?.Authorization);
+    if (apiError.isUnauthenticated && hadAuthHeader && onUnauthenticated) {
       onUnauthenticated();
     }
     return Promise.reject(apiError);

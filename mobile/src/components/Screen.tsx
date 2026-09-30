@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { USE_MOCK_API } from '../config';
 import { color, space } from '../theme/tokens';
 import { PrototypeBanner } from './PrototypeBanner';
 
@@ -27,7 +28,7 @@ export function Screen({ children, note, scroll = true, testID }: Props) {
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]} testID={testID}>
-      <PrototypeBanner note={note} />
+      {USE_MOCK_API ? <PrototypeBanner note={note} /> : null}
       {scroll ? (
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {body}

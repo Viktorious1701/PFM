@@ -25,12 +25,11 @@ import { Link } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 
 import { Screen } from '../../src/components/Screen';
 import { GroceriesGlyph, SalaryGlyph, TransportGlyph } from '../../src/components/icons/Glyphs';
 import { PostmarkIcon } from '../../src/components/icons/PostmarkIcon';
-import { buildTornEdgePath } from '../../src/components/icons/tornEdge';
+import { TornEdge } from '../../src/components/icons/TornEdge';
 import { DashboardIds } from '../../src/constants/elementIds';
 import { budgetHealth, color, font, gradient, radius, space } from '../../src/theme/tokens';
 
@@ -216,33 +215,6 @@ function ToggleSegment({
     >
       <Text style={[styles.toggleLabel, active ? styles.toggleLabelActive : null]}>{label}</Text>
     </Pressable>
-  );
-}
-
-/**
- * Torn/deckle top edge. No CSS `clip-path` exists in React Native, so this is
- * a thin SVG strip whose fill (Ledger Paper) reaches the very top only at
- * each "peak," leaving the Kraft Board page colour showing through at each
- * "trough" — the zigzag boundary between the two reads as torn paper. Sits
- * flush above `heroBody`, which is the same Ledger Paper colour, so the two
- * pieces read as one card with a jagged silhouette.
- */
-const TORN_EDGE_WIDTH = 320;
-const TORN_EDGE_HEIGHT = 14;
-const TORN_EDGE_TEETH = 16;
-
-const TORN_EDGE_D = buildTornEdgePath(TORN_EDGE_WIDTH, TORN_EDGE_HEIGHT, TORN_EDGE_TEETH);
-
-function TornEdge() {
-  return (
-    <Svg
-      width="100%"
-      height={TORN_EDGE_HEIGHT}
-      viewBox={`0 0 ${TORN_EDGE_WIDTH} ${TORN_EDGE_HEIGHT}`}
-      preserveAspectRatio="none"
-    >
-      <Path d={TORN_EDGE_D} fill={color.surface} />
-    </Svg>
   );
 }
 

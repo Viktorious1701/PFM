@@ -33,6 +33,15 @@ export const ErrorCode = {
   INVITATION_TOKEN_EXPIRED: 'INVITATION_TOKEN_EXPIRED',
   /** Client-side only: the request never reached the server. */
   NETWORK_ERROR: 'NETWORK_ERROR',
+  /** TM-US-01: `wallet_id` doesn't resolve to a wallet the caller owns. */
+  TRANSACTION_WALLET_NOT_FOUND: 'TRANSACTION_WALLET_NOT_FOUND',
+  /** TM-US-01: `category_id` doesn't resolve to a category the caller owns. */
+  TRANSACTION_CATEGORY_NOT_FOUND: 'TRANSACTION_CATEGORY_NOT_FOUND',
+  /** TM-US-01 BR-03: the transaction's `type` disagrees with the referenced
+   * category's own type. */
+  TRANSACTION_CATEGORY_TYPE_MISMATCH: 'TRANSACTION_CATEGORY_TYPE_MISMATCH',
+  /** TM-US-01 BR-05: an EXPENSE whose amount exceeds the wallet's balance. */
+  TRANSACTION_INSUFFICIENT_BALANCE: 'TRANSACTION_INSUFFICIENT_BALANCE',
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode] | string;

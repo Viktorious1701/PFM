@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk curl *)",
+      "Bash(node finish2.mjs)"
+    ]
+  }
+}

@@ -1,0 +1,425 @@
+"""CM-US-02 — List Categories.
+
+One test per test case in specs/004-category-management/test_cases.md
+(TC-18..TC-34). Names state what the test proves, not what it calls.
+
+`_create_category` seeds preconditions through the real `POST
+/api/v1/categories` endpoint (CM-US-01, already implemented) rather than
+inserting rows directly — every TC in this file describes categories
+"created via POST /api/v1/categories", and going through the real endpoint
+also means each category's `id` is whatever the server actually assigned,
+which TC-27/TC-33's ordering assertions depend on (QF-06: the expected order
+must be computed from the ids creation calls actually returned, not
+assumed). Mirrors `test_wm_us_02_list_wallets.py` exactly — this story is
+the same single-table, no-join shape WM-US-02 already established.
+
+TC-25/TC-26/TC-34 need two distinct authenticated owners; this file reuses
+the `normal_user`/`admin_user` fixtures for that (nothing in CM-US-02 cares
+which role each caller has except TC-34, which specifically needs one of
+them to be ADMIN — constitution SEC-08, spec EC-04).
+
+TC-27/TC-33 assert the returned order equals the created categories' own
+`id` values sorted ascending as plain strings — computed independently in
+the test from the ids the creation calls actually returned — and each
+asserts the creation order does not already coincidentally match that
+sorted order, so neither test could pass by coincidence if the
+implementation actually sorted by insertion order instead of `id` (QF-06's
+assertion technique).
+"""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.core import security
+from app.core.config import Settings
+from app.models.user import UserModel
+
+CATEGORIES_URL = "/api/v1/categories"
+
+
+# --- helpers --------------------------------------------------------------
+
+
+def _create_category(
+    client: TestClient, headers: dict[str, str], **overrides: object
+) -> dict[str, object]:
+    """POST a category through the real CM-US-01 endpoint and return its body.
+
+    Asserts 201 itself so a seeding failure fails loudly at the seeding line,
+    not as a confusing downstream assertion in the test that depends on it.
+    """
+    payload: dict[str, object] = {
+        "name": "Groceries",
+        "type": "EXPENSE",
+    }
+    payload.update(overrides)
+    response = client.post(CATEGORIES_URL, json=payload, headers=headers)
+    assert response.status_code == 201
+    return response.json()
+
+
+def _fields(body: dict[str, object]) -> list[str]:
+    details = body["details"]
+    assert isinstance(details, dict)
+    return [f["location"][-1] for f in details["fields"]]  # type: ignore[index]
+
+
+def _expired_token(user: UserModel, settings: Settings) -> str:
+    return security.encode_jwt(
+        subject=user.id,
+        role=user.role.value,
+        secret=settings.jwt_secret,
+        ttl_minutes=-1,  # already past
+        algorithm=settings.jwt_algorithm,
+    )
+
+
+# --- TC-18/TC-19: the happy path envelope -----------------------------------
+
+
+def test_authenticated_user_lists_every_category_they_own_with_accurate_total(
+    client: TestClient, user_headers: dict[str, str], normal_user: UserModel
+) -> None:
+    """TC-18: three categories of both types, created via POST -> 200; items
+    contains all three, each carrying id, user_id (caller's), name, type;
+    total is 3.
+    """
+    _create_category(client, user_headers, name="Groceries", type="EXPENSE")
+    _create_category(client, user_headers, name="Rent", type="EXPENSE")
+    _create_category(client, user_headers, name="Salary", type="INCOME")
+
+    response = client.get(CATEGORIES_URL, headers=user_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 3
+    assert len(body["items"]) == 3
+    for item in body["items"]:
+        assert item["user_id"] == normal_user.id
+    assert {item["name"] for item in body["items"]} == {"Groceries", "Rent", "Salary"}
+
+
+def test_response_item_exposes_exactly_four_fields_wrapped_in_paginated_envelope(
+    client: TestClient, user_headers: dict[str, str]
+) -> None:
+    """TC-19: top-level body exposes exactly items, total, page, page_size;
+    each entry in items exposes exactly id, user_id, name, type — no more,
+    and in particular no `icon` and no "system category" marker (plan.md A7,
+    QF-08).
+    """
+    _create_category(client, user_headers)
+
+    response = client.get(CATEGORIES_URL, headers=user_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body.keys()) == {"items", "total", "page", "page_size"}
+    assert len(body["items"]) == 1
+    assert set(body["items"][0].keys()) == {"id", "user_id", "name", "type"}
+
+
+# --- TC-20: the empty case ---------------------------------------------------
+
+
+def test_user_with_no_categories_yet_receives_empty_list_and_zero_total(
+    client: TestClient, user_headers: dict[str, str]
+) -> None:
+    """TC-20: no categories owned -> 200, not an error; items is empty, total
+    is 0.
+    """
+    response = client.get(CATEGORIES_URL, headers=user_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+# --- TC-21/TC-22: authentication ---------------------------------------------
+
+
+def test_unauthenticated_or_invalid_credential_caller_is_denied_with_401(
+    client: TestClient, normal_user: UserModel, settings: Settings
+) -> None:
+    """TC-21: no `Authorization` header, and separately an expired token,
+    both -> 401 NOT_AUTHENTICATED; no items returned either way.
+    """
+    no_auth = client.get(CATEGORIES_URL)
+    assert no_auth.status_code == 401
+    assert no_auth.json()["error_code"] == "NOT_AUTHENTICATED"
+    assert "items" not in no_auth.json()
+
+    expired = client.get(
+        CATEGORIES_URL,
+        headers={"Authorization": f"Bearer {_expired_token(normal_user, settings)}"},
+    )
+    assert expired.status_code == 401
+    assert expired.json()["error_code"] == "NOT_AUTHENTICATED"
+    assert "items" not in expired.json()
+
+
+def test_credentials_are_evaluated_before_any_query_parameter(client: TestClient) -> None:
+    """TC-22: an out-of-range `page` from an unauthenticated caller still
+    answers 401, not 422 — mirrors WM-US-02 TC-27's ordering.
+    """
+    response = client.get(CATEGORIES_URL, params={"page": 0})
+
+    assert response.status_code == 401
+    assert response.json()["error_code"] == "NOT_AUTHENTICATED"
+
+
+# --- TC-23/TC-24: pagination defaults and explicit values --------------------
+
+
+def test_default_page_is_1_of_size_25_with_accurate_total(
+    client: TestClient, user_headers: dict[str, str]
+) -> None:
+    """TC-23: no page/page_size supplied -> page 1, page_size 25, all three
+    categories returned, total 3.
+    """
+    for _ in range(3):
+        _create_category(client, user_headers)
+
+    response = client.get(CATEGORIES_URL, headers=user_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["page"] == 1
+    assert body["page_size"] == 25
+    assert len(body["items"]) == 3
+    assert body["total"] == 3
+
+
+def test_explicit_page_and_page_size_within_range_return_that_page_and_accurate_total(
+    client: TestClient, user_headers: dict[str, str]
+) -> None:
+    """TC-24: page=2, page_size=2 over 5 categories -> that page's two
+    categories and total=5.
+    """
+    for _ in range(5):
+        _create_category(client, user_headers)
+
+    response = client.get(CATEGORIES_URL, params={"page": 2, "page_size": 2}, headers=user_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["page"] == 2
+    assert body["page_size"] == 2
+    assert body["total"] == 5
+    assert len(body["items"]) == 2
+
+
+# --- TC-25/TC-26: ownership scoping, items and total alike (QF-05) ----------
+
+
+def test_a_user_only_ever_sees_their_own_categories_never_another_users(
+    client: TestClient,
+    user_headers: dict[str, str],
+    admin_headers: dict[str, str],
+    normal_user: UserModel,
+) -> None:
+    """TC-25: A (two categories) and B (three categories) -> A's request
+    returns exactly A's two categories, none of B's three; total is 2, not 5
+    (assertion technique per QF-05).
+    """
+    _create_category(client, user_headers, name="A-1")
+    _create_category(client, user_headers, name="A-2")
+    _create_category(client, admin_headers, name="B-1")
+    _create_category(client, admin_headers, name="B-2")
+    _create_category(client, admin_headers, name="B-3")
+
+    response = client.get(CATEGORIES_URL, headers=user_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert len(body["items"]) == 2
+    for item in body["items"]:
+        assert item["user_id"] == normal_user.id
+    assert {item["name"] for item in body["items"]} == {"A-1", "A-2"}
+
+
+def test_reported_total_counts_only_callers_own_categories_even_when_smaller(
+    client: TestClient, user_headers: dict[str, str], admin_headers: dict[str, str]
+) -> None:
+    """TC-26: A (no categories) and B (four categories) -> A's request
+    returns items empty and total 0 — not 4, and not any count reflecting
+    B's categories (assertion technique per QF-05).
+    """
+    for i in range(4):
+        _create_category(client, admin_headers, name=f"B-{i}")
+
+    response = client.get(CATEGORIES_URL, headers=user_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+# --- TC-27: stable order matching ids sorted ascending (QF-06) --------------
+
+
+def test_list_is_returned_in_stable_order_matching_ids_sorted_ascending(
+    client: TestClient, user_headers: dict[str, str]
+) -> None:
+    """TC-27: five categories -> the returned order equals the categories'
+    own ids sorted ascending as strings, computed independently from the ids
+    the creation calls actually returned — not merely "the same order both
+    times" (assertion technique per QF-06). Requested twice, with nothing
+    created/changed/removed in between, to also prove repeatability.
+    """
+    created_ids = [_create_category(client, user_headers, name=f"C{i}")["id"] for i in range(5)]
+    expected_order = sorted(created_ids)
+    assert expected_order != created_ids, (
+        "fixture coincidence: creation order already matches ascending id "
+        "order — this run cannot distinguish id-order from insertion-order"
+    )
+
+    first = client.get(CATEGORIES_URL, headers=user_headers)
+    second = client.get(CATEGORIES_URL, headers=user_headers)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert [item["id"] for item in first.json()["items"]] == expected_order
+    assert [item["id"] for item in second.json()["items"]] == expected_order
+
+
+# --- TC-28/TC-29/TC-30: pagination boundary validation -----------------------
+
+
+@pytest.mark.parametrize("bad_page", [0, -1, "abc"])
+def test_a_non_positive_or_non_integer_page_is_rejected_with_422(
+    client: TestClient, user_headers: dict[str, str], bad_page: object
+) -> None:
+    """TC-28: page in {0, -1, "abc"} -> 422 VALIDATION_ERROR naming `page`;
+    no items returned.
+    """
+    response = client.get(CATEGORIES_URL, params={"page": bad_page}, headers=user_headers)
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert "page" in _fields(body)
+    assert "items" not in body
+
+
+@pytest.mark.parametrize("bad_page_size", [0, -1, "abc"])
+def test_a_non_positive_or_non_integer_page_size_is_rejected_with_422(
+    client: TestClient, user_headers: dict[str, str], bad_page_size: object
+) -> None:
+    """TC-29: page_size in {0, -1, "abc"} -> 422 VALIDATION_ERROR naming
+    `page_size`; no items returned.
+    """
+    response = client.get(CATEGORIES_URL, params={"page_size": bad_page_size}, headers=user_headers)
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert "page_size" in _fields(body)
+    assert "items" not in body
+
+
+def test_a_page_size_above_the_maximum_is_rejected_with_422(
+    client: TestClient, user_headers: dict[str, str]
+) -> None:
+    """TC-30: page_size=101 -> 422 VALIDATION_ERROR naming `page_size`; the
+    request is not silently capped at 100.
+    """
+    response = client.get(CATEGORIES_URL, params={"page_size": 101}, headers=user_headers)
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error_code"] == "VALIDATION_ERROR"
+    assert "page_size" in _fields(body)
+
+
+# --- TC-31/TC-32: boundary values that ARE accepted --------------------------
+
+
+def test_a_page_beyond_the_last_available_page_returns_an_empty_list_with_accurate_total(
+    client: TestClient, user_headers: dict[str, str]
+) -> None:
+    """TC-31: page=5, page_size=25 over 3 categories -> 200, not 404; items
+    empty, total still 3.
+    """
+    for _ in range(3):
+        _create_category(client, user_headers)
+
+    response = client.get(CATEGORIES_URL, params={"page": 5, "page_size": 25}, headers=user_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"] == []
+    assert body["total"] == 3
+
+
+def test_a_page_size_of_exactly_100_is_accepted(
+    client: TestClient, user_headers: dict[str, str]
+) -> None:
+    """TC-32: page_size=100 -> 200. The cap is a ceiling, not a target: only
+    101 (TC-30) is rejected.
+    """
+    response = client.get(CATEGORIES_URL, params={"page_size": 100}, headers=user_headers)
+
+    assert response.status_code == 200
+    assert response.json()["page_size"] == 100
+
+
+# --- TC-33: cross-page completeness, no duplicate, no gap (QF-06) -----------
+
+
+def test_paging_through_every_page_returns_every_category_exactly_once_in_stable_order(
+    client: TestClient, user_headers: dict[str, str]
+) -> None:
+    """TC-33: five categories, created in an order not already matching
+    ascending id order, paged with page_size=2 across page=1,2,3 -> the
+    concatenation of all pages' items contains every category exactly once,
+    no duplicate, no gap, in the same ascending-id order TC-27 established
+    (assertion technique per QF-06).
+    """
+    created_ids = [_create_category(client, user_headers, name=f"C{i}")["id"] for i in range(5)]
+    expected_order = sorted(created_ids)
+    assert expected_order != created_ids
+
+    seen: list[str] = []
+    for page in (1, 2, 3):
+        response = client.get(
+            CATEGORIES_URL, params={"page": page, "page_size": 2}, headers=user_headers
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 5
+        seen.extend(item["id"] for item in body["items"])
+
+    assert len(seen) == 5
+    assert len(set(seen)) == 5
+    assert seen == expected_order
+
+
+# --- TC-34: ADMIN role grants no extra visibility here (QF-07) --------------
+
+
+def test_admin_role_caller_who_also_owns_a_category_sees_only_their_own(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    user_headers: dict[str, str],
+    admin_user: UserModel,
+) -> None:
+    """TC-34: an ADMIN who owns one category, and a second User who owns two
+    of their own -> the ADMIN's request returns exactly the ADMIN's own one
+    category, never either of the other User's; total is 1 (assertion
+    technique per QF-07).
+    """
+    _create_category(client, admin_headers, name="Admin Category")
+    _create_category(client, user_headers, name="Other-1")
+    _create_category(client, user_headers, name="Other-2")
+
+    response = client.get(CATEGORIES_URL, headers=admin_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["user_id"] == admin_user.id
+    assert body["items"][0]["name"] == "Admin Category"

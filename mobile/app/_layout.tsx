@@ -3,12 +3,14 @@
  *
  * Governs: SDS §4.3.1 (Expo Router navigation, expo-secure-store JWT storage).
  *
- * There is still no auth redirect here, though SS-US-01 (login) is now real —
- * this remains a deliberate scope boundary, not an oversight. Screens read a
- * role from `useAuth()` for spec AC-04/AC-05 (invite is ADMIN-only), but
- * nothing routes an unauthenticated caller to `/login` automatically; a
- * signed-out visitor can still browse and gets a 401 from the API instead.
- * Adding a redirect guard is a separate decision, not yet made.
+ * A `useAuthRedirect()` guard now runs inside `RootNavigator` (below),
+ * bouncing an unauthenticated caller to `/(auth)/login` once auth has
+ * finished hydrating — except inside the `(auth)` group itself and on
+ * `/activate` (reached from an emailed link, pre-login), both of which must
+ * stay reachable while signed out. See `src/store/useAuthRedirect.ts` for
+ * the full rationale. The hook is called from `RootNavigator`, a component
+ * nested *inside* `<AuthProvider>`, rather than from `RootLayout` itself,
+ * because it needs `useAuth()`, which only works below the provider.
  *
  * Fonts hold the splash screen until Courier Prime + PT Serif are ready —
  * DESIGN.md forbids a heading rendering in the system font even for one
@@ -32,10 +34,40 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { color, font } from '../src/theme/tokens';
 import { AuthProvider } from '../src/store/auth';
+import { useAuthRedirect } from '../src/store/useAuthRedirect';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Already hidden or unsupported on this platform (e.g. web) — not fatal.
 });
+
+/**
+ * The actual navigator tree, split out so `useAuthRedirect()` can run inside
+ * `<AuthProvider>` (it calls `useAuth()`) while `RootLayout` itself stays
+ * the one place that gates on font loading.
+ */
+function RootNavigator() {
+  useAuthRedirect();
+
+  return (
+    <Stack
+      screenOptions={{
+        headerStyle: { backgroundColor: color.surface },
+        headerTintColor: color.text,
+        headerTitleStyle: { fontFamily: font.family.headingSemibold, fontSize: 18 },
+      }}
+    >
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="activate"
+        options={{
+          title: 'Activate Account',
+          headerBackTitle: 'Back',
+        }}
+      />
+    </Stack>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -64,23 +96,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: color.surface },
-            headerTintColor: color.text,
-            headerTitleStyle: { fontFamily: font.family.headingSemibold, fontSize: 18 },
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="activate"
-            options={{
-              title: 'Activate Account',
-              headerBackTitle: 'Back',
-            }}
-          />
-        </Stack>
+        <RootNavigator />
       </AuthProvider>
     </SafeAreaProvider>
   );

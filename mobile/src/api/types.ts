@@ -111,3 +111,154 @@ export type OutboxMessage = {
 export type OutboxList = {
   messages: OutboxMessage[];
 };
+
+// ---------------------------------------------------------------------------
+// Wallet Management (WM) — SDS §2.2, §6.2.1; backend app/schemas/wallet.py.
+// ---------------------------------------------------------------------------
+
+/** `POST /api/v1/wallets` request (SDS §6.2.1 `WalletCreate`) — WM-US-01. */
+export type WalletCreate = {
+  name: string;
+  /** Free text, no enum (WM-US-01 plan.md A1) — e.g. `"Piggy Bank"` is valid. */
+  type: string;
+  /** ISO-4217 shape only, no case-folding — server pattern `^[A-Z]{3}$`. */
+  currency: string;
+  /** Decimal-as-string (constitution VL-07) — never `number`. May be negative. */
+  initial_balance: string;
+};
+
+/**
+ * Row of `GET /api/v1/wallets` / response of `POST /api/v1/wallets` (SDS
+ * §2.2, §6.2.1) — WM-US-01/02. Exactly six fields — no `created_at`
+ * (WM-US-01 plan.md A5).
+ */
+export type WalletRead = {
+  id: string;
+  user_id: string;
+  name: string;
+  type: string;
+  currency: string;
+  /** Decimal-as-string — never `number`. */
+  balance: string;
+};
+
+// ---------------------------------------------------------------------------
+// Category Management (CM) — SDS §2.2; backend app/schemas/category.py.
+// ---------------------------------------------------------------------------
+
+/**
+ * SRS FR-04: a closed, two-value vocabulary (`app/models/category.py`).
+ * Reused below as `TransactionCreate.type` / `TransactionRead.type` too —
+ * the backend deliberately declares `TransactionType` as its own enum class
+ * with matching literals rather than importing `CategoryType` (one-enum-
+ * per-owning-model convention), but the two never disagree in value (spec
+ * BR-03), so this client-side reuse is a convenience, not a contract mirror.
+ */
+export type CategoryType = 'INCOME' | 'EXPENSE';
+
+/** `POST /api/v1/categories` request — CM-US-01. */
+export type CategoryCreate = {
+  name: string;
+  type: CategoryType;
+};
+
+/**
+ * Row of `GET /api/v1/categories` (CM-US-02) / response of `POST
+ * /api/v1/categories` (CM-US-01). Exactly four fields — no `icon` (CM-US-01
+ * plan.md A4; deferred to CM-US-04, which is also why category glyph
+ * matching in this client is name-string-based rather than id-based).
+ */
+export type CategoryRead = {
+  id: string;
+  user_id: string;
+  name: string;
+  type: CategoryType;
+};
+
+// ---------------------------------------------------------------------------
+// Transaction Management (TM) — SDS §2.2; backend app/schemas/transaction.py.
+// ---------------------------------------------------------------------------
+
+/**
+ * `POST /api/v1/transactions` request — TM-US-01. No `timestamp` field — the
+ * server always sets it to the moment of creation (plan.md A5).
+ */
+export type TransactionCreate = {
+  wallet_id: string;
+  category_id: string;
+  /** Decimal-as-string, strictly positive — a magnitude; `type` carries
+   * direction (spec BR-04). */
+  amount: string;
+  type: CategoryType;
+  /** Optional free text, max 500 chars server-side. Omit or pass `null` —
+   * both mean "no note", matching the server's `str | None = None`. */
+  note?: string | null;
+};
+
+/**
+ * Row of `GET /api/v1/transactions` / response of `POST /api/v1/transactions`
+ * (TM-US-01/02). Exactly seven fields — no owner field of any kind (plan.md
+ * A11), no echoed wallet balance, no message (plan.md A14).
+ */
+export type TransactionRead = {
+  id: string;
+  wallet_id: string;
+  category_id: string;
+  /** Decimal-as-string — never `number`. */
+  amount: string;
+  type: CategoryType;
+  /** ISO-8601 instant. */
+  timestamp: string;
+  note: string | null;
+};
+
+/**
+ * Query params for `GET /api/v1/transactions` (TM-US-02). `page`/`page_size`
+ * default to 1/25 inside `listTransactions` itself, not here, so every key
+ * on this type stays optional and is merged into the request only when
+ * present.
+ */
+export type TransactionListParams = {
+  page?: number;
+  page_size?: number;
+  wallet_id?: string;
+  category_id?: string;
+  /** ISO-8601 instant — the server parses this as a `datetime`, not a bare date. */
+  date_from?: string;
+  date_to?: string;
+};
+
+// ---------------------------------------------------------------------------
+// Financial Reporting (FR) — SDS §5.7.1; backend app/schemas/report.py.
+// ---------------------------------------------------------------------------
+
+/**
+ * One ranked entry in `SummaryReportRead.top_categories` (backend
+ * `CategorySpendingRead`). `category_name` is a projected field, not a
+ * nested `CategoryRead` — no `GET /categories` endpoint existed anywhere in
+ * this codebase when that response shape was designed (plan.md A6), so the
+ * backend resolves the display name itself.
+ */
+export type TopCategory = {
+  category_id: string;
+  category_name: string;
+  /** Decimal-as-string. */
+  total_amount: string;
+};
+
+/**
+ * `GET /api/v1/reports/summary` response — FR-US-01. Always the current
+ * calendar month; the endpoint takes no period argument. No currency field
+ * at all — the aggregation is currency-naive, summing Decimal amounts across
+ * whatever wallets/currencies the caller has (a gap flagged at the Reports
+ * screen's own call site, not silently absorbed here).
+ */
+export type SummaryReportRead = {
+  /** ISO-8601 date, e.g. `"2026-09-01"` — the first of the reported month. */
+  period: string;
+  total_income: string;
+  total_expenses: string;
+  /** May be negative (spec AC-09, BR-04) — no positivity bound. */
+  net_savings: string;
+  top_categories: TopCategory[];
+};

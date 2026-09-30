@@ -64,6 +64,100 @@ export function SalaryGlyph({ color }: GlyphProps) {
   );
 }
 
+/** Rent — a roofline over a doorway, ported from the approved summary.html
+ * mockup's `#glyphRent` (the one mockup file with all four of these). */
+export function RentGlyph({ color }: GlyphProps) {
+  return (
+    <>
+      <Path
+        d="M4 12L12 5L20 12"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M6 11V19H18V11"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M10 19V14H14V19"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  );
+}
+
+/** Utilities — a lightning bolt, ported from `#glyphUtilities`. */
+export function UtilitiesGlyph({ color }: GlyphProps) {
+  return (
+    <Path
+      d="M13 3L6 14H11L10 21L18 9H13L14 3Z"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.7}
+      strokeLinejoin="round"
+    />
+  );
+}
+
+/** Entertainment — a film strip, ported from `#glyphEntertainment`. */
+export function EntertainmentGlyph({ color }: GlyphProps) {
+  return (
+    <>
+      <Path
+        d="M4,7 L20,7 L20,9.6 A2.9,2.9 0 0 0 20,15.4 L20,18 L4,18 L4,15.4 A2.9,2.9 0 0 0 4,9.6 Z"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M12 7.5V17.5"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.2}
+        strokeDasharray="1.6 2"
+        strokeLinecap="round"
+      />
+    </>
+  );
+}
+
+/** Dining — a fork and spoon, ported from `#glyphDining` (matches "Dining
+ * Out", the category name used elsewhere in this app's demo data). */
+export function DiningGlyph({ color }: GlyphProps) {
+  return (
+    <>
+      <Path
+        d="M6,3 V9 M9,3 V9 M12,3 V9 M9,9 V21"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M17,3 C19.2,3 19.4,7.6 17,9.8 V21"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  );
+}
+
 // ---- Tab-bar nav glyphs --------------------------------------------------
 
 /** Dashboard — an open ledger book. */

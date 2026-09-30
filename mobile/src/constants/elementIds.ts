@@ -57,3 +57,66 @@ export const DashboardIds = {
   logTransactionCta: 'dashboard-log-transaction-cta',
   budgetAlert: 'dashboard-budget-alert',
 } as const;
+
+export const ReportsIds = {
+  screen: 'reports-screen',
+  errorBanner: 'reports-error-banner',
+  scale: 'reports-scale',
+  netFigure: 'reports-net-figure',
+  categoryStamp: (categoryId: string) => `reports-category-stamp-${categoryId}`,
+} as const;
+
+export const TransactionsIds = {
+  screen: 'transactions-screen',
+  list: 'transactions-list',
+  slip: (id: string) => `transactions-slip-${id}`,
+  filterWalletChip: 'transactions-filter-wallet-chip',
+  filterCategoryChip: 'transactions-filter-category-chip',
+  errorBanner: 'transactions-error-banner',
+  fab: 'transactions-fab',
+} as const;
+
+export const TransactionCreateIds = {
+  screen: 'transaction-create-screen',
+  directionExpense: 'transaction-create-direction-expense',
+  directionIncome: 'transaction-create-direction-income',
+  amountInput: 'transaction-create-amount-input',
+  amountError: 'transaction-create-amount-error',
+  amountChip: (value: string) => `transaction-create-amount-chip-${value}`,
+  walletTicket: (value: string) => `transaction-create-wallet-ticket-${value}`,
+  walletError: 'transaction-create-wallet-error',
+  categoryTicket: (value: string) => `transaction-create-category-ticket-${value}`,
+  categoryError: 'transaction-create-category-error',
+  noteInput: 'transaction-create-note-input',
+  submit: 'transaction-create-submit',
+  errorBanner: 'transaction-create-error-banner',
+  newCategoryTrigger: 'transaction-create-new-category-trigger',
+  newCategoryNameInput: 'transaction-create-new-category-name-input',
+  newCategoryNameError: 'transaction-create-new-category-name-error',
+  newCategorySubmit: 'transaction-create-new-category-submit',
+} as const;
+
+export const WalletsIds = {
+  screen: 'wallets-screen',
+  list: 'wallets-list',
+  empty: 'wallets-empty',
+  errorBanner: 'wallets-error-banner',
+  addCta: 'wallets-add-cta',
+  folder: (type: string) => `wallets-folder-${type}`,
+  folderSubtotal: (type: string) => `wallets-folder-subtotal-${type}`,
+  card: (id: string) => `wallets-card-${id}`,
+} as const;
+
+export const CreateWalletIds = {
+  screen: 'create-wallet-screen',
+  nameInput: 'create-wallet-name-input',
+  nameError: 'create-wallet-name-error',
+  typeInput: 'create-wallet-type-input',
+  typeError: 'create-wallet-type-error',
+  currencyInput: 'create-wallet-currency-input',
+  currencyError: 'create-wallet-currency-error',
+  balanceInput: 'create-wallet-balance-input',
+  balanceError: 'create-wallet-balance-error',
+  submit: 'create-wallet-submit',
+  errorBanner: 'create-wallet-error-banner',
+} as const;

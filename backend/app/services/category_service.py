@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.models.category import CategoryType
 from app.models.user import UserModel
 from app.repositories import category_repo
-from app.schemas.category import CategoryRead
+from app.schemas.category import CategoryListRead, CategoryRead
 
 
 def create_category(
@@ -42,4 +42,32 @@ def create_category(
         user_id=category.user_id,
         name=category.name,
         type=category.type,
+    )
+
+
+def list_categories(
+    db: Session, *, owner: UserModel, page: int, page_size: int
+) -> CategoryListRead:
+    """Assemble a page of the caller's own categories into the
+    `CategoryListRead` envelope (spec CM-US-02 AC-01, AC-04, AC-05, AC-07,
+    AC-09; plan.md A2, A3).
+
+    Unlike `user_service.list_users`, this calls no `clock.ensure_aware()` —
+    `CategoryRead` carries no datetime field to normalise (mirrors
+    `wallet_service.list_wallets`, WM-US-02).
+    """
+    items, total = category_repo.list_owned(db, user_id=owner.id, page=page, page_size=page_size)
+    return CategoryListRead(
+        items=[
+            CategoryRead(
+                id=c.id,
+                user_id=c.user_id,
+                name=c.name,
+                type=c.type,
+            )
+            for c in items
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
     )

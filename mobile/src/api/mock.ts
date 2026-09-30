@@ -9,13 +9,22 @@
  * This is a prototype aid, NOT a test double standing in for a test. No TC in
  * test_cases.md is satisfied by anything in this file.
  */
+import { sumMoney } from '../utils/money';
 import { ApiError, ErrorCode } from './errors';
 import type {
   ActivateResponse,
+  CategoryCreate,
+  CategoryRead,
   InvitationRead,
   LoginResponse,
   Page,
+  SummaryReportRead,
+  TransactionCreate,
+  TransactionListParams,
+  TransactionRead,
   UserRead,
+  WalletCreate,
+  WalletRead,
 } from './types';
 
 /** Perceptible latency, so pending/disabled states are actually visible. */
@@ -245,4 +254,212 @@ export async function mockActivate(token: string): Promise<ActivateResponse> {
   }
 
   return { status: 'SUCCESS', message: 'Account activated successfully. You may now log in.' };
+}
+
+/** Shared pagination slicer for every list-style mock below — mirrors the
+ * server's `Page<T>` envelope shape exactly. */
+function paginate<T>(items: T[], page: number, pageSize: number): Page<T> {
+  const start = (page - 1) * pageSize;
+  return { items: items.slice(start, start + pageSize), page, page_size: pageSize, total: items.length };
+}
+
+// ---- Wallets (WM) ----------------------------------------------------------
+//
+// The 8-wallet dataset from the approved "Filed Folders" mockup
+// (design-explore/wallets.html), reused verbatim so mock mode previews the
+// real screen's folder-grouping (by `type`) and same-currency subtotals
+// faithfully — including a mixed-currency pair (EUR/HKD) and two negative
+// CREDIT balances.
+
+export const MOCK_WALLETS: WalletRead[] = [
+  { id: 'wallet-main-checking', user_id: MOCK_ADMIN.id, name: 'Main Checking', type: 'BANK', currency: 'USD', balance: '1250.75' },
+  { id: 'wallet-petty-cash', user_id: MOCK_ADMIN.id, name: 'Petty Cash', type: 'CASH', currency: 'USD', balance: '84.00' },
+  { id: 'wallet-travel-rewards', user_id: MOCK_ADMIN.id, name: 'Travel Rewards', type: 'CREDIT', currency: 'USD', balance: '-320.50' },
+  { id: 'wallet-emergency-fund', user_id: MOCK_ADMIN.id, name: 'Emergency Fund', type: 'SAVINGS', currency: 'USD', balance: '5400.00' },
+  { id: 'wallet-household-cash', user_id: MOCK_ADMIN.id, name: 'Household Cash', type: 'CASH', currency: 'USD', balance: '62.50' },
+  { id: 'wallet-euro-travel-card', user_id: MOCK_ADMIN.id, name: 'Euro Travel Card', type: 'BANK', currency: 'EUR', balance: '430.20' },
+  { id: 'wallet-store-credit-card', user_id: MOCK_ADMIN.id, name: 'Store Credit Card', type: 'CREDIT', currency: 'USD', balance: '-145.00' },
+  { id: 'wallet-hk-dollar-pocket', user_id: MOCK_ADMIN.id, name: 'HK Dollar Pocket', type: 'CASH', currency: 'HKD', balance: '1200.00' },
+];
+
+export async function mockListWallets(page: number, pageSize: number): Promise<Page<WalletRead>> {
+  await delay();
+  return paginate(MOCK_WALLETS, page, pageSize);
+}
+
+export async function mockCreateWallet(payload: WalletCreate): Promise<WalletRead> {
+  await delay();
+  const wallet: WalletRead = {
+    id: nextId(),
+    user_id: MOCK_ADMIN.id,
+    name: payload.name,
+    type: payload.type,
+    currency: payload.currency,
+    balance: payload.initial_balance,
+  };
+  MOCK_WALLETS.push(wallet);
+  return wallet;
+}
+
+// ---- Categories (CM) --------------------------------------------------------
+//
+// The 7 categories this app's demo data (this file, the Dashboard's own
+// DEMO.budgets, and the mockups) names anywhere: the 6 the "Carbon-Copy
+// Receipt Feed" transaction feed below actually posts against, plus "Dining
+// Out" (design-explore/summary.html's deficit-scenario swatch) so the
+// DiningGlyph mapping has a real category to resolve in mock mode too.
+
+export const MOCK_CATEGORIES: CategoryRead[] = [
+  { id: 'category-groceries', user_id: MOCK_ADMIN.id, name: 'Groceries', type: 'EXPENSE' },
+  { id: 'category-transport', user_id: MOCK_ADMIN.id, name: 'Transport', type: 'EXPENSE' },
+  { id: 'category-salary', user_id: MOCK_ADMIN.id, name: 'Salary', type: 'INCOME' },
+  { id: 'category-rent', user_id: MOCK_ADMIN.id, name: 'Rent', type: 'EXPENSE' },
+  { id: 'category-utilities', user_id: MOCK_ADMIN.id, name: 'Utilities', type: 'EXPENSE' },
+  { id: 'category-entertainment', user_id: MOCK_ADMIN.id, name: 'Entertainment', type: 'EXPENSE' },
+  { id: 'category-dining-out', user_id: MOCK_ADMIN.id, name: 'Dining Out', type: 'EXPENSE' },
+];
+
+export async function mockListCategories(page: number, pageSize: number): Promise<Page<CategoryRead>> {
+  await delay();
+  return paginate(MOCK_CATEGORIES, page, pageSize);
+}
+
+export async function mockCreateCategory(payload: CategoryCreate): Promise<CategoryRead> {
+  await delay();
+  const category: CategoryRead = {
+    id: nextId(),
+    user_id: MOCK_ADMIN.id,
+    name: payload.name,
+    type: payload.type,
+  };
+  MOCK_CATEGORIES.push(category);
+  return category;
+}
+
+// ---- Transactions (TM) -------------------------------------------------------
+//
+// The 14-transaction dataset from the approved "Carbon-Copy Receipt Feed"
+// mockup (design-explore/transactions.html), reused verbatim — newest
+// first, matching both that mockup's own order and a realistic feed's.
+// Wallet/category names there resolve directly against MOCK_WALLETS/
+// MOCK_CATEGORIES above (the mockups were built cross-consistently).
+
+export const MOCK_TRANSACTIONS: TransactionRead[] = [
+  { id: 'transaction-01', wallet_id: 'wallet-main-checking', category_id: 'category-groceries', amount: '50.00', type: 'EXPENSE', timestamp: '2026-09-28T09:47:00Z', note: 'Weekly groceries' },
+  { id: 'transaction-02', wallet_id: 'wallet-main-checking', category_id: 'category-entertainment', amount: '18.50', type: 'EXPENSE', timestamp: '2026-09-27T19:15:00Z', note: 'Movie night' },
+  { id: 'transaction-03', wallet_id: 'wallet-petty-cash', category_id: 'category-transport', amount: '12.00', type: 'EXPENSE', timestamp: '2026-09-27T08:02:00Z', note: 'Bus pass top-up' },
+  { id: 'transaction-04', wallet_id: 'wallet-main-checking', category_id: 'category-utilities', amount: '220.00', type: 'EXPENSE', timestamp: '2026-09-26T14:30:00Z', note: 'Electricity bill' },
+  { id: 'transaction-05', wallet_id: 'wallet-main-checking', category_id: 'category-entertainment', amount: '34.20', type: 'EXPENSE', timestamp: '2026-09-25T20:10:00Z', note: null },
+  { id: 'transaction-06', wallet_id: 'wallet-petty-cash', category_id: 'category-transport', amount: '9.80', type: 'EXPENSE', timestamp: '2026-09-24T07:45:00Z', note: 'Grab ride to office' },
+  { id: 'transaction-07', wallet_id: 'wallet-main-checking', category_id: 'category-groceries', amount: '65.40', type: 'EXPENSE', timestamp: '2026-09-22T18:00:00Z', note: 'Market run' },
+  { id: 'transaction-08', wallet_id: 'wallet-main-checking', category_id: 'category-rent', amount: '1200.00', type: 'EXPENSE', timestamp: '2026-09-20T09:00:00Z', note: 'September rent' },
+  { id: 'transaction-09', wallet_id: 'wallet-main-checking', category_id: 'category-salary', amount: '3000.00', type: 'INCOME', timestamp: '2026-09-15T08:00:00Z', note: 'Paycheck' },
+  { id: 'transaction-10', wallet_id: 'wallet-petty-cash', category_id: 'category-groceries', amount: '42.75', type: 'EXPENSE', timestamp: '2026-09-14T11:20:00Z', note: 'Fresh produce' },
+  { id: 'transaction-11', wallet_id: 'wallet-main-checking', category_id: 'category-entertainment', amount: '27.30', type: 'EXPENSE', timestamp: '2026-09-12T21:05:00Z', note: 'Concert tickets' },
+  { id: 'transaction-12', wallet_id: 'wallet-main-checking', category_id: 'category-utilities', amount: '95.00', type: 'EXPENSE', timestamp: '2026-09-10T16:40:00Z', note: 'Water & internet' },
+  { id: 'transaction-13', wallet_id: 'wallet-petty-cash', category_id: 'category-transport', amount: '15.60', type: 'EXPENSE', timestamp: '2026-09-08T13:15:00Z', note: 'Taxi' },
+  { id: 'transaction-14', wallet_id: 'wallet-main-checking', category_id: 'category-salary', amount: '3000.00', type: 'INCOME', timestamp: '2026-09-01T08:00:00Z', note: 'Paycheck' },
+];
+
+export async function mockListTransactions(params: TransactionListParams): Promise<Page<TransactionRead>> {
+  await delay();
+  const { page = 1, page_size = 25, wallet_id, category_id, date_from, date_to } = params;
+
+  let items = MOCK_TRANSACTIONS;
+  if (wallet_id) items = items.filter((t) => t.wallet_id === wallet_id);
+  if (category_id) items = items.filter((t) => t.category_id === category_id);
+  // ISO-8601 UTC strings compare correctly lexicographically — every
+  // timestamp here shares the same fixed zero-padded format.
+  if (date_from) items = items.filter((t) => t.timestamp >= date_from);
+  if (date_to) items = items.filter((t) => t.timestamp <= date_to);
+
+  return paginate(items, page, page_size);
+}
+
+/**
+ * Mirrors `transaction_service.create_transaction`'s own fixed check order
+ * exactly (backend `app/services/transaction_service.py`): wallet
+ * ownership/existence, then category, then category-type agreement (BR-03),
+ * then — EXPENSE only — balance sufficiency (BR-05). Real relational rules
+ * against the mock arrays, not a magic-string branch, because these two
+ * errors are about a relationship between submitted data and existing
+ * records, not a fixed input.
+ */
+export async function mockCreateTransaction(payload: TransactionCreate): Promise<TransactionRead> {
+  await delay();
+
+  const wallet = MOCK_WALLETS.find((w) => w.id === payload.wallet_id);
+  if (!wallet) {
+    throw new ApiError(
+      ErrorCode.TRANSACTION_WALLET_NOT_FOUND,
+      'The referenced wallet was not found.',
+      404,
+    );
+  }
+
+  const category = MOCK_CATEGORIES.find((c) => c.id === payload.category_id);
+  if (!category) {
+    throw new ApiError(
+      ErrorCode.TRANSACTION_CATEGORY_NOT_FOUND,
+      'The referenced category was not found.',
+      404,
+    );
+  }
+
+  if (category.type !== payload.type) {
+    throw new ApiError(
+      ErrorCode.TRANSACTION_CATEGORY_TYPE_MISMATCH,
+      "The transaction type does not match the referenced category's type.",
+      409,
+    );
+  }
+
+  if (payload.type === 'EXPENSE') {
+    // The sufficiency check IS this arithmetic, mirroring the server's own
+    // `WHERE balance >= amount` conditional UPDATE (wallet_repo.py): the
+    // decrement is insufficient exactly when it would take the balance
+    // negative, i.e. `balance < amount`.
+    const nextBalance = sumMoney([wallet.balance, `-${payload.amount}`]);
+    if (nextBalance.startsWith('-')) {
+      throw new ApiError(ErrorCode.TRANSACTION_INSUFFICIENT_BALANCE, 'Insufficient balance.', 409);
+    }
+    wallet.balance = nextBalance;
+  } else {
+    wallet.balance = sumMoney([wallet.balance, payload.amount]);
+  }
+
+  const transaction: TransactionRead = {
+    id: nextId(),
+    wallet_id: wallet.id,
+    category_id: category.id,
+    amount: payload.amount,
+    type: payload.type,
+    timestamp: new Date().toISOString(),
+    note: payload.note ?? null,
+  };
+  MOCK_TRANSACTIONS.unshift(transaction);
+  return transaction;
+}
+
+// ---- Financial Reporting (FR) ------------------------------------------------
+//
+// September 2026's figures from the selected "Balance Scale + Category
+// Stamps" concept (design-explore/summary.html `#c6`), reused verbatim.
+// `category_id`s resolve against MOCK_CATEGORIES above.
+
+export async function mockGetSummaryReport(): Promise<SummaryReportRead> {
+  await delay();
+  return {
+    period: '2026-09-01',
+    total_income: '3500.00',
+    total_expenses: '2350.00',
+    net_savings: '1150.00',
+    top_categories: [
+      { category_id: 'category-rent', category_name: 'Rent', total_amount: '1200.00' },
+      { category_id: 'category-groceries', category_name: 'Groceries', total_amount: '450.00' },
+      { category_id: 'category-transport', category_name: 'Transport', total_amount: '300.00' },
+      { category_id: 'category-utilities', category_name: 'Utilities', total_amount: '200.00' },
+      { category_id: 'category-entertainment', category_name: 'Entertainment', total_amount: '150.00' },
+    ],
+  };
 }

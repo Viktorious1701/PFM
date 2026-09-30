@@ -48,3 +48,16 @@ class CategoryRead(BaseModel):
     user_id: str
     name: str
     type: CategoryType
+
+
+class CategoryListRead(BaseModel):
+    """New envelope (CM-US-02 plan.md A2) — mirrors `WalletListRead`
+    (WM-US-02 plan.md A2) and `TransactionListRead` (TM-US-02 plan.md A8).
+    `CategoryRead`'s own four fields are reused unchanged as the per-item
+    shape — no icon, no other entity's data folded in.
+    """
+
+    items: list[CategoryRead]
+    total: int
+    page: int
+    page_size: int
