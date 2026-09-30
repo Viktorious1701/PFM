@@ -90,6 +90,7 @@ export const TransactionCreateIds = {
   noteInput: 'transaction-create-note-input',
   submit: 'transaction-create-submit',
   errorBanner: 'transaction-create-error-banner',
+  categoryPresetChip: (name: string) => `transaction-create-category-preset-${name.toLowerCase()}`,
   newCategoryTrigger: 'transaction-create-new-category-trigger',
   newCategoryNameInput: 'transaction-create-new-category-name-input',
   newCategoryNameError: 'transaction-create-new-category-name-error',

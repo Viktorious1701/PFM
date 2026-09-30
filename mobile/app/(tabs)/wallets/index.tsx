@@ -30,6 +30,7 @@ import { Banner } from '../../../src/components/Banner';
 import { Button } from '../../../src/components/Button';
 import { Screen } from '../../../src/components/Screen';
 import { WalletsIds } from '../../../src/constants/elementIds';
+import { useAuth } from '../../../src/store/auth';
 import { color, font, radius, space } from '../../../src/theme/tokens';
 import { formatMoney, sumMoney } from '../../../src/utils/money';
 
@@ -84,12 +85,22 @@ function folderSubtotal(wallets: WalletRead[]): Subtotal {
 
 export default function WalletsScreen() {
   const router = useRouter();
+  const { isLoading: authLoading } = useAuth();
   const [wallets, setWallets] = useState<WalletRead[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<ApiError | null>(null);
 
+  // `authLoading` in the dep array both gates the fetch until auth has
+  // rehydrated and re-triggers it the instant that finishes (mirroring how
+  // `transactions/index.tsx`'s `loadAll` re-runs on a filter change while
+  // already focused) — needed for a direct deep link or hard reload into
+  // this tab, where the fetch would otherwise fire before a stored token had
+  // been read, get a real 401 with no token attached, and (pre-fix, see
+  // `api/client.ts`) wipe a perfectly valid session. Found live via exactly
+  // that navigation on the Add-Transaction screen; the same race exists here.
   useFocusEffect(
     useCallback(() => {
+      if (authLoading) return;
       let isActive = true;
       setError(null);
 
@@ -108,7 +119,7 @@ export default function WalletsScreen() {
       return () => {
         isActive = false;
       };
-    }, []),
+    }, [authLoading]),
   );
 
   const groups = useMemo(() => (wallets ? groupWalletsByType(wallets) : []), [wallets]);

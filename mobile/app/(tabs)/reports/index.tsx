@@ -41,6 +41,7 @@ import {
 } from '../../../src/components/icons/Glyphs';
 import { PostmarkIcon } from '../../../src/components/icons/PostmarkIcon';
 import { ReportsIds } from '../../../src/constants/elementIds';
+import { useAuth } from '../../../src/store/auth';
 import { color, font, radius, space } from '../../../src/theme/tokens';
 import { formatMoney } from '../../../src/utils/money';
 
@@ -133,10 +134,16 @@ const CATEGORY_GLYPHS: Record<string, CategoryGlyph> = {
 };
 
 export default function ReportsScreen() {
+  const { isLoading: authLoading } = useAuth();
   const [report, setReport] = useState<SummaryReportRead | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Gated on auth rehydration — same fix as the other three authenticated
+  // tabs (see api/client.ts + transactions/create.tsx's doc comment): a
+  // direct deep link or hard reload straight into this tab would otherwise
+  // fetch before a stored token had loaded.
   useEffect(() => {
+    if (authLoading) return;
     let cancelled = false;
 
     (async () => {
@@ -151,7 +158,7 @@ export default function ReportsScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authLoading]);
 
   return (
     <Screen testID={ReportsIds.screen} note="FR-US-01 · GET /api/v1/reports/summary">

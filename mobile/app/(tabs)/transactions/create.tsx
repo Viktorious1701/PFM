@@ -56,6 +56,29 @@ const AMOUNT_QUICK_PICKS: ReadonlyArray<{ label: string; value: string }> = [
   { label: '500,000', value: '500000' },
 ];
 
+/**
+ * Category presets — most people picking a category want to recognise a
+ * common one, not invent a name from scratch. Tapping a preset creates it
+ * immediately (same one tap as picking an existing category ticket), typed
+ * to whichever direction is currently selected. Free-text entry (below,
+ * "+ Custom category") stays as the fallback for anything not listed here —
+ * a preset is a shortcut, never the only way in, same principle as the
+ * Amount quick-picks above.
+ */
+const EXPENSE_CATEGORY_PRESETS: readonly string[] = [
+  'Food',
+  'Groceries',
+  'Rent',
+  'Billing',
+  'Utilities',
+  'Transport',
+  'Shopping',
+  'Entertainment',
+  'Health',
+  'Subscriptions',
+];
+const INCOME_CATEGORY_PRESETS: readonly string[] = ['Salary', 'Freelance', 'Bonus', 'Gifts', 'Investments', 'Refund'];
+
 export default function CreateTransactionScreen() {
   const router = useRouter();
   const { isLoading: authLoading } = useAuth();
@@ -119,6 +142,18 @@ export default function CreateTransactionScreen() {
     [categories, direction],
   );
 
+  // Presets already present in the caller's own categories (by name,
+  // case-insensitive) are dropped — CategoryCreate has no uniqueness
+  // constraint server-side, so an un-filtered preset could silently create a
+  // duplicate "Food" beside an existing one.
+  const categoryPresets: readonly string[] = useMemo(() => {
+    const presets = direction === 'EXPENSE' ? EXPENSE_CATEGORY_PRESETS : INCOME_CATEGORY_PRESETS;
+    const existingNames = new Set(
+      categories.filter((c) => c.type === direction).map((c) => c.name.trim().toLowerCase()),
+    );
+    return presets.filter((name) => !existingNames.has(name.toLowerCase()));
+  }, [categories, direction]);
+
   const handleDirectionChange = (next: CategoryType, onChange: (value: CategoryType) => void) => {
     onChange(next);
     if (categoryId) {
@@ -129,8 +164,8 @@ export default function CreateTransactionScreen() {
     }
   };
 
-  const handleCreateCategory = async () => {
-    const name = newCategoryName.trim();
+  const handleCreateCategory = async (presetName?: string) => {
+    const name = (presetName ?? newCategoryName).trim();
     if (!name) {
       setNewCategoryError('Please enter a category name');
       return;
@@ -201,49 +236,78 @@ export default function CreateTransactionScreen() {
     }
   };
 
-  const categoryFooter = newCategoryFormOpen ? (
-    <View style={styles.newCategoryForm}>
-      <TextField
-        label="New category name"
-        testID={TransactionCreateIds.newCategoryNameInput}
-        errorTestID={TransactionCreateIds.newCategoryNameError}
-        placeholder={direction === 'EXPENSE' ? 'e.g. Subscriptions' : 'e.g. Freelance'}
-        value={newCategoryName}
-        onChangeText={(text) => {
-          setNewCategoryName(text);
-          setNewCategoryError(null);
-        }}
-        editable={!creatingCategory}
-        error={newCategoryError}
-      />
-      <View style={styles.newCategoryActions}>
-        <Button
-          title="Cancel"
-          variant="secondary"
-          disabled={creatingCategory}
-          onPress={() => {
-            setNewCategoryFormOpen(false);
-            setNewCategoryName('');
-            setNewCategoryError(null);
-          }}
-        />
-        <Button
-          title="Create"
-          testID={TransactionCreateIds.newCategorySubmit}
-          pending={creatingCategory}
-          onPress={() => void handleCreateCategory()}
-        />
-      </View>
+  const categoryFooter = (
+    <View style={styles.categoryFooter}>
+      {categoryPresets.length > 0 ? (
+        <View style={styles.presetChipRow}>
+          {categoryPresets.map((name) => (
+            <SuggestionChip
+              key={name}
+              label={name}
+              testID={TransactionCreateIds.categoryPresetChip(name)}
+              disabled={creatingCategory}
+              accessibilityLabel={`Add category ${name}`}
+              onPress={() => void handleCreateCategory(name)}
+            />
+          ))}
+        </View>
+      ) : null}
+
+      {newCategoryFormOpen ? (
+        <View style={styles.newCategoryForm}>
+          <TextField
+            label="Custom category name"
+            testID={TransactionCreateIds.newCategoryNameInput}
+            errorTestID={TransactionCreateIds.newCategoryNameError}
+            placeholder={direction === 'EXPENSE' ? 'e.g. Subscriptions' : 'e.g. Side project'}
+            value={newCategoryName}
+            onChangeText={(text) => {
+              setNewCategoryName(text);
+              setNewCategoryError(null);
+            }}
+            editable={!creatingCategory}
+            error={newCategoryError}
+          />
+          <View style={styles.newCategoryActions}>
+            <Button
+              title="Cancel"
+              variant="secondary"
+              disabled={creatingCategory}
+              onPress={() => {
+                setNewCategoryFormOpen(false);
+                setNewCategoryName('');
+                setNewCategoryError(null);
+              }}
+            />
+            <Button
+              title="Create"
+              testID={TransactionCreateIds.newCategorySubmit}
+              pending={creatingCategory}
+              onPress={() => void handleCreateCategory()}
+            />
+          </View>
+        </View>
+      ) : (
+        <>
+          <Pressable
+            testID={TransactionCreateIds.newCategoryTrigger}
+            onPress={() => {
+              setNewCategoryError(null);
+              setNewCategoryFormOpen(true);
+            }}
+            accessibilityRole="button"
+            style={styles.newCategoryTrigger}
+          >
+            <Text style={styles.newCategoryTriggerLabel}>+ Custom category</Text>
+          </Pressable>
+          {/* A preset tap's own failure (e.g. a 422 on a blank/invalid name,
+              unlikely but possible) has nowhere else to surface once the
+              custom form itself isn't open — the TextField above already
+              covers that case when the form is open. */}
+          {newCategoryError ? <Text style={styles.newCategoryPresetError}>{newCategoryError}</Text> : null}
+        </>
+      )}
     </View>
-  ) : (
-    <Pressable
-      testID={TransactionCreateIds.newCategoryTrigger}
-      onPress={() => setNewCategoryFormOpen(true)}
-      accessibilityRole="button"
-      style={styles.newCategoryTrigger}
-    >
-      <Text style={styles.newCategoryTriggerLabel}>+ New category</Text>
-    </Pressable>
   );
 
   return (
@@ -309,11 +373,12 @@ export default function CreateTransactionScreen() {
             />
             <View style={styles.amountChipRow}>
               {AMOUNT_QUICK_PICKS.map((pick) => (
-                <AmountChip
+                <SuggestionChip
                   key={pick.value}
                   label={pick.label}
                   testID={TransactionCreateIds.amountChip(pick.value)}
                   disabled={isSubmitting}
+                  accessibilityLabel={`Fill amount ${pick.label}`}
                   onPress={() => onChange(pick.value)}
                 />
               ))}
@@ -397,23 +462,26 @@ export default function CreateTransactionScreen() {
 }
 
 /**
- * A tappable "fill the amount field" suggestion — visually a plain pill
- * (dashed border, no fill), mirroring `transactions/index.tsx`'s `FilterChip`
- * template. Unlike that chip, this one has no "selected" state: tapping it
- * doesn't toggle anything, it just fills the Amount field and nothing stays
- * visually picked, so `pressed` (a momentary press-down cue) is the only
- * state this component tracks.
+ * A tappable one-shot suggestion — visually a plain pill (dashed border, no
+ * fill), mirroring `transactions/index.tsx`'s `FilterChip` template. Unlike
+ * that chip, this one has no "selected" state: tapping it fires `onPress`
+ * once and nothing stays visually picked, so `pressed` (a momentary
+ * press-down cue) is the only state this component tracks. Shared by the
+ * Amount quick-picks (fills a field) and the Category presets (creates a
+ * category outright) — same shape, different consequence per call site.
  */
-function AmountChip({
+function SuggestionChip({
   label,
   onPress,
   disabled,
   testID,
+  accessibilityLabel,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   testID?: string;
+  accessibilityLabel: string;
 }) {
   return (
     <Pressable
@@ -421,7 +489,7 @@ function AmountChip({
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      accessibilityLabel={`Fill amount ${label}`}
+      accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [
         styles.amountChip,
         pressed ? styles.amountChipPressed : null,
@@ -473,8 +541,16 @@ const styles = StyleSheet.create({
   fieldGroup: { gap: space.xs },
   fieldLabel: { fontFamily: font.family.bodyMedium, fontSize: font.size.sm, color: color.text },
 
+  categoryFooter: { gap: space.sm },
+  presetChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs },
   newCategoryTrigger: { paddingVertical: space.sm, alignItems: 'center' },
   newCategoryTriggerLabel: { fontFamily: font.family.bodyMedium, fontSize: font.size.sm, color: color.text },
+  newCategoryPresetError: {
+    fontSize: font.size.sm,
+    color: color.error.fg,
+    fontFamily: font.family.bodyMedium,
+    textAlign: 'center',
+  },
   newCategoryForm: { gap: space.sm },
   newCategoryActions: { flexDirection: 'row', gap: space.sm, justifyContent: 'flex-end' },
 });

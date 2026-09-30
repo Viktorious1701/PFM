@@ -57,6 +57,7 @@ import { TornEdge } from '../../../src/components/icons/TornEdge';
 import { PickerSheet, type PickerOption } from '../../../src/components/PickerSheet';
 import { Screen } from '../../../src/components/Screen';
 import { TransactionsIds } from '../../../src/constants/elementIds';
+import { useAuth } from '../../../src/store/auth';
 import { color, font, gradient, radius, space } from '../../../src/theme/tokens';
 import { formatMoney } from '../../../src/utils/money';
 
@@ -85,6 +86,7 @@ const CATEGORY_GLYPH_BY_NAME: Record<string, GlyphComponent> = {
 
 export default function TransactionsScreen() {
   const router = useRouter();
+  const { isLoading: authLoading } = useAuth();
 
   const [wallets, setWallets] = useState<WalletRead[]>([]);
   const [categories, setCategories] = useState<CategoryRead[]>([]);
@@ -119,6 +121,12 @@ export default function TransactionsScreen() {
    */
   const loadAll = useCallback(
     async (opts: { silent?: boolean } = {}) => {
+      // Gated on auth rehydration for the same reason as the Add-Transaction
+      // screen's own fetch effect (see api/client.ts + that screen's doc
+      // comment): a deep link or hard reload straight into this tab would
+      // otherwise fetch before a stored token had loaded, drawing a real 401
+      // with no token attached and (pre-fix) wiping a valid session.
+      if (authLoading) return;
       setLoadError(null);
       if (!opts.silent) setLoadingInitial(true);
 
@@ -146,7 +154,7 @@ export default function TransactionsScreen() {
         setRefreshing(false);
       }
     },
-    [walletFilter, categoryFilter],
+    [walletFilter, categoryFilter, authLoading],
   );
 
   useFocusEffect(
