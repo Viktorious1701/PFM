@@ -41,7 +41,16 @@ class BudgetModel(Base):
     amount_limit: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
 
     # spec BR-04: always the 1st of the current month at creation (A2).
-    period: Mapped[date] = mapped_column(Date, nullable=False)
+    # index=True (BM-US-02 A6/T-02): budget_repo.list_owned() filters on this
+    # column directly in a WHERE clause for the first time anywhere in this
+    # codebase; the existing composite uq_budgets_wallet_category_period has
+    # `period` only as its third column, which does not efficiently serve a
+    # query that supplies `wallet_id` only through a join and no `category_id`
+    # predicate at all (constitution PF-02). Declared here, not just in the
+    # hand-written migration, so a future `alembic revision --autogenerate`
+    # agrees with the real schema instead of proposing to drop the index it
+    # doesn't know about.
+    period: Mapped[date] = mapped_column(Date, nullable=False, index=True)
 
     __table_args__ = (
         # spec BR-05, plan.md A3: at most one budget per wallet+category+period.

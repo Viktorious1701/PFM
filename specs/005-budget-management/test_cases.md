@@ -576,38 +576,40 @@ and CM-US-02 each used for their own all-`[API]` classification.
 > sort key (`id`) carries no chronological meaning, so no test asserts anything about creation order —
 > only that the order matches an independently-computed ascending sort of the returned ids (QF-12).
 
-### Test Implementation Map *(filled at step 4)*
+### Test Implementation Map
 
-All planned under `backend/tests/integration/test_bm_us_02_list_budgets.py`. Not yet implemented —
-node ids below are the planned test names; results are filled in at the Implement/Verification steps.
+Implemented in `backend/tests/integration/test_bm_us_02_list_budgets.py`. Verified 2026-10-01: all 25
+TCs (29 physical pytest invocations, counting TC-34/TC-35's three parametrised values each) PASS, the
+full existing suite (420 tests total) remains green, and a real curl walkthrough against a live server
+confirmed `amount_spent`/`progress_percentage` for real — see the gate message for the pasted output.
 
-| TC | pytest node id (planned) | Result |
+| TC | pytest node id | Result |
 |---|---|---|
-| TC-27 | `test_authenticated_user_lists_every_active_budget_they_own_with_computed_progress` | Pending |
-| TC-28 | `test_response_item_exposes_exactly_seven_fields_wrapped_in_paginated_envelope` | Pending |
-| TC-29 | `test_user_with_no_active_budgets_receives_empty_list_and_zero_total` | Pending |
-| TC-30 | `test_unauthenticated_or_invalid_credential_caller_is_denied_with_401` | Pending |
-| TC-31 | `test_credentials_are_evaluated_before_any_query_parameter` | Pending |
-| TC-32 | `test_default_page_is_1_of_size_25_with_accurate_total` | Pending |
-| TC-33 | `test_explicit_page_and_page_size_within_range_return_that_page_and_accurate_total` | Pending |
-| TC-34 | `test_a_non_positive_or_non_integer_page_is_rejected_with_422` (3 params) | Pending |
-| TC-35 | `test_a_non_positive_or_non_integer_page_size_is_rejected_with_422` (3 params) | Pending |
-| TC-36 | `test_a_page_size_above_the_maximum_is_rejected_with_422` | Pending |
-| TC-37 | `test_a_user_only_ever_sees_their_own_budgets_never_another_users` | Pending |
-| TC-38 | `test_reported_total_counts_only_callers_own_active_budgets_even_when_smaller` | Pending |
-| TC-39 | `test_list_is_returned_in_stable_order_matching_ids_sorted_ascending` | Pending |
-| TC-40 | `test_a_budget_whose_period_is_a_past_month_is_excluded_while_current_month_one_appears` | Pending |
-| TC-41 | `test_amount_spent_sums_only_expense_transactions_against_the_budgets_own_wallet_and_category` | Pending |
-| TC-42 | `test_a_budget_with_no_matching_expense_transactions_reports_zero_spent_and_zero_progress` | Pending |
-| TC-43 | `test_progress_percentage_may_exceed_100_when_spending_surpasses_the_limit` | Pending |
-| TC-44 | `test_a_transaction_against_a_different_wallet_or_category_never_contributes_to_a_budgets_spend` | Pending |
-| TC-45 | `test_an_income_transaction_never_contributes_to_a_budgets_amount_spent` | Pending |
-| TC-46 | `test_a_transaction_at_the_month_boundary_is_excluded_from_amount_spent` | Pending |
-| TC-47 | `test_budgets_sharing_exactly_one_of_wallet_or_category_have_independently_computed_spend` | Pending |
-| TC-48 | `test_a_page_beyond_the_last_available_page_returns_an_empty_list_with_accurate_total` | Pending |
-| TC-49 | `test_a_page_size_of_exactly_100_is_accepted` | Pending |
-| TC-50 | `test_paging_through_every_page_returns_every_active_budget_exactly_once_in_stable_order` | Pending |
-| TC-51 | `test_admin_role_caller_who_also_owns_a_budget_sees_only_their_own` | Pending |
+| TC-27 | `test_authenticated_user_lists_every_active_budget_they_own_with_computed_progress` | PASS |
+| TC-28 | `test_response_item_exposes_exactly_seven_fields_wrapped_in_paginated_envelope` | PASS |
+| TC-29 | `test_user_with_no_active_budgets_receives_empty_list_and_zero_total` | PASS |
+| TC-30 | `test_unauthenticated_or_invalid_credential_caller_is_denied_with_401` | PASS |
+| TC-31 | `test_credentials_are_evaluated_before_any_query_parameter` | PASS |
+| TC-32 | `test_default_page_is_1_of_size_25_with_accurate_total` | PASS |
+| TC-33 | `test_explicit_page_and_page_size_within_range_return_that_page_and_accurate_total` | PASS |
+| TC-34 | `test_a_non_positive_or_non_integer_page_is_rejected_with_422` (3 params: 0, -1, "abc") | PASS |
+| TC-35 | `test_a_non_positive_or_non_integer_page_size_is_rejected_with_422` (3 params: 0, -1, "abc") | PASS |
+| TC-36 | `test_a_page_size_above_the_maximum_is_rejected_with_422` | PASS |
+| TC-37 | `test_a_user_only_ever_sees_their_own_budgets_never_another_users` | PASS |
+| TC-38 | `test_reported_total_counts_only_callers_own_active_budgets_even_when_smaller` | PASS |
+| TC-39 | `test_list_is_returned_in_stable_order_matching_ids_sorted_ascending` | PASS |
+| TC-40 | `test_a_budget_whose_period_is_a_past_month_is_excluded_while_current_month_one_appears` | PASS |
+| TC-41 | `test_amount_spent_sums_only_expense_transactions_against_the_budgets_own_wallet_and_category` | PASS |
+| TC-42 | `test_a_budget_with_no_matching_expense_transactions_reports_zero_spent_and_zero_progress` | PASS |
+| TC-43 | `test_progress_percentage_may_exceed_100_when_spending_surpasses_the_limit` | PASS |
+| TC-44 | `test_a_transaction_against_a_different_wallet_or_category_never_contributes_to_a_budgets_spend` | PASS |
+| TC-45 | `test_an_income_transaction_never_contributes_to_a_budgets_amount_spent` | PASS |
+| TC-46 | `test_a_transaction_at_the_month_boundary_is_excluded_from_amount_spent` | PASS |
+| TC-47 | `test_budgets_sharing_exactly_one_of_wallet_or_category_have_independently_computed_spend` | PASS |
+| TC-48 | `test_a_page_beyond_the_last_available_page_returns_an_empty_list_with_accurate_total` | PASS |
+| TC-49 | `test_a_page_size_of_exactly_100_is_accepted` | PASS |
+| TC-50 | `test_paging_through_every_page_returns_every_active_budget_exactly_once_in_stable_order` | PASS |
+| TC-51 | `test_admin_role_caller_who_also_owns_a_budget_sees_only_their_own` | PASS |
 
 ---
 

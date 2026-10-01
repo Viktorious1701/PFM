@@ -37,3 +37,32 @@ class BudgetRead(BaseModel):
     category_id: str
     amount_limit: Decimal
     period: date
+
+
+class BudgetProgressRead(BaseModel):
+    """Per-item shape for the list endpoint (BM-US-02 AC-13, FR-13; SDS
+    §5.5.2 "current progress percentages"). Distinct from `BudgetRead`
+    (plan.md A2) — that DTO's own five fields are unchanged, this one simply
+    repeats the same four non-id fields and adds the two computed ones.
+    """
+
+    id: str
+    wallet_id: str
+    category_id: str
+    amount_limit: Decimal
+    period: date
+
+    # Computed at read time (A4, A12) — never stored on BudgetModel.
+    amount_spent: Decimal
+    progress_percentage: Decimal
+
+
+class BudgetListRead(BaseModel):
+    """New envelope (A2) — mirrors WalletListRead (WM-US-02), CategoryListRead
+    (CM-US-02), TransactionListRead (TM-US-02).
+    """
+
+    items: list[BudgetProgressRead]
+    total: int
+    page: int
+    page_size: int

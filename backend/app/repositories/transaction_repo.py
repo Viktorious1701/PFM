@@ -129,6 +129,38 @@ def get_summary_totals(
     return {row[0]: row[1] for row in rows}
 
 
+def get_expense_totals_by_wallet_category(
+    db: Session, *, user_id: str, period_start: datetime, period_end: datetime
+) -> dict[tuple[str, str], Decimal]:
+    """Sum the caller's own EXPENSE transactions in [period_start,
+    period_end), grouped by (wallet_id, category_id) — one entry per pair
+    actually present (spec BM-US-02 AC-10, BR-06; plan.md A4).
+
+    A (wallet_id, category_id) pair with no qualifying EXPENSE transaction in
+    the period produces no row at all -- GROUP BY omits empty groups, the
+    same trap get_summary_totals()'s own docstring documents -- so the caller
+    (budget_service.list_budgets) must default a missing key to
+    Decimal("0.00"); a missing key is never an error.
+    """
+    conditions = [
+        WalletModel.user_id == user_id,
+        TransactionModel.type == TransactionType.EXPENSE,
+        TransactionModel.timestamp >= period_start,
+        TransactionModel.timestamp < period_end,
+    ]
+    rows = db.execute(
+        select(
+            TransactionModel.wallet_id,
+            TransactionModel.category_id,
+            func.sum(TransactionModel.amount),
+        )
+        .join(WalletModel, TransactionModel.wallet_id == WalletModel.id)
+        .where(*conditions)
+        .group_by(TransactionModel.wallet_id, TransactionModel.category_id)
+    ).all()
+    return {(row[0], row[1]): row[2] for row in rows}
+
+
 def get_top_expense_categories(
     db: Session,
     *,
