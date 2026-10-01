@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** BM-US-01 *(TC-01…TC-26)*
+> **Stories in this file:** BM-US-01 *(TC-01…TC-26, implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(TC-27…TC-51, specified)*
 
 ---
 
@@ -396,4 +396,442 @@ confirmed the corresponding TC-26/TC-23/TC-07 fails for the right reason before 
 - **When:** A budget is submitted with a `wallet_id` matching no wallet at all and a `category_id` matching no category at all, in the same request
 - **Then:** The response is `404` `BUDGET_WALLET_NOT_FOUND` — never `BUDGET_CATEGORY_NOT_FOUND`, and never both
 - **AC:** EC-11, BR-02, FR-13 *(assertion technique per QF-06)*
+- **Type:** integration
+
+---
+
+## BM-US-02: List Budgets
+
+> **IDs in this section are local to BM-US-02** — except `TC-NN`, which continues this epic file's own
+> numbering: BM-US-01 used `TC-01`…`TC-26`, so this story continues from `TC-27`. **`QF-NN` also
+> continues here** (BM-US-01 used `QF-01`…`QF-06`; this story continues from `QF-07`) — matching the
+> continuing convention `specs/004-category-management/test_cases.md` (CM-US-02) and
+> `specs/003-wallet-management/test_cases.md` (WM-US-02) both already adopted.
+
+### Quality Findings
+
+#### QF-07
+
+**Description.** `plan.md` A3 requires the total-count query in `budget_repo.list_owned()` to carry the
+same `wallets.user_id` join predicate as the bounded page query. A test that only checks the returned
+`items` are scoped to the caller would not catch a copy-paste of an unfiltered (or differently-filtered)
+count query: `items` would look correct while `total` silently leaked a count from across every User —
+the exact risk `test_cases.md` QF-05 already named for `WalletModel`/`CategoryModel` and QF-10 extended
+to a join for `TransactionModel`.
+
+**Impact.** A weaker test suite could pass with a `total` that counts every User's active budgets, not
+just the caller's — wrong, but not obviously wrong from `items` alone, especially in a test that seeds
+budgets for only one User.
+
+**Recommendation.** `TC-37` (ownership scoping) and `TC-38` (empty-for-one, populated-for-another) both
+seed a **second** User's budgets alongside the caller's own, and assert `total` equals only the caller's
+own count, distinct from the combined count across both Users.
+
+#### QF-08
+
+**Description.** `plan.md` A3 scopes ownership through a single `JOIN` on `wallets` only, relying on
+BM-US-01's own fixed-order creation-time validation (FR-13/BR-02) to guarantee that a stored budget's
+`category_id` always belongs to the same User as its `wallet_id`. This guarantee is structural — enforced
+by the only code path that can ever write a `budgets` row — not something this endpoint's own test suite
+can construct a counter-example for: there is no way, through the public API, to create a budget whose
+wallet and category belong to two different Users, so no test here can directly exercise "a budget with
+mismatched wallet/category ownership is still excluded."
+
+**Impact.** No test in this file can assert the single-join design's safety net directly; only its
+absence-of-need can be observed.
+
+**Recommendation.** Accept the structural proof over a constructed counter-example — the same pattern
+CM-US-02 QF-08 already used in this codebase for a case the public API cannot construct (there, a
+"system category" with no owner). `TC-37`/`TC-38`'s ownership-scoping assertions are the closest
+available witness: every budget this endpoint can possibly return already carries a `wallet_id` whose
+owner is provably the caller, because BM-US-01's own creation path enforces it, not because a test
+checked for the absence of a hypothetical mismatched row.
+
+#### QF-09
+
+**Description.** `plan.md` A4 records that `transaction_repo.get_expense_totals_by_wallet_category()`
+carries the identical `GROUP BY` omits-empty-groups trap `get_summary_totals()`'s own docstring already
+documents (FR-US-01). A test asserting only "the response includes *an* `amount_spent`" would not prove
+a budget with zero matching expense transactions defaults to `0.00` rather than being omitted from the
+list entirely, or the request erroring.
+
+**Impact.** A missing-key bug in `budget_service.list_budgets()` (treating an absent dictionary entry as
+"no such budget" instead of "zero spent") could silently drop every budget with no expense activity yet
+— exactly the case AC-11 exists to guarantee against.
+
+**Recommendation.** `TC-42` creates an active budget with **no** transaction recorded against its wallet
+and category at all, and asserts the budget still appears in `items` with `amount_spent` exactly
+`"0.00"` and a `progress_percentage` of `"0.00"` — not absent, not `null`, not an error.
+
+#### QF-10
+
+**Description.** `plan.md` A5 resolves "active" to "the budget's `period` equals the current calendar
+month." A test suite that only ever creates budgets in the current month (as every BM-US-01 test already
+does, since BM-US-01 itself only ever creates current-month budgets) could pass even if this endpoint
+applied no period filter at all, or filtered on the wrong column — because every budget in every other
+test's fixture data already happens to be in the current month.
+
+**Impact.** Without a dedicated case constructing a budget whose `period` is a *different* month, a
+regression that dropped the period filter entirely (returning every budget regardless of period) would
+pass every other test in this file.
+
+**Recommendation.** `TC-40` monkeypatches `app.core.clock.utcnow` to a fixed instant, creates a budget
+(landing it in that fixed month), then advances the patched clock by a full calendar month before
+requesting the list — the same clock-seam technique BM-US-01 TC-23 already used for a different purpose
+(constitution TST-06) — and asserts that budget is absent from both `items` and `total`, while a second,
+freshly-created budget in the new "current" month does appear.
+
+#### QF-11
+
+**Description.** `plan.md` A4's aggregate query groups spend by `(wallet_id, category_id)` specifically
+so that one budget's spend never contaminates another's. A test asserting only one budget's own
+`amount_spent` in isolation would not catch an aggregate query that summed across every wallet or every
+category the caller owns, rather than scoping per exact pair — a bug that would only become visible once
+a caller has *more than one* budget sharing exactly one, but not both, of the two dimensions.
+
+**Impact.** A regression widening the `GROUP BY` (for instance, grouping by `wallet_id` alone) could pass
+every single-budget test in this file while silently merging two different categories' spending into one
+reported figure.
+
+**Recommendation.** `TC-44` and `TC-47` each construct two budgets that deliberately share exactly one of
+`wallet_id`/`category_id` while differing in the other, record an expense transaction against only one of
+the two pairs, and assert the other budget's `amount_spent` remains exactly `"0.00"` — proving the
+aggregate is scoped to the full pair, not either column alone.
+
+#### QF-12
+
+**Description.** `plan.md` A1 orders budgets by `id` because no `created_at` column exists (mirrors
+CM-US-02 QF-06/WM-US-02 QF-06 for the identical reasoning). `id` is a randomly generated UUID, so its
+sort order has no relationship to creation time. A test asserting only "the order is consistent" could
+pass even if a future change swapped in a different, equally arbitrary order.
+
+**Impact.** Without pinning the expected order to a concrete, independently-computable key, a test could
+not tell "genuinely ordered by `id`" apart from "happened to come back in insertion order this one time."
+
+**Recommendation.** `TC-39` asserts the returned order equals the budgets' own `id` values sorted
+ascending as plain strings (computed independently in the test from the ids the creation calls actually
+returned), created in an order that does **not** already match ascending `id` order.
+
+### Acceptance Criteria Classification
+
+No budget-list screen exists in `mobile/` this round, and no SRS UXR names one — the same basis BM-US-01
+and CM-US-02 each used for their own all-`[API]` classification.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully list every active budget the caller owns, with its current spending progress | **[API]** | No UI surface exists or is named by any UXR this round |
+| AC-02 | Return an empty list for a User with no active budgets | **[API]** | Backend response-shape contract |
+| AC-03 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-04 | Bound and paginate the result by default | **[API]** | Query-parameter contract |
+| AC-05 | Accept an explicit page and page size within range | **[API]** | Same reasoning as AC-04 |
+| AC-06 | Reject a page or page size outside the allowed range | **[API]** | 422 `VALIDATION_ERROR` — backend validation concern |
+| AC-07 | A User only ever sees their own budgets | **[API]** | Persistence/ownership contract; bounded by QF-07/QF-08 |
+| AC-08 | Return the list in a stable, deterministic order | **[API]** | Backend contract; bounded by QF-12 |
+| AC-09 | Only budgets whose period is the current calendar month are ever listed | **[API]** | Backend rule; bounded by QF-10 |
+| AC-10 | Amount spent reflects only matching expense activity | **[API]** | Backend computation; bounded by QF-09/QF-11 |
+| AC-11 | A budget with no matching expense activity yet still appears, with nothing spent | **[API]** | Response-shape contract; bounded by QF-09 |
+| AC-12 | Progress percentage reflects spending as a proportion of the amount limit, may exceed it | **[API]** | Backend computation |
+| AC-13 | Return exactly the documented budget fields, wrapped in a paginated envelope | **[API]** | Response-payload contract |
+| EC-01 | A page number beyond the last available page | **[API]** | Boundary value |
+| EC-02 | Page size at the exact maximum | **[API]** | Boundary value |
+| EC-03 | More active budgets than fit on one page | **[API]** | Cross-page completeness; bounded by QF-12 |
+| EC-04 | A caller whose role is ADMIN, who also owns budgets | **[API]** | Ownership contract independent of role |
+| EC-05 | An expense transaction against a different wallet/category than a given budget's own | **[API]** | Backend rule; bounded by QF-11 |
+| EC-06 | A budget whose period is a calendar month before the current one | **[API]** | Backend rule; bounded by QF-10 |
+| EC-07 | Two or more active budgets sharing exactly one of wallet/category | **[API]** | Backend rule; bounded by QF-11 |
+| EC-08 | A transaction timestamped at the month boundary | **[API]** | Boundary value |
+| EC-09 | An income transaction against the same wallet/category as a budget | **[API]** | Backend rule |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-27 | — |
+| AC-02 | [API] | TC-29, TC-38 | — |
+| AC-03 | [API] | TC-30, TC-31 | — |
+| AC-04 | [API] | TC-32 | — |
+| AC-05 | [API] | TC-33 | — |
+| AC-06 | [API] | TC-34, TC-35, TC-36 | — |
+| AC-07 | [API] | TC-37, TC-38 | — |
+| AC-08 | [API] | TC-39 | — |
+| AC-09 | [API] | TC-40 | — |
+| AC-10 | [API] | TC-41, TC-44, TC-45, TC-46 | — |
+| AC-11 | [API] | TC-42 | — |
+| AC-12 | [API] | TC-43 | — |
+| AC-13 | [API] | TC-28 | — |
+| EC-01 | [API] | TC-48 | — |
+| EC-02 | [API] | TC-36, TC-49 | — |
+| EC-03 | [API] | TC-50 | — |
+| EC-04 | [API] | TC-51 | — |
+| EC-05 | [API] | TC-44 | — |
+| EC-06 | [API] | TC-40 | — |
+| EC-07 | [API] | TC-47 | — |
+| EC-08 | [API] | TC-46 | — |
+| EC-09 | [API] | TC-45 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no budget-list
+> screen exists this round, and none is named by any SRS UXR. **Known coverage limits, accepted:** the
+> single-join ownership design (`plan.md` A3) cannot be counter-tested through the public API, because
+> BM-US-01's own creation path makes a mismatched-ownership budget impossible to construct (QF-08); the
+> sort key (`id`) carries no chronological meaning, so no test asserts anything about creation order —
+> only that the order matches an independently-computed ascending sort of the returned ids (QF-12).
+
+### Test Implementation Map *(filled at step 4)*
+
+All planned under `backend/tests/integration/test_bm_us_02_list_budgets.py`. Not yet implemented —
+node ids below are the planned test names; results are filled in at the Implement/Verification steps.
+
+| TC | pytest node id (planned) | Result |
+|---|---|---|
+| TC-27 | `test_authenticated_user_lists_every_active_budget_they_own_with_computed_progress` | Pending |
+| TC-28 | `test_response_item_exposes_exactly_seven_fields_wrapped_in_paginated_envelope` | Pending |
+| TC-29 | `test_user_with_no_active_budgets_receives_empty_list_and_zero_total` | Pending |
+| TC-30 | `test_unauthenticated_or_invalid_credential_caller_is_denied_with_401` | Pending |
+| TC-31 | `test_credentials_are_evaluated_before_any_query_parameter` | Pending |
+| TC-32 | `test_default_page_is_1_of_size_25_with_accurate_total` | Pending |
+| TC-33 | `test_explicit_page_and_page_size_within_range_return_that_page_and_accurate_total` | Pending |
+| TC-34 | `test_a_non_positive_or_non_integer_page_is_rejected_with_422` (3 params) | Pending |
+| TC-35 | `test_a_non_positive_or_non_integer_page_size_is_rejected_with_422` (3 params) | Pending |
+| TC-36 | `test_a_page_size_above_the_maximum_is_rejected_with_422` | Pending |
+| TC-37 | `test_a_user_only_ever_sees_their_own_budgets_never_another_users` | Pending |
+| TC-38 | `test_reported_total_counts_only_callers_own_active_budgets_even_when_smaller` | Pending |
+| TC-39 | `test_list_is_returned_in_stable_order_matching_ids_sorted_ascending` | Pending |
+| TC-40 | `test_a_budget_whose_period_is_a_past_month_is_excluded_while_current_month_one_appears` | Pending |
+| TC-41 | `test_amount_spent_sums_only_expense_transactions_against_the_budgets_own_wallet_and_category` | Pending |
+| TC-42 | `test_a_budget_with_no_matching_expense_transactions_reports_zero_spent_and_zero_progress` | Pending |
+| TC-43 | `test_progress_percentage_may_exceed_100_when_spending_surpasses_the_limit` | Pending |
+| TC-44 | `test_a_transaction_against_a_different_wallet_or_category_never_contributes_to_a_budgets_spend` | Pending |
+| TC-45 | `test_an_income_transaction_never_contributes_to_a_budgets_amount_spent` | Pending |
+| TC-46 | `test_a_transaction_at_the_month_boundary_is_excluded_from_amount_spent` | Pending |
+| TC-47 | `test_budgets_sharing_exactly_one_of_wallet_or_category_have_independently_computed_spend` | Pending |
+| TC-48 | `test_a_page_beyond_the_last_available_page_returns_an_empty_list_with_accurate_total` | Pending |
+| TC-49 | `test_a_page_size_of_exactly_100_is_accepted` | Pending |
+| TC-50 | `test_paging_through_every_page_returns_every_active_budget_exactly_once_in_stable_order` | Pending |
+| TC-51 | `test_admin_role_caller_who_also_owns_a_budget_sees_only_their_own` | Pending |
+
+---
+
+### TC-27: An authenticated User lists every active budget they own, each with computed spending progress — 200
+
+- **US:** BM-US-02
+- **Given:** An authenticated User with two budgets whose period is the current calendar month, one of which has a recorded expense transaction against its own wallet and category this month
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; `items` contains both budgets, each carrying `id`, `wallet_id`, `category_id`, `amount_limit`, `period`, `amount_spent`, `progress_percentage`; the budget with a recorded expense reports a nonzero `amount_spent`; `total` is `2`
+- **AC:** AC-01, FR-01, FR-13
+- **Type:** integration
+
+### TC-28: The response item exposes exactly the seven documented fields, wrapped in the paginated envelope
+
+- **US:** BM-US-02
+- **Given:** An authenticated User with one active budget
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; the top-level body exposes exactly the keys `items`, `total`, `page`, `page_size`; each entry in `items` exposes **exactly** the keys `id`, `wallet_id`, `category_id`, `amount_limit`, `period`, `amount_spent`, `progress_percentage` — no more, and in particular no `user_id` and no `status`
+- **AC:** AC-01, AC-13, FR-13, PF-03
+- **Type:** integration
+
+### TC-29: A User with no active budgets receives an empty list and a zero total
+
+- **US:** BM-US-02
+- **Given:** An authenticated User who owns no budget at all
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`, not an error; `items` is an empty list and `total` is `0`
+- **AC:** AC-02, FR-01
+- **Type:** integration
+
+### TC-30: An unauthenticated or invalid-credential caller is denied with 401
+
+- **US:** BM-US-02
+- **Given:** A caller presenting no `Authorization` header, and separately a caller presenting an expired token
+- **When:** Each attempts to list budgets
+- **Then:** Both responses are `401` with `error_code` `NOT_AUTHENTICATED`; no `items` are returned
+- **AC:** AC-03, FR-02
+- **Type:** integration
+
+### TC-31: Credentials are evaluated before any query parameter
+
+- **US:** BM-US-02
+- **Given:** A caller presenting no credentials
+- **When:** The list is requested with an out-of-range `page` value (`page=0`)
+- **Then:** The response is `401` `NOT_AUTHENTICATED`, not `422`
+- **AC:** AC-03, FR-02
+- **Type:** integration
+
+### TC-32: The default page is 1 of size 25, with an accurate total
+
+- **US:** BM-US-02
+- **Given:** An authenticated User and three active budgets they own
+- **When:** The list is requested with no `page` or `page_size` supplied
+- **Then:** The response is `200`; `page` is `1`, `page_size` is `25`, `items` contains all three budgets, and `total` is `3`
+- **AC:** AC-04, FR-03, FR-05
+- **Type:** integration
+
+### TC-33: An explicit page and page size within range return that page and an accurate total
+
+- **US:** BM-US-02
+- **Given:** An authenticated User and five active budgets they own
+- **When:** The list is requested with `page=2` and `page_size=2`
+- **Then:** The response is `200`; `page` is `2`, `page_size` is `2`, `items` contains exactly two of the User's own active budgets, and `total` is `5`
+- **AC:** AC-05, FR-03, FR-05
+- **Type:** integration
+
+### TC-34: A `page` that is not a positive integer is rejected with 422
+
+- **US:** BM-US-02
+- **Given:** An authenticated User
+- **When:** The list is requested with `page` set to each of `0`, `-1`, and `"abc"` in turn
+- **Then:** Each response is `422` with `error_code` `VALIDATION_ERROR` and a `details.fields` entry locating `page`; no `items` are returned
+- **AC:** AC-06, FR-04, BR-02
+- **Type:** integration
+
+### TC-35: A `page_size` that is not a positive integer is rejected with 422
+
+- **US:** BM-US-02
+- **Given:** An authenticated User
+- **When:** The list is requested with `page_size` set to each of `0`, `-1`, and `"abc"` in turn
+- **Then:** Each response is `422` with `error_code` `VALIDATION_ERROR` and a `details.fields` entry locating `page_size`; no `items` are returned
+- **AC:** AC-06, FR-04, BR-02
+- **Type:** integration
+
+### TC-36: A `page_size` above the maximum is rejected with 422
+
+- **US:** BM-US-02
+- **Given:** An authenticated User
+- **When:** The list is requested with `page_size=101`
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying `page_size`; the request is not silently capped at 100
+- **AC:** AC-06, EC-02, FR-04, BR-02
+- **Type:** integration
+
+### TC-37: A User only ever sees their own budgets, never another User's
+
+- **US:** BM-US-02
+- **Given:** Two authenticated Users, `A` (two active budgets) and `B` (three active budgets)
+- **When:** `A` requests the list of budgets
+- **Then:** The response is `200`; `items` contains exactly `A`'s two budgets — none of `B`'s three — and `total` is `2`, not `5`
+- **AC:** AC-07, FR-06, FR-07, BR-01, BR-04 *(assertion technique per QF-07/QF-08)*
+- **Type:** integration
+
+### TC-38: The reported total counts only the caller's own active budgets, even when it is the smaller number
+
+- **US:** BM-US-02
+- **Given:** Two authenticated Users, `A` (no budgets) and `B` (four active budgets)
+- **When:** `A` requests the list of budgets
+- **Then:** The response is `200`; `items` is empty and `total` is `0` — not `4`, and not any count reflecting `B`'s budgets
+- **AC:** AC-02, AC-07, FR-06, FR-07, BR-04 *(assertion technique per QF-07)*
+- **Type:** integration
+
+### TC-39: The list is returned in a stable order matching the budgets' ids sorted ascending
+
+- **US:** BM-US-02
+- **Given:** An authenticated User who creates five active budgets in an order that does not already match ascending id order (confirmed from the ids the creation calls actually returned)
+- **When:** The User requests the list of budgets twice, with nothing created, changed, or removed in between
+- **Then:** Both responses return the same five budgets in the same relative order, and that order equals the five ids sorted ascending as strings — not the order the budgets were created in
+- **AC:** AC-08, FR-08, BR-03 *(assertion technique per QF-12)*
+- **Type:** integration
+
+### TC-40: A budget whose period is a past calendar month is excluded, while a current-month budget appears
+
+- **US:** BM-US-02
+- **Given:** An authenticated User, with the system clock frozen to a known instant, who creates a budget (landing it in that month); the clock is then advanced by one full calendar month and a second budget is created
+- **When:** The User requests the list of budgets with the clock reading the second, later month
+- **Then:** The response is `200`; `items` contains only the second budget; `total` is `1`; the first budget's row still exists in storage but appears in neither `items` nor `total`
+- **AC:** AC-09, EC-06, FR-09, BR-05 *(assertion technique per QF-10)*
+- **Type:** integration
+
+### TC-41: Amount spent sums only expense transactions against the budget's own wallet and category, within the current month
+
+- **US:** BM-US-02
+- **Given:** An authenticated User with an active budget for wallet `W1`/category `C1`, and two expense transactions recorded against `W1`/`C1` this month totalling `75.50`
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget's `amount_spent` is exactly `75.50`
+- **AC:** AC-10, FR-10, BR-06
+- **Type:** integration
+
+### TC-42: A budget with no matching expense transactions reports zero spent and zero progress, not an error
+
+- **US:** BM-US-02
+- **Given:** An authenticated User with an active budget against which no transaction of any kind has been recorded
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget appears in `items` with `amount_spent` exactly `"0.00"` and `progress_percentage` exactly `"0.00"` — not omitted, not `null`, not an error
+- **AC:** AC-11, FR-11, BR-07 *(assertion technique per QF-09)*
+- **Type:** integration
+
+### TC-43: Progress percentage may exceed 100 when spending has surpassed the limit
+
+- **US:** BM-US-02
+- **Given:** An authenticated User with an active budget whose `amount_limit` is `100.00`, and an expense transaction of `150.00` recorded against that budget's own wallet and category this month
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget's `amount_spent` is `150.00` and `progress_percentage` is `150.00` — not capped or clamped to `100.00`
+- **AC:** AC-12, FR-12, BR-08
+- **Type:** integration
+
+### TC-44: A transaction against a different wallet or a different category never contributes to a budget's amount spent
+
+- **US:** BM-US-02
+- **Given:** An authenticated User with two active budgets sharing the same wallet `W1` but different categories `C1`/`C2`, and an expense transaction recorded against `W1`/`C1` only
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; the `C1` budget's `amount_spent` reflects the transaction; the `C2` budget's `amount_spent` remains exactly `"0.00"`
+- **AC:** AC-10, EC-05, FR-10, BR-06 *(assertion technique per QF-11)*
+- **Type:** integration
+
+### TC-45: An income transaction never contributes to a budget's amount spent
+
+- **US:** BM-US-02
+- **Given:** An authenticated User with an active budget for wallet `W1`/category `C1`, and an income transaction recorded against `W1`/`C1` this month
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget's `amount_spent` remains exactly `"0.00"`
+- **AC:** AC-10, EC-09, FR-10, BR-06
+- **Type:** integration
+
+### TC-46: A transaction timestamped at the immediately preceding or following calendar month's boundary is excluded from amount spent
+
+- **US:** BM-US-02
+- **Given:** An authenticated User with an active budget for wallet `W1`/category `C1`; one expense transaction timestamped at the first instant of the immediately preceding calendar month, and one at the first instant of the immediately following calendar month, both against `W1`/`C1`
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget's `amount_spent` remains exactly `"0.00"` — neither boundary transaction is counted
+- **AC:** AC-10, EC-08, FR-10, BR-06
+- **Type:** integration
+
+### TC-47: Budgets sharing exactly one of wallet or category have independently computed amount spent
+
+- **US:** BM-US-02
+- **Given:** An authenticated User with an active budget for wallet `W1`/category `C1` and a second active budget for wallet `W2`/category `C1` (same category, different wallet), with an expense transaction recorded against `W1`/`C1` only
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; the `W1`/`C1` budget's `amount_spent` reflects the transaction; the `W2`/`C1` budget's `amount_spent` remains exactly `"0.00"`
+- **AC:** EC-07, FR-10, BR-06 *(assertion technique per QF-11)*
+- **Type:** integration
+
+### TC-48: A page beyond the last available page returns an empty list with the accurate total
+
+- **US:** BM-US-02
+- **Given:** An authenticated User and three active budgets they own
+- **When:** The list is requested with `page=5` and `page_size=25`
+- **Then:** The response is `200`, not `404`; `items` is an empty list and `total` is still `3`
+- **AC:** EC-01, FR-05
+- **Type:** integration
+
+### TC-49: A `page_size` of exactly 100 is accepted
+
+- **US:** BM-US-02
+- **Given:** An authenticated User
+- **When:** The list is requested with `page_size=100`
+- **Then:** The response is `200`; the request is not rejected
+- **AC:** EC-02, FR-04
+- **Type:** integration
+
+### TC-50: Paging through every page returns every active budget exactly once, in stable order
+
+- **US:** BM-US-02
+- **Given:** An authenticated User with five active budgets and a fixed `page_size` of `2`
+- **When:** The User requests every page in sequence (`page=1`, `page=2`, `page=3`)
+- **Then:** The concatenation of all three pages' `items` contains every one of the five budgets exactly once, with no duplicate and no gap, in the same order `TC-39` establishes
+- **AC:** EC-03, FR-08, BR-03 *(assertion technique per QF-12)*
+- **Type:** integration
+
+### TC-51: An ADMIN-role caller who also owns a budget sees only their own
+
+- **US:** BM-US-02
+- **Given:** An ADMIN-role User with one active budget, alongside a second User (any role) with active budgets of their own
+- **When:** The ADMIN requests the list of budgets
+- **Then:** The response is `200`; `items` contains exactly the ADMIN's own budget — never the other User's — despite the elevated role
+- **AC:** EC-04, BR-01
 - **Type:** integration

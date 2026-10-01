@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** BM-US-01 *(planned)*
+> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(planned)*
 
 ---
 
@@ -379,3 +379,389 @@ All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, cons
 | T-08 | Add `BudgetWalletNotFoundError`, `BudgetCategoryNotFoundError`, `BudgetAlreadyExistsError` | `backend/app/core/errors.py` | Open |
 | T-09 | `POST /api/v1/budgets` router; mount `budgets.router` in `api/v1/router.py` | `backend/app/api/v1/budgets.py`, `backend/app/api/v1/router.py` | Open |
 | T-10 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_01_create_budget.py` | Open |
+
+---
+
+## BM-US-02: List Budgets
+
+> **IDs in this section are local to BM-US-02** (`A*`/`T-NN`), matching `spec.md`'s convention and
+> `specs/003-wallet-management/plan.md` (WM-US-02) / `specs/004-category-management/plan.md`
+> (CM-US-02)'s own precedent — both restart `A*`/`T-NN` per story while `test_cases.md`'s `TC-NN`/`QF-NN`
+> continue across the whole epic file. **Deviation from this dispatch's own brief, flagged here rather
+> than silently followed:** the brief instructed continuing plan.md's ids from `A12`/`T-11`. Every
+> existing second-or-later story in this codebase's plan.md files (WM-US-02, CM-US-02, and — by the same
+> convention — TM-US-02) instead restarts at `A1`/`T-01` locally, each with a header note identical in
+> shape to this one, precisely because `CLAUDE.md`'s own instruction to "open BM-US-01/WM-US-02/CM-US-02/
+> TM-US-02's own sections and match it" is unambiguous once those files are actually opened (done above).
+> Followed here as the demonstrated, three-times-repeated repository convention over the literal
+> numbers in the dispatch brief, which appear to have been computed against `spec.md`'s AC/EC/FR/BR
+> series (which *is* meant to look continuous story-to-story in numbering coincidence, not by rule) rather
+> than against the actual, already-established plan.md convention. `test_cases.md`'s `TC-NN` below does
+> continue from `TC-26` as instructed, since that one matches the real convention exactly.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Domain / ERD | **Ordering with no `created_at`: order by the primary key `id` ascending (`ORDER BY id ASC`), no schema change.** Identical reasoning to WM-US-02 A1/CM-US-02 A1 — `backend/app/models/budget.py` carries no `created_at` (BM-US-01 A11), and no AC in this story asks for chronological order, only *a* list. | ✅ Resolved |
+| A2 | API | **New per-item DTO `BudgetProgressRead` (seven fields) and new envelope `BudgetListRead { items, total, page, page_size }`, mirroring `WalletListRead`/`CategoryListRead`/`TransactionListRead`.** `BudgetRead` (BM-US-01) is **not** reused for the per-item shape, unlike CM-US-02/WM-US-02's reuse of their own single-resource `Read` DTOs unchanged. Reuse is deliberately declined here: BM-US-01 AC-12/FR-11 fix `BudgetRead` at exactly five fields for the *creation* response, and that story's own test suite (`test_cases.md` TC-24) asserts the response has **exactly** those five keys. Extending `BudgetRead` itself with `amount_spent`/`progress_percentage` would risk `POST /budgets` silently growing two fields no BM-US-01 AC asks for the moment the two schemas were merged — so a distinct `BudgetProgressRead` is safer than reuse-with-extra-fields, and its four base fields are still identical to `BudgetRead`'s own four non-`id` fields, so nothing is invented twice. | ✅ Resolved |
+| A3 | Security / Architecture | **Ownership scoped by a single `JOIN` on `wallets`, not a second join to `categories`.** `budget_repo.list_owned()` filters on `WalletModel.user_id == user_id` through a join on `budgets.wallet_id`, the same single-join shape `transaction_repo.list_owned()` already established for `transactions` (TM-US-02 A2) — even though `budgets`, like `transactions`, references two owned entities (`wallet_id` and `category_id`). This is safe, not merely convenient: BM-US-01 FR-13/BR-02 validates `wallet_id` **and** `category_id` independently against the *same* caller at creation time, in a fixed order, before a `BudgetModel` row is ever written — there is no code path in this codebase that can produce a stored budget whose `wallet_id` and `category_id` belong to two different Users. A second join to `categories` would therefore filter on a predicate that is already guaranteed true by every row's own provenance, adding a table to the query plan for no additional correctness. Both the bounded page query and the total-count query in `list_owned()` carry the identical join and predicate (mirrors WM-US-02 A3/CM-US-02 A3's "combined pagination and ownership filtering, single predicate" shape) — scoping only one of the two would leak a system-wide count next to a caller-scoped list (`test_cases.md` QF-07). | ✅ Resolved |
+| A4 | Domain / Architecture | **New `transaction_repo.get_expense_totals_by_wallet_category()`, grouped by `(wallet_id, category_id)`, filtered to `type == EXPENSE` and the current-month bounds.** Mirrors `transaction_repo.get_summary_totals()`'s own shape (FR-US-01) exactly, grouped by a different key: that function groups by `type` for one owner's whole-period totals; this one groups by `(wallet_id, category_id)` to align each sum with the one budget it belongs to. Carries the identical `GROUP BY` omits-empty-groups trap `get_summary_totals()`'s own docstring already documents and `test_cases.md` QF-09 tests for: a `(wallet_id, category_id)` pair with no qualifying `EXPENSE` row in the period produces no dictionary entry at all, so `budget_service.list_budgets()` must default a missing key to `Decimal("0.00")`, never treat a missing key as an error or as "no such budget." | ✅ Resolved |
+| A5 | Domain | **"Active" = the budget's `period` equals the current calendar month, computed from `clock.utcnow()`, never client input.** `budget_repo.list_owned()` takes a `period: date` argument the service computes once, the same one-liner BM-US-01 A2 already established (`clock.utcnow().date().replace(day=1)`), and filters `budgets.period == period` — an equality check, not a range, since every stored `period` value is already normalised to the first of its month at creation time (BM-US-01 BR-04). Full rationale in `spec.md` Assumptions. | ✅ Resolved |
+| A6 | Architecture / Data | **New Alembic migration adding an index on `budgets.period` — the first migration this listing-shaped story needs, unlike CM-US-02/WM-US-02, which added none.** Those two stories' own `list_owned()` filters only on `user_id` (already indexed at creation time) and orders by the primary key. This story's `list_owned()` additionally filters on `budgets.period` in a `WHERE` clause for the first time anywhere in this codebase — the existing `uq_budgets_wallet_category_period` unique index has `period` only as its *third* column, which does not efficiently serve a query that supplies `wallet_id` only through a join and supplies no `category_id` predicate at all. Constitution PF-02 ("columns used in `WHERE` ... carry an index") is read literally here rather than relied on to be already covered by a differently-shaped composite index. | ✅ Resolved |
+| A7 | Domain / Scope | **Computing `progress_percentage` and `amount_spent` is this story's own job, not BM-US-03's — narrowing BM-US-01's own "Out of scope" note.** Full reasoning in `spec.md` Assumptions: SDS §5.5.2's goal for *this* story names "current progress percentages" directly, distinct from the SDS §2.4.3 state machine's `WARNING`/`EXCEEDED` classification and FR-05's threshold-alert language, both of which remain BM-US-03's. Not an extension of either reference document — it is reading BM-US-02's own SDS line for what it actually says. | ✅ Resolved |
+| A8 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.5.2 tags this story "(USER)", identical to BM-US-01's own "(USER)" tag. An ADMIN caller who also owns budgets sees, through this route, only their own (spec EC-04, BR-01; `test_cases.md` QF-07/QF-08); nothing elevates an ADMIN's visibility here. Mirrors BM-US-01 A9, CM-US-02 A6, WM-US-02 A6. | ✅ Resolved |
+| A9 | Logging | **No new audit event for a list view.** Constitution LA-04 names exactly three audited event families; budget creation itself was already excluded by BM-US-01 A10, and reading a list is further still from anything LA-04 enumerates. No AC or FR here asks for one. Mirrors CM-US-02 A5/WM-US-02 A5. | ✅ Resolved |
+| A10 | Architecture | **The router issues no `db.commit()`.** Pure read, nothing to commit — mirrors `GET /wallets`, `GET /categories`, and `GET /transactions`. | ✅ Resolved |
+| A11 | Architecture | **`budget_service.py` gets its own private `_month_bounds()` helper, duplicating `report_service._month_bounds()`'s six-line shape rather than importing it.** `report_service._month_bounds()` is name-mangled private (a leading underscore) to its own module by this codebase's own convention (no other service imports another service's underscore-prefixed helper anywhere in this codebase); reaching across that boundary would blur which service owns the "what does *current month* mean" decision for its own AR-01 business logic. The duplication is six lines with no independent logic of its own to drift, and this story's own `[NEEDS RULING]`-free judgement call is that respecting module ownership costs less than the duplication risks. | ✅ Resolved |
+| A12 | Domain / Money | **`progress_percentage` is a `Decimal`, quantized to two decimal places with `ROUND_HALF_UP`, computed as `(amount_spent / amount_limit * 100)` — not a `float`, though constitution VL-07 does not itself govern a ratio.** `amount_limit` is guaranteed strictly positive by BM-US-01 BR-03, so no division-by-zero guard is needed. `Decimal` is chosen anyway, over `float`, because every other numeric value this codebase serialises already goes through `Decimal` for float-free, deterministic test assertions (constitution TST-06) — introducing the one `float` field in this response would reintroduce exactly the non-determinism VL-07 exists to rule out for money, even though a percentage is not itself money. No cap at 100 (spec BR-08) — FR-05's own "alerts when thresholds are reached" presupposes the ratio can exceed 100%. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only — no new top-level module; the same "additions to existing files"
+shape CM-US-02/WM-US-02 both used for their own list story).
+
+```text
+backend/app/
+├── schemas/
+│   └── budget.py                     # update: add BudgetProgressRead, BudgetListRead (A2)
+├── repositories/
+│   ├── budget_repo.py                # update: add list_owned() (A1, A3, A5)
+│   └── transaction_repo.py           # update: add get_expense_totals_by_wallet_category() (A4)
+└── services/
+    └── budget_service.py             # update: add list_budgets(), _month_bounds() (A2, A4, A5, A7, A11, A12)
+
+backend/app/api/v1/
+└── budgets.py                        # update: add GET /budgets (list) (A8, A10)
+
+backend/migrations/versions/
+└── <rev>_index_budgets_period.py     # NEW  index on budgets.period, down_revision = 2187429f50ce (current head) (A6)
+
+backend/tests/
+└── integration/test_bm_us_02_list_budgets.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No change to `core/deps.py` — `CurrentUserDep` is reused exactly as BM-US-01 already established (A8).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `BudgetModel` | `budgets` | none (read-only) | This story only reads. Still no `user_id`/`status`/`created_at` (BM-US-01 A7/A8/A11). The new index on `period` (A6) is the only schema change this story makes. |
+| `TransactionModel` | `transactions` | none (read-only) | Read for the first time by a Budget Management story — the sole source of every "amount spent" figure (A4). |
+| `BudgetProgressRead` (DTO) | — | `id`, `wallet_id`, `category_id`, `amount_limit`, `period`, `amount_spent`, `progress_percentage` | New per-item shape (A2) — not `BudgetRead`, which BM-US-01 AC-12/FR-11 fix at exactly five fields for the creation response. |
+| `BudgetListRead` (DTO) | — | `items: BudgetProgressRead[]`, `total`, `page`, `page_size` | New envelope (A2), mirrors `WalletListRead`/`CategoryListRead`/`TransactionListRead` — not in SDS's registry. |
+
+**DTOs** (`app/schemas/budget.py`, addition)
+
+```python
+class BudgetProgressRead(BaseModel):
+    """Per-item shape for the list endpoint (BM-US-02 AC-13, FR-13; SDS
+    §5.5.2 "current progress percentages"). Distinct from `BudgetRead` (A2)
+    — its own five fields are unchanged, this DTO simply repeats the same
+    four non-id fields and adds the two computed ones.
+    """
+
+    id: str
+    wallet_id: str
+    category_id: str
+    amount_limit: Decimal
+    period: date
+
+    # Computed at read time (A4, A12) — never stored on BudgetModel.
+    amount_spent: Decimal
+    progress_percentage: Decimal
+
+
+class BudgetListRead(BaseModel):
+    """New envelope (A2) — mirrors WalletListRead (WM-US-02), CategoryListRead
+    (CM-US-02), TransactionListRead (TM-US-02).
+    """
+
+    items: list[BudgetProgressRead]
+    total: int
+    page: int
+    page_size: int
+```
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Any authenticated User of any role may list their own active budgets | AC-01, FR-01, A8 | `GET /api/v1/budgets` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before any query parameter is evaluated | AC-03, FR-02 | `CurrentUserDep` resolves before FastAPI validates `page`/`page_size` |
+| Every budget query scoped to the caller — items and total alike | AC-07, FR-06, FR-07, A3, constitution SEC-08 | `budget_repo.list_owned()` — both queries join `wallets` and carry `WHERE wallets.user_id = :owner_id` |
+| Bounded, paginated results | AC-04, AC-05, AC-06, API-06, PF-04 | Router declares `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)` — out-of-range is `422`, not clamped |
+| Stable, deterministic order | AC-08, EC-03, BR-03, A1 | `ORDER BY id ASC` in `budget_repo.list_owned()` |
+| Restricted to the current calendar month | AC-09, EC-06, FR-09, BR-05, A5 | `budget_repo.list_owned()` filters `budgets.period == period`, `period` computed once in the service from `clock.utcnow()` |
+| Amount spent scoped per budget's own wallet+category, EXPENSE only, current month only | AC-10, EC-05, EC-08, EC-09, FR-10, BR-06, A4 | `transaction_repo.get_expense_totals_by_wallet_category()` — `GROUP BY wallet_id, category_id`, `WHERE type == EXPENSE AND timestamp in [period_start, period_end)` |
+| A budget with no matching expense defaults to zero, never omitted or erroring | AC-11, FR-11, BR-07, A4 | `budget_service.list_budgets()` looks up `spending.get((wallet_id, category_id), Decimal("0.00"))` |
+| Progress percentage, uncapped | AC-12, FR-12, BR-08, A12 | `(amount_spent / amount_limit * 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)` |
+| Response exposes exactly seven per-item fields, four envelope fields | AC-13, FR-13, constitution PF-03 | `BudgetProgressRead` / `BudgetListRead` — no ORM graph, no extra field |
+| Pure read, no commit | A10 | Router issues no `db.commit()` |
+
+**Repository additions**
+
+```python
+# budget_repo.py — new function alongside the existing get_by_wallet_category_period()/add_budget()
+def list_owned(
+    db: Session, *, user_id: str, period: date, page: int, page_size: int
+) -> tuple[Sequence[BudgetModel], int]:
+    """A page of the caller's own budgets whose `period` equals the current
+    calendar month, plus that owner's own total count (spec AC-01, AC-04,
+    AC-05, AC-07, AC-09; plan.md A1, A3, A5).
+
+    Ownership is transitive through a join to `wallets` (A3) — there is no
+    `budgets.user_id` column, the same shape `transaction_repo.list_owned()`
+    already established for `transactions`. A single join on `wallets` is
+    sufficient: BM-US-01 FR-13/BR-02 validates `wallet_id` and `category_id`
+    independently against the same caller at creation, so every stored row's
+    `category_id` is already guaranteed to belong to whoever owns its
+    `wallet_id` (A3). Ordered by `id`, the one column guaranteed to exist and
+    be unique without a schema change (A1).
+    """
+    conditions = [WalletModel.user_id == user_id, BudgetModel.period == period]
+
+    joined = select(BudgetModel).join(WalletModel, BudgetModel.wallet_id == WalletModel.id)
+
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(BudgetModel)
+            .join(WalletModel, BudgetModel.wallet_id == WalletModel.id)
+            .where(*conditions)
+        )
+        or 0
+    )
+    items = db.scalars(
+        joined.where(*conditions)
+        .order_by(BudgetModel.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return items, total
+```
+
+```python
+# transaction_repo.py — new function alongside the existing get_summary_totals()
+def get_expense_totals_by_wallet_category(
+    db: Session, *, user_id: str, period_start: datetime, period_end: datetime
+) -> dict[tuple[str, str], Decimal]:
+    """Sum the caller's own EXPENSE transactions in [period_start,
+    period_end), grouped by (wallet_id, category_id) — one entry per pair
+    actually present (spec BM-US-02 AC-10, BR-06; plan.md A4).
+
+    A (wallet_id, category_id) pair with no qualifying EXPENSE transaction in
+    the period produces no row at all -- GROUP BY omits empty groups, the
+    same trap get_summary_totals()'s own docstring documents -- so the caller
+    (budget_service.list_budgets) must default a missing key to
+    Decimal("0.00"); a missing key is never an error.
+    """
+    conditions = [
+        WalletModel.user_id == user_id,
+        TransactionModel.type == TransactionType.EXPENSE,
+        TransactionModel.timestamp >= period_start,
+        TransactionModel.timestamp < period_end,
+    ]
+    rows = db.execute(
+        select(TransactionModel.wallet_id, TransactionModel.category_id, func.sum(TransactionModel.amount))
+        .join(WalletModel, TransactionModel.wallet_id == WalletModel.id)
+        .where(*conditions)
+        .group_by(TransactionModel.wallet_id, TransactionModel.category_id)
+    ).all()
+    return {(row[0], row[1]): row[2] for row in rows}
+```
+
+**Service** (`app/services/budget_service.py`, addition)
+
+```python
+def _month_bounds(today: date) -> tuple[datetime, datetime]:
+    """The current calendar month as a half-open UTC interval [start, end)
+    (plan.md A5, A11) -- local to this module, deliberately not imported
+    from report_service (A11). `today` is always clock.utcnow().date().
+    """
+    start_date = today.replace(day=1)
+    if start_date.month == 12:
+        end_date = start_date.replace(year=start_date.year + 1, month=1)
+    else:
+        end_date = start_date.replace(month=start_date.month + 1)
+    return (
+        datetime.combine(start_date, time.min, tzinfo=UTC),
+        datetime.combine(end_date, time.min, tzinfo=UTC),
+    )
+
+
+def list_budgets(
+    db: Session, *, owner: UserModel, page: int, page_size: int
+) -> BudgetListRead:
+    """Assemble a page of the caller's own active budgets, each with its
+    computed spending progress (A2, A4, A5, A7, A12).
+    """
+    today = clock.utcnow().date()
+    period = today.replace(day=1)
+    period_start, period_end = _month_bounds(today)
+
+    items, total = budget_repo.list_owned(
+        db, user_id=owner.id, period=period, page=page, page_size=page_size
+    )
+    spending = transaction_repo.get_expense_totals_by_wallet_category(
+        db, user_id=owner.id, period_start=period_start, period_end=period_end
+    )
+
+    results = [
+        BudgetProgressRead(
+            id=budget.id,
+            wallet_id=budget.wallet_id,
+            category_id=budget.category_id,
+            amount_limit=budget.amount_limit,
+            period=budget.period,
+            amount_spent=(spent := spending.get((budget.wallet_id, budget.category_id), Decimal("0.00"))),
+            progress_percentage=(spent / budget.amount_limit * 100).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            ),
+        )
+        for budget in items
+    ]
+    return BudgetListRead(items=results, total=total, page=page, page_size=page_size)
+```
+
+**Router** (`app/api/v1/budgets.py`, addition)
+
+```python
+@router.get(
+    "",
+    response_model=BudgetListRead,
+    status_code=status.HTTP_200_OK,
+    summary="List the caller's active budgets",
+    description=(
+        "Returns every budget owned by the authenticated caller whose period "
+        "is the current calendar month, paginated, each carrying its current "
+        "amount spent and progress percentage."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        422: {"description": "VALIDATION_ERROR"},
+    },
+)
+def list_budgets(
+    db: DbDep,
+    current_user: CurrentUserDep,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+) -> BudgetListRead:
+    """Pure read — no `db.commit()` (A10)."""
+    return budget_service.list_budgets(db, owner=current_user, page=page, page_size=page_size)
+```
+
+**Sequence diagram — List Budgets**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request
+into `API` answered back to `UI` with a status code, one workflow.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as BudgetService
+    participant Store as Store
+
+    Note over UI,Store: Main flow — authenticated caller, page within range
+    UI->>API: GET /budgets
+    API->>Svc: list(input)
+    Note over Svc: The period is always the current calendar month, read from the system clock — never from the request (BR-05)
+    Svc->>Store: find a page of the caller's own budgets for the current period, plus the caller's own total count
+    Store-->>Svc: page of budgets, total count
+    Svc->>Store: find the caller's own expense totals for the current period, grouped by wallet and category
+    Store-->>Svc: expense totals per wallet-category pair
+    Note over Svc: A pair with no matching expense defaults to zero spent, never an error (BR-07)
+    Svc-->>API: budget list page, each with computed amount spent and progress percentage
+    API-->>UI: 200 budgets — id, wallet, category, amount limit, period, spent, progress, plus page and total
+
+    Note over UI,Store: Refusal scenarios — every branch below still returns a status to UI
+    opt Unauthenticated or expired credentials (AC-03)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+    opt page or page_size outside the accepted range (AC-06)
+        API-->>UI: 422 VALIDATION_ERROR
+    end
+```
+
+Only one workflow is drawn (DG-07) — the two `Svc→Store` calls are the one flow's own sequential steps,
+not a second flow, mirroring how the report and category/wallet list diagrams each fold a multi-query
+read into a single picture.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-03) | 401 | `NOT_AUTHENTICATED` |
+| `page` or `page_size` not a positive integer, or `page_size` > 100 (AC-06) | 422 | `VALIDATION_ERROR` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+No new error class this story — both codes already exist in `core/errors.py`, reused as-is. All in the
+flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02). No `403` (A8: no
+role restriction) and no `404`/`409` (a read has nothing to find-by-id or conflict on).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `budget_service.list_budgets()` computes the period, combines the two repository calls, and decides how to default a missing spend to zero |
+| AR-02 Thin router | Required | Router binds `page`/`page_size`, resolves `CurrentUserDep`, delegates, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `budget_repo.list_owned()` and the new `transaction_repo.get_expense_totals_by_wallet_category()` are queries only |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | `BudgetModel` → `BudgetProgressRead` mapping and the spend/percentage computation both happen in `budget_service.list_budgets()` |
+| AR-05 No framework objects in services | Required | `list_budgets()` takes plain `owner: UserModel`, `page`, `page_size`; no `Request`/`Response` |
+| AR-06 One transaction per request | N/A | Pure read, nothing to commit (A10) |
+| AR-07 Router → service → repository | Required | Router never calls `budget_repo`/`transaction_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only to existing modules |
+| API-01 Versioned plural path | Required | `GET /api/v1/budgets` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required | `200` read · `401` · `422` validation |
+| API-04 Prefixed error codes | N/A | No new error code — both already catalogued |
+| API-05 No generic status endpoint | Required | `GET /budgets` is a plain resource-listing route |
+| API-06 Pagination | Required | `page`/`page_size`, default 25, max 100, total in `BudgetListRead` |
+| API-07 Explicit response_model | Required | `response_model=BudgetListRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `budget_repo.py`/`transaction_repo.py`/`budget_service.py`/`budgets.py` |
+| NC-02 Naming | Required | `BudgetProgressRead`, `BudgetListRead` — new, not in SDS §2.1's registry (A2) |
+| NC-04 Column naming | N/A | No column renamed; `period` is newly indexed (A6), not renamed |
+| NC-05 Enum serialisation | N/A | No new enum this story |
+| NC-06 Concise service methods | Required | `budget_service.list_budgets`, matching `category_service.list_categories`/`wallet_service.list_wallets` |
+| VL-01 Pydantic is the source of truth | Required | `Query(ge=1, le=100)` constraints are the validation, not a service-layer clamp |
+| VL-02 Errors grouped | Required | Reused `RequestValidationError` handler |
+| VL-07 Decimal money | N/A | `progress_percentage` is a ratio, not money — VL-07 does not require it. `Decimal`, quantized to two places, is used anyway for deterministic, float-free serialisation (A12); `amount_spent` itself *is* money and stays `Decimal(15,2)` under VL-07 as always |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case in this story (A8 — no role restriction) |
+| SEC-08 Ownership filter | Required | Both the page query and the total-count query carry the `wallets.user_id` predicate via the join (A3); the spend aggregate carries the identical predicate (A4) |
+| SEC-10 No enumeration | N/A | This endpoint takes no email or identifying parameter to probe |
+| SEC-11 Rate limiting | N/A | Scoped by its own text to the invitation and activation endpoints |
+| LA-01 No secrets in logs | N/A | No credential or token is handled by this story |
+| LA-02 / LA-04 Audit | N/A (by decision) | Listing is not one of LA-04's three named audited events (A9) |
+| PF-01 300 ms p95 | Required | Two indexed lookups plus an in-Python combination, no slow I/O |
+| PF-02 Indexed lookups | Required | `budgets.period` newly indexed (A6); `budgets.wallet_id`, `transactions.wallet_id`/`timestamp` already indexed (BM-US-01, TM-US-02) |
+| PF-03 DTO projection | Required | `BudgetProgressRead` — seven fields, no ORM graph |
+| PF-04 Bounded lists | Required | Enforced by API-06's cap |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| TST-05 Boundaries | Required | EC-02 covers the exact `page_size=100` boundary; EC-08 covers the month-boundary instant |
+| DOD-02 Migration | Required | One Alembic revision adding an index on `budgets.period`, `down_revision = 2187429f50ce` (current head) — the first migration this listing-shaped story needs, unlike CM-US-02/WM-US-02 (A6) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No budget-list screen exists this round, the same treatment BM-US-01 gave budget creation — `mobile/`'s fixture-driven prototype covers only UM-US-01's invite screen (`CLAUDE.md` §5). |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `BudgetProgressRead` (seven fields), `BudgetListRead` envelope (A2) | `backend/app/schemas/budget.py` | Open |
+| T-02 | Alembic revision adding an index on `budgets.period`, `down_revision = 2187429f50ce` (A6) | `backend/migrations/versions/` | Open |
+| T-03 | `budget_repo.list_owned(db, *, user_id, period, page, page_size)` — join on `wallets`, filter on `period` (A1, A3, A5) | `backend/app/repositories/budget_repo.py` | Open |
+| T-04 | `transaction_repo.get_expense_totals_by_wallet_category(db, *, user_id, period_start, period_end)` (A4) | `backend/app/repositories/transaction_repo.py` | Open |
+| T-05 | `budget_service.list_budgets(db, *, owner, page, page_size) -> BudgetListRead`, plus local `_month_bounds()` helper (A2, A4, A5, A7, A11, A12) | `backend/app/services/budget_service.py` | Open |
+| T-06 | `GET /api/v1/budgets` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `CurrentUserDep`, no `db.commit()` (A8, A10) | `backend/app/api/v1/budgets.py` | Open |
+| T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_02_list_budgets.py` | Open |

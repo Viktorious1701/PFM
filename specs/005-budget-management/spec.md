@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** BM-US-01 *(specified)*
+> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(specified)*
 
 ---
 
@@ -228,3 +228,333 @@ As an **authenticated User**, I want to set a monthly spending limit against one
 - **A duplicate budget for the same wallet, category, and period is refused — unlike WM-US-01/CM-US-01's own "no uniqueness" precedent for wallet and category names.** A duplicate wallet or category *name* is not actually ambiguous — two wallets both named "Savings" are simply two different accounts — but two active budgets covering the same wallet, category, and month would leave "the" spending limit governing that period undefined, which FR-05's own spending-tracking-and-threshold language presupposes is singular. This case was reasoned about on its own terms rather than pattern-matched to the prior stories' conclusion. Recorded as `plan.md` A3.
 - **The SDS §2.4.3 Budget Monitoring State machine (`DRAFT → NORMAL → WARNING → EXCEEDED → ARCHIVED`) is not implemented by this story.** `budgets` carries no `status` column anywhere in the ERD, so every budget this story creates simply *is* — there is no draft or inactive state to be in. The Gherkin's "creates an **active** budget" describes the fact that it now exists and will be monitored going forward, not a stored value. Deriving and storing real progress state against that state machine is BM-US-03's concern. Recorded as `plan.md` A8.
 - **Reading a created budget back is out of scope.** This story is verified through what `POST /api/v1/budgets` itself returns and through direct inspection of the stored row — there is no `GET` endpoint yet (BM-US-02/03).
+
+---
+
+## BM-US-02: List Budgets
+
+> **IDs in this section are local to BM-US-02.** `AC-01` below is not BM-US-01's `AC-01`; each story
+> section numbers its own criteria, per `artifact-templates/spec-templates.md` and this codebase's own
+> CM-US-02/WM-US-02/TM-US-02 precedent. Only `TC-NN` (and `QF-NN`) in `test_cases.md` run continuously
+> across the epic (`CLAUDE.md` §1.1 rule 4).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-05 — searched in full; no entry for BM-US-02 exists**
+> `### Feature-05: Budget Management` contains exactly one story, `#### US-05-01: Create a Budget for a Wallet [MVP]` (already quoted in full in this file's BM-US-01 section above), immediately followed by `### Feature-06: Transaction Management`. There is no `US-05-02` header at all, bare or otherwise — unlike WM-US-02, which at least inherited a bare `#### US-03-02: View List of Wallets [MVP]` header from its own feature section. This story is in the identical position `CM-US-02` was already in for its own listing story in this codebase — no bare header at all — the same, not a lesser, textual anchor than that precedent already worked from.
+
+**SRS §1.5 Conceptual Domain Model**
+> **Budget** — A spending limit a User sets for one Category within one Wallet, over a monthly period, that Transactions are measured against (FR-05).
+>
+> | Relationship | Cardinality | Meaning |
+> | Wallet scoped_to Budget | one Wallet → many Budgets | A spending limit is set against one Wallet at a time (FR-05) |
+> | Category applies_to Budget | one Category → many Budgets | A Budget's limit applies to spending in one Category (FR-05) |
+
+**SRS §2 FR-05 — Budget Tracking & Overspending Alerts**
+> The System shall allow Users to define spending caps (`Budget`) per Category and Wallet for a monthly timeframe. The System shall track spending against this limit and trigger visual warnings when thresholds (75%, 100%) are reached.
+
+**SDS §5.5.2 BM-US-02: List Budgets (USER)**
+> **Goal:** View active budgets and current progress percentages.
+
+One sentence — the entire technical baseline for this story, the same thinness CM-US-02's and WM-US-02's own SDS goals had.
+
+**SDS §2.1 Domain Layer Traceability**
+> | **Budget** | `budgets` | `BudgetModel` | `BudgetRead`, `BudgetCreate` |
+
+Neither DTO named here carries a spending figure or a percentage — this story's SDS §5.5.2 goal names "current progress percentages" as its own deliverable, but §2.1's registry has no `Budget`-list DTO at all to point to, the identical gap CM-US-02's own Source section already found for `CategoryListRead`.
+
+**SDS §4.3.3 Data Design — `BUDGETS` ERD** *(reused from BM-US-01's own Source quote)*
+> ```
+> BUDGETS {
+>     uuid id PK
+>     uuid wallet_id FK
+>     uuid category_id FK
+>     decimal amount_limit
+>     date period
+> }
+> ```
+> No `user_id` column, and no `status` column — confirmed again here since this story's central question ("what does *active* mean with no status column to hold it") turns on exactly this absence.
+
+**constitution.md API-06, PF-04, SEC-08, PF-02**
+> **API-06** List endpoints accept `page` and `page_size`; default 25, maximum 100. Responses carry a total count.
+> **PF-04** List endpoints are always bounded (see API-06). No unbounded result set reaches a client.
+> **SEC-08** Queries for user-owned data filter on the authenticated `user_id` at the repository layer (SDS §7.2, SRS NFR-06).
+> **PF-02** Columns used in `WHERE`, `JOIN`, or `ORDER BY` carry an index. No N+1 query patterns.
+
+**constitution.md VL-07**
+> Monetary values use `Decimal` with `DECIMAL(15,2)` precision (SRS NFR-05). Never float.
+
+**`specs/005-budget-management/plan.md` BM-US-01 A8** *(this story's own inherited open question)*
+> The SDS §2.4.3 Budget Monitoring State machine (`DRAFT → NORMAL → WARNING → EXCEEDED → ARCHIVED`) is not implemented by this story, and `budgets` gets no `status` column ... Deriving and persisting real progress against that state machine needs spending data this story never reads, which is BM-US-03's job.
+
+**`specs/005-budget-management/spec.md` BM-US-01 "Out of scope for this story"** *(this story's own inherited open question)*
+> Deliberately excluded from *this* story even though adjacent: computing or displaying spending progress against a budget's limit, and the 75%/100% threshold alerts FR-05's second sentence describes (BM-US-03 — this story only creates the budget row; it never reads a Transaction and never computes a percentage).
+
+This story reconciles those two inherited notes against SDS §5.5.2's own literal goal text for *this specific* story — see *Assumptions & Dependencies*.
+
+### Out of scope for this story
+
+BM-US-01 (create a budget, already implemented) · BM-US-03 (view budget status & alerts — the `DRAFT`/`NORMAL`/`WARNING`/`EXCEEDED`/`ARCHIVED` state machine and the 75%/100% threshold-crossing alerts) · BM-US-04 (update a budget) · BM-US-05 (delete a budget) · WM-US-*, CM-US-*, UM-US-04/05, DC-US-01/02 · Features 06–11 · SRS §6 Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: classifying a budget into a named state (`WARNING`, `EXCEEDED`, …) or raising any alert when a threshold is crossed — this story returns the raw progress percentage only, leaving interpretation of that number to BM-US-03 (see *Assumptions & Dependencies*); filtering the list by wallet, category, or any other dimension (neither SRS nor SDS names one for this story, mirroring CM-US-02's own declination to filter by `type`); viewing a single budget's detail (no such story is named in this round); and updating or deleting a budget (BM-US-04/05).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to view my active budgets together with how much I have spent
+against each one so far this month, so that I can see at a glance which spending caps I am approaching
+or have already exceeded, without doing the arithmetic myself.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully list every active budget the caller owns, with its current spending progress**
+**Given** an authenticated User who owns one or more budgets whose period is the current calendar month,
+**When** the User requests the list of budgets,
+**Then** the system returns every one of that User's budgets whose period is the current calendar month,
+each carrying its identifier, wallet, category, amount limit, period, amount spent so far, and progress
+percentage, together with the total number of such budgets that User owns.
+
+**AC-02: Return an empty list for a User with no active budgets**
+**Given** an authenticated User who owns no budget whose period is the current calendar month (whether
+because they own no budget at all, or own only budgets from an earlier month),
+**When** the User requests the list,
+**Then** the system returns an empty list of budgets together with a total of zero, not an error.
+
+**AC-03: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to list budgets,
+**Then** the system denies the request before evaluating any query parameter, returns nothing, and
+returns an unauthenticated error.
+
+**AC-04: Bound and paginate the result by default**
+**Given** an authenticated User,
+**When** the User requests the list without specifying a page or page size,
+**Then** the system returns at most 25 of that User's active budgets on the first page, together with
+the total number of such budgets that User owns.
+
+**AC-05: Accept an explicit page and page size within range**
+**Given** an authenticated User,
+**When** the User requests a specific page together with a page size up to the maximum of 100,
+**Then** the system returns that page of the User's own active budgets and the same accurate total.
+
+**AC-06: Reject a page or page size outside the allowed range**
+**Given** an authenticated User,
+**When** the requested page or page size is zero, negative, otherwise not a positive integer, or a
+page size greater than 100,
+**Then** the system rejects the request with a validation error identifying the offending parameter,
+and returns no budgets.
+
+**AC-07: A User only ever sees their own budgets**
+**Given** at least two Users, each owning one or more budgets whose period is the current calendar
+month,
+**When** one of them requests the list,
+**Then** the response's budgets are exactly the ones that User owns — none belonging to any other User
+appears — and the reported total counts only the requesting User's own active budgets, never every
+active budget in the system.
+
+**AC-08: Return the list in a stable, deterministic order**
+**Given** an authenticated User who owns two or more active budgets, with nothing created, changed, or
+removed in between,
+**When** the User requests the same page more than once, or requests adjacent pages of one paging
+sequence,
+**Then** the system returns the same budgets in the same relative order every time, consistently across
+those adjacent pages.
+
+**AC-09: Only budgets whose period is the current calendar month are ever listed**
+**Given** an authenticated User who owns a budget created in an earlier calendar month, in addition to
+one or more budgets whose period is the current calendar month,
+**When** the User requests the list,
+**Then** the earlier budget never appears in the response and is never counted in the total, while the
+current-month budgets appear normally — determined solely by the system, never by any value the User
+supplies.
+
+**AC-10: Amount spent reflects only expense activity against that same budget's own wallet and category, within the current month**
+**Given** an authenticated User with an active budget for a specific wallet and category, and one or
+more expense transactions recorded against that same wallet and category within the current calendar
+month,
+**When** the User requests the list,
+**Then** that budget's amount spent equals the sum of exactly those expense transactions — never a
+transaction against a different wallet, a different category, dated outside the current month, or that
+is not an expense.
+
+**AC-11: A budget with no matching expense activity yet still appears, with nothing spent**
+**Given** an authenticated User with an active budget against which no expense transaction has yet been
+recorded this month,
+**When** the User requests the list,
+**Then** that budget still appears in the response, with its amount spent reported as exactly zero —
+never omitted, and never an error.
+
+**AC-12: Progress percentage reflects spending as a proportion of the amount limit, and may exceed it**
+**Given** an authenticated User's active budget with a known amount limit and a known amount spent,
+**When** the User requests the list,
+**Then** that budget's progress percentage equals its amount spent divided by its amount limit,
+expressed as a percentage — including a value greater than 100 when spending has already surpassed the
+limit, never capped or clamped to 100.
+
+**AC-13: Return exactly the documented budget fields, wrapped in a paginated envelope**
+**Given** an authenticated User requests the list,
+**When** the system returns the result,
+**Then** each entry carries exactly the budget's identifier, wallet reference, category reference,
+amount limit, period, amount spent, and progress percentage — no other field, and no data belonging to
+any other User's budget — and the overall response additionally carries the total count, the page
+number, and the page size.
+
+### Edge Cases
+
+**EC-01**: **A page number beyond the last available page** — returns an empty list of budgets together
+with the accurate, caller-scoped total, not a not-found error.
+
+**EC-02**: **Page size at the exact maximum** — a page size of exactly 100 is accepted; 101 is rejected
+under AC-06. The cap is a ceiling, not a target.
+
+**EC-03**: **More active budgets than fit on one page** — paging through every page with a fixed page
+size returns every one of the caller's own active budgets exactly once, with no duplicate and no gap,
+in the same stable order AC-08 establishes.
+
+**EC-04**: **A caller whose role is ADMIN, who also owns budgets** — sees, through this endpoint, only
+the budgets that caller owns. Nothing about this endpoint grants an ADMIN visibility into another
+User's budgets.
+
+**EC-05**: **An expense transaction recorded against a different wallet, or a different category, than
+a given budget's own** — never contributes to that budget's amount spent, even when the caller owns
+both the budget and the transaction's wallet or category.
+
+**EC-06**: **A budget whose period is a calendar month before the current one** — the row remains on
+record (this story creates, updates, and deletes nothing), but it never appears in the list and is
+never counted in the total, for as long as the current month has moved past it.
+
+**EC-07**: **Two or more active budgets that share the same wallet but different categories, or the
+same category but different wallets** — each is listed as its own entry, with its own independently
+computed amount spent and progress percentage.
+
+**EC-08**: **A transaction timestamped at the first instant of the immediately preceding or following
+calendar month** — excluded from every budget's amount spent, even though it is only moments outside
+the current month's boundary.
+
+**EC-09**: **An income transaction recorded against the same wallet and category as an active budget**
+— never contributes to that budget's amount spent; only expense transactions count.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to retrieve the list of active
+  budgets they own (SDS §5.5.2; mirrors BM-US-01 FR-01's "any role" treatment).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before any query parameter (constitution API-08; mirrors BM-US-01 FR-02).
+- **FR-03**: The system must **accept** `page` and `page_size` query parameters, defaulting to page 1
+  and page size 25 when omitted (constitution API-06).
+- **FR-04**: The system must **reject** a `page` or `page_size` value that is not a positive integer, or
+  a `page_size` greater than 100, with a validation error (constitution API-06, PF-04).
+- **FR-05**: The system must **return**, alongside every page, the total number of active budgets the
+  caller owns (constitution API-06).
+- **FR-06**: The system must **restrict** every budget query this endpoint issues — both the bounded
+  page of items and the total count — to only budgets belonging to the caller, ownership being
+  transitive through the budget's own wallet (constitution SEC-08; BR-01).
+- **FR-07**: The system must **never include**, in either the returned budgets or the reported total,
+  any budget belonging to a User other than the caller, regardless of the caller's role (constitution
+  SEC-08; AC-07, EC-04).
+- **FR-08**: The system must **order** the returned budgets by a stable, deterministic key, consistently
+  across pages of the same request pattern (mirrors CM-US-02/WM-US-02 FR-08).
+- **FR-09**: The system must **restrict** the list to budgets whose period is exactly the current
+  calendar month, determined solely by the system clock — never by any value the caller supplies (AC-09,
+  EC-06; BR-05).
+- **FR-10**: The system must **compute**, for every listed budget, an amount spent equal to the sum of
+  that budget's own wallet's and category's expense transactions dated within the current calendar month
+  (AC-10, EC-05, EC-08, EC-09; BR-06).
+- **FR-11**: The system must **default** amount spent to zero for a budget with no matching expense
+  transaction, never omitting the budget and never treating it as an error (AC-11; BR-07).
+- **FR-12**: The system must **compute** progress percentage as amount spent divided by amount limit,
+  expressed as a percentage, permitting a value above 100 (AC-12; BR-08).
+- **FR-13**: The system must **return**, for every listed budget, exactly its identifier, wallet
+  reference, category reference, amount limit, period, amount spent, and progress percentage — and, for
+  the overall response, exactly the total, page, and page size alongside the items (AC-13).
+
+#### Business Rules
+
+- **BR-01**: Only the budgets owned by the authenticated caller are ever returned by this endpoint;
+  ownership is entirely transitive through the budget's own wallet and category, the same shape BM-US-01
+  BR-01 established at creation time (SDS §5.5.2 "(USER)"; constitution SEC-08; EC-04).
+- **BR-02**: A page never carries more than 100 budgets; the default when unspecified is 25 (FR-03,
+  FR-04; mirrors CM-US-02/WM-US-02 BR-02).
+- **BR-03**: Budgets are ordered by a stable key, consistently across pages of the same request pattern;
+  this story establishes no chronological ordering guarantee, because no creation timestamp exists on
+  `Budget` (FR-08; mirrors CM-US-02/WM-US-02 BR-03).
+- **BR-04**: The reported total always equals the count of active budgets owned by the caller, never the
+  system-wide count and never a count including a budget from a different period (FR-05, FR-06, FR-07,
+  FR-09).
+- **BR-05**: "Active" means the budget's period is exactly the current calendar month, determined solely
+  by the system clock; a budget from any other month is excluded from every response this endpoint
+  returns, though it remains on record unchanged (FR-09, AC-09, EC-06).
+- **BR-06**: A budget's amount spent is computed independently, scoped to exactly that budget's own
+  wallet and category, counting only expense-type transactions dated within the current calendar month;
+  a transaction against a different wallet, a different category, a different type, or outside the
+  current month never contributes (FR-10, EC-05, EC-08, EC-09).
+- **BR-07**: A budget with no matching expense transaction reports an amount spent of exactly zero; this
+  is never treated as an error or as a reason to omit the budget (FR-11, AC-11).
+- **BR-08**: A budget's progress percentage carries no upper bound; it may legitimately exceed 100 once
+  spending surpasses the amount limit (FR-12, AC-12).
+
+#### Key Entities
+
+- **Budget**: As BM-US-01 defined it, plus two fields computed only by this endpoint — amount spent and
+  progress percentage — derived at read time from the caller's own Transactions and never persisted on
+  the Budget row itself (SDS §5.5.2). This story reads a Budget; it creates, updates, and deletes none.
+- **Wallet**: Reused unchanged. Referenced, not owned, by this story — a budget's ownership and its
+  matching transactions are both reached through `wallet_id`.
+- **Category**: Reused unchanged. Referenced the same way as Wallet.
+- **Transaction**: Reused from Feature-06 with no new field. Read-only for this story — the first
+  Budget Management story to read one. Every amount spent figure is derived by summing existing expense
+  Transaction rows dated within the current month, matched to a Budget by its wallet and category.
+- **User**: Reused. The authenticated caller's own ownership of the referenced Wallet — and,
+  transitively, the Budget — is the only scope this story ever queries by.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can retrieve every active budget they own, each carrying an accurate
+  spending progress figure, in one call.
+- **SC-02**: No request to this endpoint can return an unbounded number of rows.
+- **SC-03**: No User can see another User's budget, or another User's budget count, through this
+  endpoint, regardless of role.
+- **SC-04**: A User can page through their entire active-budget set with an accurate total and no
+  duplicated or skipped budget.
+- **SC-05**: A User with no active budgets receives an empty list and a zero total, never an error.
+- **SC-06**: A budget's amount spent and progress percentage always reflect only that budget's own
+  wallet, category, expense activity, and the current month — never another budget's, another User's,
+  or another period's data.
+- **SC-07**: A budget whose period is not the current calendar month never appears through this
+  endpoint, though its stored row is never altered or removed by it.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01), Create a Wallet (WM-US-01), Create a Category (CM-US-01), and Create a Budget
+  (BM-US-01) are already implemented.** So are Create/List a Transaction (TM-US-01/TM-US-02) — this is
+  the first Budget Management story whose acceptance criteria depend on Transaction data existing, since
+  "amount spent" has no other source.
+- **"Active" reads as "the budget's period equals the current calendar month," resolved the same way
+  `FR-US-01`'s own summary report already resolved an identical absence of an explicit filter.**
+  `budgets` carries no `status` column at all (BM-US-01 plan.md A8) — there is no draft or inactive
+  state, so SDS §5.5.2's word "active" cannot mean a stored value. Two readings compete: "every budget
+  ever created" (ignoring the word entirely), or "the budget whose period governs spending right now"
+  (reading "active" the way the SRS's own domain model already uses the concept — a spending limit
+  currently being measured against, SRS §1.5). The second reading is preferred because it is the only
+  one under which "current progress percentages" (the same SDS sentence's second half) is well-defined
+  for every listed row: a budget from a past month has no "current" period left to measure fresh
+  transactions against, without inventing a second, unasked-for filter parameter letting the caller pick
+  which past month to inspect. This mirrors `FR-US-01`'s own "the period is always the current calendar
+  month, determined by the system clock, never client input" idiom, applied here to filter which rows
+  appear rather than to bound a single computed report. Not escalated as `[NEEDS RULING]`: nothing in
+  `SRS.md`/`SDS.md` disagrees with this reading, it only under-specifies — the same shape as BM-US-01
+  A2's own period decision.
+- **Computing the progress percentage belongs to this story, not BM-US-03 — narrowing what BM-US-01's
+  own spec.md "Out of scope" note said.** BM-US-01's spec.md attributed "computing or displaying
+  spending progress against a budget's limit" broadly to BM-US-03, written before this story's own SDS
+  line existed to read closely. SDS §5.5.2's goal for *this* story explicitly names "current progress
+  percentages" as its own deliverable, distinct from the SDS §2.4.3 state machine's `WARNING`/`EXCEEDED`
+  classification and FR-05's "trigger visual warnings when thresholds (75%, 100%) are reached" — both of
+  which are about *naming a state* and *raising an alert*, not about the underlying number. This story
+  computes and returns the raw percentage; classifying it into a named state or raising an alert when a
+  threshold is crossed remains BM-US-03's. This is reading SDS §5.5.2's own text for its own story
+  precisely, not extending either reference document.
+- **Budgets are never deleted or archived by this or any other currently implemented story.** A budget
+  from an earlier month simply stops appearing here once the calendar has moved past it — its row is
+  untouched, per BR-05.
