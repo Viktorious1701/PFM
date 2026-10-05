@@ -6,6 +6,7 @@ PF-03 (DTO projection).
 
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +45,9 @@ class BudgetProgressRead(BaseModel):
     §5.5.2 "current progress percentages"). Distinct from `BudgetRead`
     (plan.md A2) — that DTO's own five fields are unchanged, this one simply
     repeats the same four non-id fields and adds the two computed ones.
+
+    BM-US-03 adds `status` as an eighth, purely additive field (plan.md A3)
+    — the seven fields BM-US-02 already documents are unchanged.
     """
 
     id: str
@@ -55,6 +59,11 @@ class BudgetProgressRead(BaseModel):
     # Computed at read time (A4, A12) — never stored on BudgetModel.
     amount_spent: Decimal
     progress_percentage: Decimal
+
+    # BM-US-03: classified at read time from progress_percentage, never
+    # stored on BudgetModel (A1, A2). Only the three reachable states are
+    # valid values — Pydantic itself rejects anything else (A9).
+    status: Literal["NORMAL", "WARNING", "EXCEEDED"]
 
 
 class BudgetListRead(BaseModel):

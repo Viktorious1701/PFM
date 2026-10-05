@@ -192,7 +192,11 @@ def test_authenticated_user_lists_every_active_budget_they_own_with_computed_pro
     items = {item["id"]: item for item in body["items"]}
     assert set(items.keys()) == {budget_1["id"], budget_2["id"]}
     for item in items.values():
-        assert set(item.keys()) == {
+        # TC-27's own prose lists the fields a budget "carries" without
+        # claiming exclusivity (contrast TC-28's "exactly"), so this stays a
+        # subset check — BM-US-03's additive `status` field (plan.md A3)
+        # does not contradict it. The exclusivity check lives in TC-28/TC-60.
+        assert {
             "id",
             "wallet_id",
             "category_id",
@@ -200,7 +204,7 @@ def test_authenticated_user_lists_every_active_budget_they_own_with_computed_pro
             "period",
             "amount_spent",
             "progress_percentage",
-        }
+        }.issubset(item.keys())
     assert Decimal(str(items[budget_1["id"]]["amount_spent"])) == Decimal("50.00")
 
 
@@ -210,9 +214,14 @@ def test_authenticated_user_lists_every_active_budget_they_own_with_computed_pro
 def test_response_item_exposes_exactly_seven_fields_wrapped_in_paginated_envelope(
     client: TestClient, user_headers: dict[str, str], normal_user: UserModel, db: Session
 ) -> None:
-    """TC-28: top-level body exposes exactly items, total, page, page_size;
-    each entry in items exposes exactly the seven documented fields — no
-    more, and in particular no `user_id` and no `status`.
+    """TC-28, as updated by BM-US-03 plan.md A4/T-04 (QF-15): the top-level
+    body exposes exactly items, total, page, page_size; each entry in items
+    now exposes exactly the **eight** documented fields — the seven BM-US-02
+    shipped plus BM-US-03's own `status` — no more, and in particular no
+    `user_id`. `test_cases.md`'s own TC-28 prose is left unchanged per
+    `CLAUDE.md` §1.1; only this pytest function body changes. See also
+    BM-US-03 TC-60, this story's own current statement of the response
+    shape.
     """
     wallet = _make_wallet(db, user_id=normal_user.id)
     category = _make_category(db, user_id=normal_user.id)
@@ -232,7 +241,9 @@ def test_response_item_exposes_exactly_seven_fields_wrapped_in_paginated_envelop
         "period",
         "amount_spent",
         "progress_percentage",
+        "status",
     }
+    assert body["items"][0]["status"] in {"NORMAL", "WARNING", "EXCEEDED"}
 
 
 # --- TC-29: the empty case ----------------------------------------------------

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** BM-US-01 *(TC-01…TC-26, implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(TC-27…TC-51, specified)*
+> **Stories in this file:** BM-US-01 *(TC-01…TC-26, implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(TC-27…TC-51, implemented, verified — 420 total passing)* · BM-US-03 *(TC-52…TC-63, specified)* · BM-US-04 *(TC-64…TC-83, specified)*
 
 ---
 
@@ -836,4 +836,568 @@ confirmed `amount_spent`/`progress_percentage` for real — see the gate message
 - **When:** The ADMIN requests the list of budgets
 - **Then:** The response is `200`; `items` contains exactly the ADMIN's own budget — never the other User's — despite the elevated role
 - **AC:** EC-04, BR-01
+- **Type:** integration
+
+---
+
+## BM-US-03: View Budget Status & Alerts
+
+> **IDs in this section are local to BM-US-03** — except `TC-NN`, which continues this epic file's own
+> numbering: BM-US-02 used `TC-27`…`TC-51`, so this story continues from `TC-52`. **`QF-NN` also
+> continues here** (BM-US-02 used `QF-07`…`QF-12`; this story continues from `QF-13`).
+
+### Quality Findings
+
+#### QF-13
+
+**Description.** `spec.md` EC-01/EC-02 require the two exact boundary values — `75.00%` and `100.00%` —
+to classify a precise way (`NORMAL` and `EXCEEDED` respectively), not the more lenient "somewhere near the
+boundary" a loosely-written test could get away with asserting.
+
+**Impact.** A classification helper that used a strict `<` where SDS §2.4.3 specifies `<=` (or vice versa
+at the `100%` boundary) would pass every test that only exercises values comfortably on one side of a
+threshold, and only a test pinned to the literal boundary value itself would catch the off-by-one.
+
+**Recommendation.** `TC-55` constructs a budget whose `amount_spent`/`amount_limit` ratio is exactly
+`75.00` (e.g. `amount_limit=100.00`, a recorded expense transaction totalling `75.00`) and asserts
+`status == "NORMAL"`; `TC-56` constructs a ratio of exactly `100.00` and asserts `status == "EXCEEDED"`.
+`TC-57`/`TC-58` construct the immediately adjacent values (`75.01`, `99.99`) and assert `"WARNING"` for
+both, proving the boundary is not merely approximately in the right place but exactly where SDS §2.4.3
+draws it.
+
+#### QF-14
+
+**Description.** `spec.md` AC-07/EC-06 require `status` to never equal `DRAFT` or `ARCHIVED`, but
+`plan.md` A1 establishes this is a **structural** guarantee (no code path can produce either state through
+the public API, and `BudgetProgressRead.status`'s own `Literal` type would reject them even if one tried)
+rather than a behaviour a test can trigger and observe failing. The identical situation already arose once
+in this file — BM-US-02 QF-08's single-join ownership design, which a test suite could not directly
+counter-test for the same structural reason.
+
+**Impact.** No test in this file can construct a budget in the `DRAFT` or `ARCHIVED` state to prove the
+classifier correctly refuses it, because no such budget can exist to try.
+
+**Recommendation.** Accept the structural proof over a constructed counter-example, the same resolution
+BM-US-02 QF-08 already used in this codebase. `TC-61` is the closest available witness: it asserts, across
+every budget returned by a representative multi-budget request, that `status` is always one of exactly
+`{"NORMAL", "WARNING", "EXCEEDED"}` — not because the test forced a `DRAFT`/`ARCHIVED` case and watched it
+get rejected, but because every status this endpoint can ever produce is drawn from that closed set by
+construction (plan.md A9's `Literal` type). The same test also asserts `budgets` carries no persisted
+`status` column, confirming BM-US-01 A8's "no status column" ruling still holds after this story.
+
+#### QF-15
+
+**Description.** This story's own `plan.md` A3/A4 record a direct conflict with BM-US-02's own
+`test_cases.md` TC-28, which asserts the list endpoint's response carries "exactly the seven documented
+fields ... and in particular no `status`." That assertion was accurate as of BM-US-02; this story's own
+AC-05 is exactly what makes it stop being accurate, by design.
+
+**Impact.** Left unaddressed, TC-28's underlying pytest function would start failing the moment this
+story ships — not because of a defect, but because the response legitimately grew an eighth field this
+story's own spec requires. A reviewer seeing a newly-red, previously-green test without this context could
+mistake it for a regression.
+
+**Recommendation.** `CLAUDE.md` §1.1 forbids rewriting an existing `TC-NN`'s prose, so TC-28's text above
+is left exactly as BM-US-02 wrote it — a correct historical record of what BM-US-02 itself tested and
+shipped. `TC-60` below is this story's own, current statement of the response's shape going forward: it
+supersedes TC-28's field count in spirit without altering TC-28's text, and plan.md T-04 opens the
+Implement-step task to update only TC-28's underlying pytest function body (not its `test_cases.md`
+prose) to assert eight fields including `status`.
+
+### Acceptance Criteria Classification
+
+No budget-status screen exists in `mobile/` this round, and no SRS UXR names one for this endpoint — the
+same basis BM-US-01/BM-US-02 each used for their own all-`[API]` classification. SRS UXR-02's color-token
+language describes how a future UI would *render* a `status` value this story returns, not a screen this
+round builds.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Classify NORMAL at or below 75% | **[API]** | Backend classification rule |
+| AC-02 | Classify WARNING strictly between 75% and 100% | **[API]** | Backend classification rule |
+| AC-03 | Classify EXCEEDED at or above 100% | **[API]** | Backend classification rule |
+| AC-04 | Zero spending classifies NORMAL | **[API]** | Backend classification rule, boundary-adjacent |
+| AC-05 | Status returned alongside every previously documented field | **[API]** | Response-payload contract; bounded by QF-15 |
+| AC-06 | Status reflects current data, never a value computed earlier | **[API]** | Backend computation freshness contract |
+| AC-07 | Only the three reachable states are ever returned | **[API]** | Backend contract; bounded by QF-14 |
+| AC-08 | No alert/notification record created | **[API]** | Negative-assertion backend contract |
+| EC-01 | Progress percentage at exactly 75.00% | **[API]** | Boundary value; bounded by QF-13 |
+| EC-02 | Progress percentage at exactly 100.00% | **[API]** | Boundary value; bounded by QF-13 |
+| EC-03 | Progress percentage just above 75% | **[API]** | Boundary value; bounded by QF-13 |
+| EC-04 | Progress percentage just below 100% | **[API]** | Boundary value; bounded by QF-13 |
+| EC-05 | Spending reduced after crossing a threshold | **[API]** | Same scenario as AC-06 |
+| EC-06 | Status never DRAFT or ARCHIVED | **[API]** | Structural contract; bounded by QF-14 |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-52 | — |
+| AC-02 | [API] | TC-53 | — |
+| AC-03 | [API] | TC-54 | — |
+| AC-04 | [API] | TC-55 | — |
+| AC-05 | [API] | TC-60 | — |
+| AC-06 | [API] | TC-62 | — |
+| AC-07 | [API] | TC-61 | — |
+| AC-08 | [API] | TC-63 | — |
+| EC-01 | [API] | TC-55 | — |
+| EC-02 | [API] | TC-56 | — |
+| EC-03 | [API] | TC-57 | — |
+| EC-04 | [API] | TC-58 | — |
+| EC-05 | [API] | TC-62 | — |
+| EC-06 | [API] | TC-61 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no budget-status
+> screen exists this round, and none is named by any SRS UXR. **Known coverage limits, accepted:** `status`
+> never equaling `DRAFT`/`ARCHIVED` is proven structurally, not by constructing either state through the
+> public API — no code path can produce them (QF-14), the identical limitation BM-US-02 QF-08 already
+> accepted for its own single-join ownership design.
+
+### Test Implementation Map *(filled at step 4)*
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-52 | `tests/integration/test_bm_us_03_budget_status.py::test_a_budget_spent_comfortably_under_the_normal_threshold_is_classified_normal` | PASS |
+| TC-53 | `tests/integration/test_bm_us_03_budget_status.py::test_a_budget_spent_strictly_between_75_and_100_percent_is_classified_warning` | PASS |
+| TC-54 | `tests/integration/test_bm_us_03_budget_status.py::test_a_budget_spent_at_or_above_100_percent_is_classified_exceeded` | PASS |
+| TC-55 | `tests/integration/test_bm_us_03_budget_status.py::test_zero_spend_and_the_exact_75_boundary_are_both_classified_normal` | PASS |
+| TC-56 | `tests/integration/test_bm_us_03_budget_status.py::test_the_exact_100_boundary_is_classified_exceeded` | PASS |
+| TC-57 | `tests/integration/test_bm_us_03_budget_status.py::test_a_progress_percentage_just_above_75_percent_is_classified_warning_not_normal` | PASS |
+| TC-58 | `tests/integration/test_bm_us_03_budget_status.py::test_a_progress_percentage_just_below_100_percent_is_classified_warning_not_exceeded` | PASS |
+| TC-59 | `tests/integration/test_bm_us_03_budget_status.py::test_a_budget_deep_in_normal_territory_stays_normal_across_repeated_requests` | PASS |
+| TC-60 | `tests/integration/test_bm_us_03_budget_status.py::test_the_response_item_exposes_exactly_eight_fields_including_status` | PASS |
+| TC-61 | `tests/integration/test_bm_us_03_budget_status.py::test_every_status_is_one_of_the_three_reachable_states_and_budgets_has_no_status_column` | PASS |
+| TC-62 | `tests/integration/test_bm_us_03_budget_status.py::test_status_moves_from_exceeded_back_to_normal_once_the_causing_transaction_is_deleted` | PASS |
+| TC-63 | `tests/integration/test_bm_us_03_budget_status.py::test_no_alert_notification_or_audit_record_is_created_when_a_budget_becomes_exceeded` | PASS |
+
+Root cause of zero failures: none — all 12 passed on first green run after the red baseline (see Implement-step gate message for the red/green pytest transcript). BM-US-02's own `TC-27`/`TC-28` pytest bodies were also updated for this story's additive `status` field (plan.md A4, A11) and reverified green in the same full-suite run.
+
+---
+
+### TC-52: A budget whose spending is comfortably under the NORMAL threshold is classified NORMAL
+
+- **US:** BM-US-03
+- **Given:** An authenticated User's active budget with `amount_limit` `200.00` and a recorded expense transaction totalling `100.00` against that budget's own wallet and category this month (progress percentage `50.00`)
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget's `status` is `"NORMAL"`
+- **AC:** AC-01, FR-01, FR-02, BR-02
+- **Type:** integration
+
+### TC-53: A budget whose spending is strictly between 75% and 100% is classified WARNING
+
+- **US:** BM-US-03
+- **Given:** An authenticated User's active budget with `amount_limit` `100.00` and a recorded expense transaction totalling `85.00` (progress percentage `85.00`)
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget's `status` is `"WARNING"`
+- **AC:** AC-02, FR-01, FR-03, BR-02
+- **Type:** integration
+
+### TC-54: A budget whose spending is at or above 100% is classified EXCEEDED
+
+- **US:** BM-US-03
+- **Given:** An authenticated User's active budget with `amount_limit` `100.00` and a recorded expense transaction totalling `120.00` (progress percentage `120.00`)
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget's `status` is `"EXCEEDED"`
+- **AC:** AC-03, FR-01, FR-04, BR-02
+- **Type:** integration
+
+### TC-55: A budget with no spending yet, and a budget at exactly the 75.00% boundary, are both classified NORMAL
+
+- **US:** BM-US-03
+- **Given:** Two of an authenticated User's active budgets: `B1` with no transaction recorded at all (progress percentage `0.00`), and `B2` with `amount_limit` `100.00` and a recorded expense transaction totalling exactly `75.00` (progress percentage exactly `75.00`)
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; both `B1`'s and `B2`'s `status` are `"NORMAL"` — `B2` proves the upper bound of `NORMAL` is inclusive, not merely "close to 75%"
+- **AC:** AC-01, AC-04, EC-01, FR-02 *(assertion technique per QF-13)*
+- **Type:** integration
+
+### TC-56: A budget at exactly the 100.00% boundary is classified EXCEEDED
+
+- **US:** BM-US-03
+- **Given:** An authenticated User's active budget with `amount_limit` `100.00` and a recorded expense transaction totalling exactly `100.00` (progress percentage exactly `100.00`)
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget's `status` is `"EXCEEDED"` — proving the lower bound of `EXCEEDED` is inclusive, not merely "close to 100%"
+- **AC:** AC-03, EC-02, FR-04 *(assertion technique per QF-13)*
+- **Type:** integration
+
+### TC-57: A progress percentage just above the NORMAL boundary is classified WARNING, not NORMAL
+
+- **US:** BM-US-03
+- **Given:** An authenticated User's active budget with `amount_limit` `10000.00` and a recorded expense transaction totalling `7501.00` (progress percentage `75.01`)
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget's `status` is `"WARNING"` — the boundary established by `TC-55` is not widened in `NORMAL`'s favor
+- **AC:** EC-03, FR-03 *(assertion technique per QF-13)*
+- **Type:** integration
+
+### TC-58: A progress percentage just below the EXCEEDED boundary is classified WARNING, not EXCEEDED
+
+- **US:** BM-US-03
+- **Given:** An authenticated User's active budget with `amount_limit` `10000.00` and a recorded expense transaction totalling `9999.00` (progress percentage `99.99`)
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; that budget's `status` is `"WARNING"` — the boundary established by `TC-56` is not widened in `EXCEEDED`'s favor
+- **AC:** EC-04, FR-03 *(assertion technique per QF-13)*
+- **Type:** integration
+
+### TC-59: A budget deep in NORMAL territory remains NORMAL across repeated requests with no change in data
+
+- **US:** BM-US-03
+- **Given:** An authenticated User's active budget with progress percentage `10.00`, requested twice with nothing created, changed, or removed in between
+- **When:** The User requests the list of budgets each time
+- **Then:** Both responses report `status` `"NORMAL"` for that budget — a stable, non-boundary case establishing the baseline before `TC-62` exercises a status that changes
+- **AC:** AC-01, FR-02
+- **Type:** integration
+
+### TC-60: The response item exposes exactly the eight documented fields, including status
+
+- **US:** BM-US-03
+- **Given:** An authenticated User with one active budget
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; the top-level body exposes exactly the keys `items`, `total`, `page`, `page_size` (unchanged from BM-US-02 TC-28); each entry in `items` exposes **exactly** the keys `id`, `wallet_id`, `category_id`, `amount_limit`, `period`, `amount_spent`, `progress_percentage`, and `status` — no more, and `status` is present with a value from `{"NORMAL", "WARNING", "EXCEEDED"}`. This is the current statement of the response's shape, superseding BM-US-02 TC-28's seven-field count for this story onward without altering TC-28's own text (plan.md A4; `QF-15`)
+- **AC:** AC-05, FR-07
+- **Type:** integration
+
+### TC-61: Every returned status is one of the three reachable states, and budgets carries no persisted status column
+
+- **US:** BM-US-03
+- **Given:** An authenticated User with several active budgets spanning `NORMAL`, `WARNING`, and `EXCEEDED` progress percentages
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200`; every item's `status` is one of exactly `"NORMAL"`, `"WARNING"`, or `"EXCEEDED"` — never `"DRAFT"` and never `"ARCHIVED"` — and inspecting `BudgetModel`'s own table definition confirms `budgets` still carries no `status` column (plan.md A1, A2, A9)
+- **AC:** AC-07, EC-06, FR-06, BR-01, BR-03 *(assertion technique per QF-14)*
+- **Type:** integration
+
+### TC-62: A budget's status moves from EXCEEDED back to NORMAL once the transaction that caused it is deleted
+
+- **US:** BM-US-03
+- **Given:** An authenticated User's active budget with `amount_limit` `100.00` and a recorded expense transaction of `150.00` against that budget's own wallet and category this month, first confirmed to report `status` `"EXCEEDED"`
+- **When:** That transaction is then deleted and the User requests the list of budgets again
+- **Then:** The second response is `200`; that same budget's `status` is now `"NORMAL"` (progress percentage `0.00`) — computed fresh from the data as it now stands, not the earlier `"EXCEEDED"` value
+- **AC:** AC-06, EC-05, FR-05
+- **Type:** integration
+
+### TC-63: No alert, notification, or audit record is created when a budget becomes WARNING or EXCEEDED
+
+- **US:** BM-US-03
+- **Given:** An authenticated User's active budget that newly qualifies for `EXCEEDED` on this request (no prior request against it exists)
+- **When:** The User requests the list of budgets
+- **Then:** The response is `200` with `status` `"EXCEEDED"`; no notification, alert, or audit-log row of any kind is created as a side effect of this request
+- **AC:** AC-08, FR-08, BR-04
+- **Type:** integration
+
+---
+
+## BM-US-04: Update a Budget
+
+> **IDs in this section are local to BM-US-04** — except `TC-NN`, which continues this epic file's own
+> numbering: BM-US-03 used `TC-52`…`TC-63`, so this story continues from `TC-64`. **`QF-NN` also
+> continues here** (BM-US-03 used `QF-13`…`QF-15`; this story continues from `QF-16`).
+
+### Quality Findings
+
+#### QF-16
+
+**Description.** AC-03/AC-04 require a budget reference that does not exist at all and one that exists
+but belongs to a different User to produce "the same not-found outcome" — mirrors BM-US-01 QF-01, now
+applied to the budget's own id instead of a *referenced* wallet/category. `plan.md` A4 makes this true by
+construction, since `budget_repo.get_owned_by_id()` filters by `user_id` in the query itself and returns
+`None` either way. A test that merely checks both cases return *some* `404` would not distinguish
+"genuinely identical" from "two different messages that both happen to carry status 404."
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — for instance, a message that only names "belongs to another account" in the
+ownership-mismatch case, itself a minor information leak about another User's data.
+
+**Recommendation.** `TC-68` compares the full response body of the ownership-mismatch case against
+`TC-67`'s not-found-at-all case and asserts they match exactly — `error_code`, `message`, and `details`
+all identical, not merely the status code.
+
+#### QF-17
+
+**Description.** AC-08/BR-02 is a business rule this story introduces for the first time — no earlier
+Budget Management story ever restricted an *operation* to only active (current-month) budgets; BM-US-02's
+own "active" filtering only ever affected what appears in a *list*, never what could be acted on. Every
+fixture across this file so far creates budgets only in the current month, so a test suite that never
+constructs a deliberately past-period budget could pass even if this story's own active-period check were
+missing entirely.
+
+**Impact.** A regression dropping the active-period check would silently allow updating historical
+budgets, corrupting the "the cap in force during that month" meaning BR-02 exists to protect — and no
+existing test in this file would catch it, since none of them ever update a past-period budget.
+
+**Recommendation.** `TC-76` monkeypatches the clock to a fixed instant, creates a budget (landing it in
+that month), advances the clock by a full calendar month, then attempts the update — the same clock-seam
+technique BM-US-02 TC-40 already used for a different purpose (constitution TST-06) — and asserts `409`
+`BUDGET_NOT_ACTIVE` with the stored `amount_limit` unchanged.
+
+#### QF-18
+
+**Description.** FR-09's fixed check order (ownership before the active-period check) cannot be directly
+exercised by a single request that fails both at once, the way BM-US-01 TC-26 did for wallet-before-
+category — a budget that does not exist, or belongs to someone else, cannot simultaneously be "the
+caller's own past-period budget," so no request can trigger "wrong owner" and "wrong period" together
+from the caller's own perspective. This ordering is also structurally forced, not merely conventional:
+the active-period check reads `budget.period`, which requires the budget to already have been fetched.
+
+**Impact.** No test can distinguish "genuinely fixed order" from "coincidentally only one order is even
+executable," so the strongest available test instead proves the *consequence* that matters: a non-owner
+never learns a budget's active-or-inactive state.
+
+**Recommendation.** Accept the structural proof over a constructed counter-example, the same resolution
+BM-US-02 QF-08 and BM-US-03 QF-14 already used in this file for a similarly unconstructable ordering case.
+`TC-83` has a non-owner attempt to update another User's deliberately past-period budget, and asserts the
+response is `404` — never `409` — confirming the ownership refusal is what the caller actually observes,
+regardless of that budget's own period.
+
+#### QF-19
+
+**Description.** AC-09's claim that wallet, category, and period are unchanged could be satisfied by a
+test that only reads the `PATCH` response body — a service bug that mutated the stored row's
+`wallet_id`/`category_id`/`period` while still constructing a response DTO from the old, pre-mutation
+in-memory values would pass such a test undetected.
+
+**Impact.** A regression that let `update_amount_limit()` touch more than `amount_limit` (for instance, a
+careless refactor passing the whole payload into a generic ORM update) could corrupt a budget's identity
+columns while every response-body-only test kept passing.
+
+**Recommendation.** `TC-77` asserts both the response body's `wallet_id`/`category_id`/`period` and the
+stored `budgets` row's own `wallet_id`/`category_id`/`period` columns — read independently through the
+test's own `db` session — match the budget's values from immediately before the update.
+
+### Acceptance Criteria Classification
+
+No budget-update screen exists in `mobile/` this round, and no SRS UXR names one — the same basis every
+prior Budget Management story used for its own all-`[API]` classification.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully update a budget's amount limit | **[API]** | No UI surface exists or is named by any UXR this round |
+| AC-02 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-03 | Reject an update to a budget that does not exist | **[API]** | Persistence/ownership contract; bounded by QF-16 |
+| AC-04 | Reject an update to a budget owned by a different User | **[API]** | Persistence/ownership contract; bounded by QF-16 |
+| AC-05 | Reject a missing amount limit | **[API]** | Payload validation |
+| AC-06 | Reject an amount limit that is zero or negative | **[API]** | Payload validation |
+| AC-07 | Reject an amount limit carrying more than two decimal places | **[API]** | Payload validation |
+| AC-08 | Reject an update to a budget whose period is not the current calendar month | **[API]** | Backend conflict rule; bounded by QF-17 |
+| AC-09 | A successful update changes only the amount limit | **[API]** | Response/persistence contract; bounded by QF-19 |
+| AC-10 | Return exactly the documented budget fields | **[API]** | Response-payload contract |
+| EC-01 | Amount limit at the smallest positive value | **[API]** | Boundary value |
+| EC-02 | Amount limit exceeding the `DECIMAL(15,2)` total digit width | **[API]** | Payload validation, distinct from AC-07's decimal-places check |
+| EC-03 | A budget reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
+| EC-04 | An amount limit set below the budget's current amount spent | **[API]** | Cross-story composition with BM-US-02/BM-US-03 |
+| EC-05 | An amount limit equal to the value the budget already holds | **[API]** | Backend rule — not a special-cased no-op |
+| EC-06 | A wallet, category, or period value submitted alongside the amount limit | **[API]** | Structural-ignore contract |
+| EC-07 | A caller who owns a different budget attempts to update another User's budget | **[API]** | Persistence/ownership contract; bounded by QF-16, QF-18 |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-64, TC-65 | — |
+| AC-02 | [API] | TC-66 | — |
+| AC-03 | [API] | TC-67 | — |
+| AC-04 | [API] | TC-68 | — |
+| AC-05 | [API] | TC-70 | — |
+| AC-06 | [API] | TC-71, TC-72 | — |
+| AC-07 | [API] | TC-74 | — |
+| AC-08 | [API] | TC-76 | — |
+| AC-09 | [API] | TC-77 | — |
+| AC-10 | [API] | TC-79 | — |
+| EC-01 | [API] | TC-73 | — |
+| EC-02 | [API] | TC-75 | — |
+| EC-03 | [API] | TC-69 | — |
+| EC-04 | [API] | TC-80 | — |
+| EC-05 | [API] | TC-81 | — |
+| EC-06 | [API] | TC-78 | — |
+| EC-07 | [API] | TC-82, TC-83 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no budget-update
+> screen exists this round, and none is named by any SRS UXR. **Known coverage limits, accepted:** FR-09's
+> fixed check order (ownership before active-period) cannot be directly exercised by a dual-failure
+> request, because the two failure modes cannot co-occur from the caller's own perspective (QF-18) — the
+> same kind of structural limitation BM-US-02 QF-08 and BM-US-03 QF-14 already accepted in this file. The
+> closest available witness (`TC-83`) proves the consequence that matters — a budget's active state is
+> never disclosed to a non-owner — rather than the literal check order.
+
+### Test Implementation Map
+
+*(filled at step 4 — this story has not yet been implemented)*
+
+---
+
+### TC-64: An authenticated User updates a budget's amount limit — 200 with the updated budget
+
+- **US:** BM-US-04
+- **Given:** An authenticated User who owns a budget whose period is the current calendar month, with `amount_limit` `200.00`
+- **When:** `PATCH /api/v1/budgets/{id}` is sent with `amount_limit` `350.00`
+- **Then:** The response is `200`; the body carries `id` unchanged, `wallet_id`/`category_id`/`period` unchanged, and `amount_limit` `350.00`
+- **AC:** AC-01, FR-01, FR-05, FR-08
+- **Type:** integration
+
+### TC-65: Updating a budget persists the new amount limit in storage
+
+- **US:** BM-US-04
+- **Given:** An authenticated User with an active budget
+- **When:** The amount limit is updated successfully
+- **Then:** Direct inspection of the `budgets` row for that id shows the new `amount_limit`; exactly one row still exists for that budget id
+- **AC:** AC-01, FR-01
+- **Type:** integration
+
+### TC-66: An unauthenticated caller is denied with 401
+
+- **US:** BM-US-04
+- **Given:** A caller presenting no `Authorization` header
+- **When:** A budget update is submitted with an otherwise valid payload
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`; the target budget's stored `amount_limit` is unchanged
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-67: A budget_id matching no budget at all is rejected with 404 BUDGET_NOT_FOUND
+
+- **US:** BM-US-04
+- **Given:** An authenticated User
+- **When:** `PATCH /api/v1/budgets/{id}` is sent with a `budget_id` that matches no budget in the system
+- **Then:** The response is `404` with `error_code` `BUDGET_NOT_FOUND`; nothing is changed
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-68: A budget_id belonging to a different User is rejected with the identical outcome as TC-67
+
+- **US:** BM-US-04
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a budget
+- **When:** `A` submits a `PATCH` against `B`'s `budget_id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-67's response; `B`'s budget is unchanged
+- **AC:** AC-04, FR-03 *(assertion technique per QF-16)*
+- **Type:** integration
+
+### TC-69: A budget reference that is not a well-formed identifier is rejected with the same outcome as a well-formed but non-existent one
+
+- **US:** BM-US-04
+- **Given:** An authenticated User
+- **When:** `PATCH /api/v1/budgets/not-a-real-id` is sent with a valid payload
+- **Then:** The response is `404` `BUDGET_NOT_FOUND`, identical to TC-67's response
+- **AC:** EC-03, FR-03
+- **Type:** integration
+
+### TC-70: A missing amount limit is rejected with 422
+
+- **US:** BM-US-04
+- **Given:** An authenticated User who owns a budget
+- **When:** A `PATCH` is submitted with an empty body (no `amount_limit`)
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying the `amount_limit` field; the stored value is unchanged
+- **AC:** AC-05, FR-05
+- **Type:** integration
+
+### TC-71: An amount limit of exactly zero is rejected with 422
+
+- **US:** BM-US-04
+- **Given:** An authenticated User who owns a budget
+- **When:** A `PATCH` is submitted with `amount_limit` `0.00`
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying the `amount_limit` field; the stored value is unchanged
+- **AC:** AC-06, FR-06, BR-01
+- **Type:** integration
+
+### TC-72: A negative amount limit is rejected with 422
+
+- **US:** BM-US-04
+- **Given:** An authenticated User who owns a budget
+- **When:** A `PATCH` is submitted with `amount_limit` `-50.00`
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying the `amount_limit` field; the stored value is unchanged
+- **AC:** AC-06, FR-06, BR-01
+- **Type:** integration
+
+### TC-73: An amount limit of exactly 0.01 is accepted
+
+- **US:** BM-US-04
+- **Given:** An authenticated User who owns a budget
+- **When:** A `PATCH` is submitted with `amount_limit` `0.01`
+- **Then:** The response is `200`; the updated budget's `amount_limit` is `0.01`
+- **AC:** EC-01, FR-06
+- **Type:** integration
+
+### TC-74: An amount limit with three decimal places is rejected, not rounded
+
+- **US:** BM-US-04
+- **Given:** An authenticated User who owns a budget with `amount_limit` `200.00`
+- **When:** A `PATCH` is submitted with `amount_limit` `100.005`
+- **Then:** The response is `422` `VALIDATION_ERROR` whose `details` names `amount_limit`; the stored `amount_limit` remains `200.00` — no rounded `100.01` or truncated `100.00` value
+- **AC:** AC-07, BR-01, FR-05
+- **Type:** integration
+
+### TC-75: An amount limit exceeding 15 total digits is rejected
+
+- **US:** BM-US-04
+- **Given:** An authenticated User who owns a budget
+- **When:** A `PATCH` is submitted with an `amount_limit` of 14 integer digits and 2 decimal places (16 significant digits total)
+- **Then:** The response is `422` `VALIDATION_ERROR`; the stored value is unchanged
+- **AC:** EC-02, BR-01, FR-05
+- **Type:** integration
+
+### TC-76: An update against a budget whose period is an earlier calendar month is rejected with 409 BUDGET_NOT_ACTIVE
+
+- **US:** BM-US-04
+- **Given:** An authenticated User, with the system clock frozen to a known instant, who creates a budget (landing it in that month) with `amount_limit` `200.00`; the clock is then advanced by one full calendar month
+- **When:** A `PATCH` is submitted against that now-past-period budget with `amount_limit` `500.00`
+- **Then:** The response is `409` with `error_code` `BUDGET_NOT_ACTIVE`; the stored `amount_limit` remains `200.00`
+- **AC:** AC-08, BR-02, FR-04 *(assertion technique per QF-17)*
+- **Type:** integration
+
+### TC-77: A successful update leaves wallet, category, and period unchanged, verified against the stored row directly
+
+- **US:** BM-US-04
+- **Given:** An authenticated User with an active budget for wallet `W1`/category `C1`
+- **When:** The budget's `amount_limit` is updated successfully
+- **Then:** The response's `wallet_id`/`category_id`/`period` match their pre-update values; a direct read of the `budgets` row through the test's own `db` session confirms the stored `wallet_id`/`category_id`/`period` columns are unchanged
+- **AC:** AC-09, BR-04 *(assertion technique per QF-19)*
+- **Type:** integration
+
+### TC-78: A wallet, category, or period value submitted alongside the amount limit is silently ignored
+
+- **US:** BM-US-04
+- **Given:** An authenticated User with an active budget for wallet `W1`/category `C1`
+- **When:** A `PATCH` is submitted with a valid `amount_limit` plus the extra keys `wallet_id` (a different, real wallet the User owns), `category_id` (a different, real category), and `period` (`"2020-01-01"`)
+- **Then:** The response is `200`; the updated budget's `wallet_id`/`category_id`/`period` remain `W1`/`C1`/the original period — never the submitted extra values
+- **AC:** EC-06, FR-07
+- **Type:** integration
+
+### TC-79: The response exposes exactly the five documented fields
+
+- **US:** BM-US-04
+- **Given:** An authenticated User with an active budget
+- **When:** The amount limit is updated successfully
+- **Then:** The response body's keys are exactly `id`, `wallet_id`, `category_id`, `amount_limit`, `period` — no more, and in particular no `amount_spent`, `progress_percentage`, or `status`
+- **AC:** AC-10, FR-08
+- **Type:** integration
+
+### TC-80: Lowering the amount limit below the current amount spent is accepted, and the next list request reflects EXCEEDED
+
+- **US:** BM-US-04
+- **Given:** An authenticated User with an active budget, `amount_limit` `200.00`, and a recorded expense transaction totalling `150.00` against that budget's own wallet and category this month
+- **When:** The budget's `amount_limit` is updated down to `100.00`
+- **Then:** The `PATCH` response is `200` with `amount_limit` `100.00`; a subsequent `GET /api/v1/budgets` shows that budget with `amount_spent` `150.00`, `progress_percentage` `150.00`, and `status` `"EXCEEDED"`
+- **AC:** EC-04
+- **Type:** integration
+
+### TC-81: Updating to the same value the budget already holds is accepted as an ordinary update
+
+- **US:** BM-US-04
+- **Given:** An authenticated User with an active budget, `amount_limit` `200.00`
+- **When:** A `PATCH` is submitted with `amount_limit` `200.00`
+- **Then:** The response is `200`; the updated budget's `amount_limit` is `200.00`, unchanged
+- **AC:** EC-05
+- **Type:** integration
+
+### TC-82: A caller who owns a different budget of their own cannot update another User's budget
+
+- **US:** BM-US-04
+- **Given:** Two authenticated Users, `A` (owns budget `BA`) and `B` (owns budget `BB`)
+- **When:** `A` submits a `PATCH` against `BB`'s `budget_id`
+- **Then:** The response is `404` `BUDGET_NOT_FOUND`, identical to TC-67/TC-68's responses; `BB`'s stored `amount_limit` is unchanged, and `A`'s own `BA` is also unaffected
+- **AC:** EC-07, FR-03
+- **Type:** integration
+
+### TC-83: A non-owner attempting to update another User's past-period budget still receives 404, never 409 — a budget's active state is never disclosed to a non-owner
+
+- **US:** BM-US-04
+- **Given:** Two authenticated Users `A` and `B`; `B` owns a budget whose period is an earlier calendar month (the system clock advanced past it)
+- **When:** `A` submits a `PATCH` against `B`'s past-period `budget_id` with a valid `amount_limit`
+- **Then:** The response is `404` `BUDGET_NOT_FOUND` — never `409` `BUDGET_NOT_ACTIVE`; `B`'s budget is unchanged
+- **AC:** EC-07, FR-03, FR-09 *(assertion technique per QF-18)*
 - **Type:** integration

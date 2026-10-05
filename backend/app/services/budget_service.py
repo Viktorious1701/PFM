@@ -11,6 +11,7 @@ LA-04's three named audited events, and no AC or FR in spec.md asks for one.
 
 from datetime import UTC, date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Literal
 
 from sqlalchemy.orm import Session
 
@@ -89,6 +90,20 @@ def _month_bounds(today: date) -> tuple[datetime, datetime]:
     )
 
 
+def _classify_status(progress_percentage: Decimal) -> Literal["NORMAL", "WARNING", "EXCEEDED"]:
+    """SDS §2.4.3, read literally (plan.md A1, A6): `<= 75%` is NORMAL
+    (inclusive upper bound), the open interval `(75%, 100%)` is WARNING, and
+    `>= 100%` is EXCEEDED (inclusive lower bound). `DRAFT`/`ARCHIVED` are
+    never produced here — neither is reachable through this endpoint (A1),
+    and the return type admits no other value (A9).
+    """
+    if progress_percentage <= Decimal("75.00"):
+        return "NORMAL"
+    if progress_percentage < Decimal("100.00"):
+        return "WARNING"
+    return "EXCEEDED"
+
+
 def list_budgets(db: Session, *, owner: UserModel, page: int, page_size: int) -> BudgetListRead:
     """Assemble a page of the caller's own active budgets, each with its
     computed spending progress (A2, A4, A5, A7, A12).
@@ -114,9 +129,12 @@ def list_budgets(db: Session, *, owner: UserModel, page: int, page_size: int) ->
             amount_spent=(
                 spent := spending.get((budget.wallet_id, budget.category_id), Decimal("0.00"))
             ),
-            progress_percentage=(spent / budget.amount_limit * 100).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
+            progress_percentage=(
+                progress := (spent / budget.amount_limit * 100).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
             ),
+            status=_classify_status(progress),
         )
         for budget in items
     ]

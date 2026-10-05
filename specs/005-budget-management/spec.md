@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(specified)*
+> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(implemented, verified — 420 total passing)* · BM-US-03 *(specified)* · BM-US-04 *(specified)*
 
 ---
 
@@ -558,3 +558,546 @@ the current month's boundary.
 - **Budgets are never deleted or archived by this or any other currently implemented story.** A budget
   from an earlier month simply stops appearing here once the calendar has moved past it — its row is
   untouched, per BR-05.
+
+---
+
+## BM-US-03: View Budget Status & Alerts
+
+> **IDs in this section are local to BM-US-03.** `AC-01` below is not BM-US-01's or BM-US-02's `AC-01`;
+> each story section numbers its own criteria, per `artifact-templates/spec-templates.md` and this
+> codebase's own CM-US-02/WM-US-02/TM-US-02/BM-US-02 precedent. Only `TC-NN` (and `QF-NN`) in
+> `test_cases.md` run continuously across the epic (`CLAUDE.md` §1.1 rule 4).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-05 — searched in full; no entry for BM-US-03 exists**
+> The same situation BM-US-02 was already in (its own Source section above documents this precedent):
+> `### Feature-05: Budget Management` contains exactly one story, `#### US-05-01: Create a Budget for a
+> Wallet [MVP]` (quoted in full in this file's BM-US-01 section), immediately followed by
+> `### Feature-06: Transaction Management`. There is no `US-05-02` or `US-05-03` header at all. This story
+> is grounded the same way BM-US-02 was: in SRS §1.5's conceptual domain model and SRS §2 FR-05's text
+> directly, not in a bare story header that does not exist.
+
+**SRS §1.5 Conceptual Domain Model**
+> **Budget** — A spending limit a User sets for one Category within one Wallet, over a monthly period,
+> that Transactions are measured against (FR-05).
+
+**SRS §2 FR-05 — Budget Tracking & Overspending Alerts**
+> The System shall allow Users to define spending caps (`Budget`) per Category and Wallet for a monthly
+> timeframe. The System shall track spending against this limit and trigger visual warnings when
+> thresholds (75%, 100%) are reached.
+
+**SRS §4 UXR-02 — At-a-Glance Financial Clarity**
+> Dashboard widgets must use strong visual hierarchy and color tokens (🟢 Green = Healthy, 🟡 Yellow =
+> Warning, 🔴 Red = Budget Exceeded) to convey financial health instantly without reading raw data tables.
+
+**SDS §5.5.3 BM-US-03: View Budget Status & Alerts (USER)**
+> **Goal:** Display visual warning indicators when spending exceeds threshold limits (75%, 100%).
+
+**SDS §2.4.3 Budget Monitoring State** *(quoted verbatim, not re-derived)*
+> ```mermaid
+> stateDiagram-v2
+>     [*] --> DRAFT : Budget defined
+>     DRAFT --> NORMAL : Spending <= 75% limit
+>     NORMAL --> WARNING : 75% < Spending < 100%
+>     WARNING --> EXCEEDED : Spending >= 100%
+>     EXCEEDED --> NORMAL : Transaction deleted/reversed
+>     NORMAL --> ARCHIVED : Period ends
+> ```
+> Read literally: `<= 75%` is `NORMAL` (inclusive upper bound), the open interval `(75%, 100%)` is
+> `WARNING`, and `>= 100%` is `EXCEEDED` (inclusive lower bound).
+
+**`specs/005-budget-management/plan.md` BM-US-01 A8** *(this story's own inherited open question)*
+> The SDS §2.4.3 Budget Monitoring State machine ... is not implemented by this story, and `budgets` gets
+> no `status` column ... deriving and persisting real progress against that state machine is BM-US-03's
+> job.
+
+**`specs/005-budget-management/plan.md` BM-US-02 A7** *(the narrowing this story inherits)*
+> Computing `progress_percentage` and `amount_spent` is [BM-US-02's] own job, not BM-US-03's ...
+> classifying it into a named state or raising an alert when a threshold is crossed remains BM-US-03's.
+
+**constitution.md NC-05**
+> Enum values are `UPPER_SNAKE_CASE` strings in the database and serialise as the same literal in JSON
+> ... Human-friendly labels are a client concern.
+
+**constitution.md PF-03**
+> Responses are built from DTO projections — never a full ORM entity graph.
+
+### Out of scope for this story
+
+BM-US-01 (create a budget, implemented) · BM-US-02 (list budgets with `amount_spent`/`progress_percentage`,
+implemented) · BM-US-04 (update a budget) · BM-US-05 (delete a budget) · Feature-08 Notification
+Management (NM-US-01) — persisting or delivering any alert/notification record is explicitly excluded,
+this story only exposes the classification data a client could use to render one · WM-US-*, CM-US-*,
+UM-US-04/05, DC-US-01/02 · Features 06, 07, 09–11 · SRS §6 Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: adding a `status` column to the `budgets` table — classification
+stays computed at read time, per BM-US-01 A8's own "no status column" ruling, which this story narrows
+further rather than overturns (see *Assumptions & Dependencies*); a new endpoint — this story extends the
+existing `GET /budgets` response, no new route is introduced; and any mobile/UI screen — no SRS UXR names
+one this round, and `mobile/` stays a fixture-driven prototype scoped to UM-US-01 only (CLAUDE.md §5).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want each of my budgets to carry a plain status describing how close it
+is to its limit, so that I can tell at a glance — without doing the arithmetic myself — which of my
+spending caps are healthy, which are approaching their limit, and which I have already exceeded.
+
+**Acceptance Criteria**:
+
+**AC-01: Classify a budget as NORMAL when spending is at or below 75% of its limit**
+**Given** an authenticated User's active budget whose progress percentage is 75% or less,
+**When** the User requests the list of budgets,
+**Then** that budget's status is `NORMAL`.
+
+**AC-02: Classify a budget as WARNING when spending is strictly between 75% and 100% of its limit**
+**Given** an authenticated User's active budget whose progress percentage is greater than 75% and less
+than 100%,
+**When** the User requests the list of budgets,
+**Then** that budget's status is `WARNING`.
+
+**AC-03: Classify a budget as EXCEEDED when spending is at or above 100% of its limit**
+**Given** an authenticated User's active budget whose progress percentage is 100% or more,
+**When** the User requests the list of budgets,
+**Then** that budget's status is `EXCEEDED`.
+
+**AC-04: A budget with no spending yet is classified as NORMAL**
+**Given** an authenticated User's active budget against which no expense transaction has been recorded
+this month, so its progress percentage is exactly zero,
+**When** the User requests the list of budgets,
+**Then** that budget's status is `NORMAL`, consistently with AC-01's inclusive upper bound.
+
+**AC-05: Status is returned alongside every previously documented field**
+**Given** an authenticated User requests the list of budgets,
+**When** the system returns the result,
+**Then** each entry carries its status in addition to — never in place of — every field BM-US-02 already
+documents: identifier, wallet reference, category reference, amount limit, period, amount spent, and
+progress percentage.
+
+**AC-06: Status always reflects the current data, never a value computed earlier**
+**Given** an authenticated User's active budget whose status was previously reported as `EXCEEDED`, and a
+transaction that contributed to that budget's spending is then deleted or reversed, bringing its progress
+percentage back to 75% or below,
+**When** the User requests the list of budgets again,
+**Then** that budget's status is now `NORMAL`, computed fresh from the data as it stands at the moment of
+the request.
+
+**AC-07: Only the three states reachable through ordinary use are ever returned**
+**Given** an authenticated User requests the list of budgets, under any combination of inputs this story's
+other criteria describe,
+**Then** every returned status is one of `NORMAL`, `WARNING`, or `EXCEEDED` — never `DRAFT` and never
+`ARCHIVED`.
+
+**AC-08: No alert or notification record is created by a status change**
+**Given** an authenticated User's budget newly qualifies for `WARNING` or `EXCEEDED` on a given request,
+**When** the User requests the list of budgets,
+**Then** the system creates no notification, alert, or audit record as a result — the classified status
+is exposed only as response data for that request.
+
+### Edge Cases
+
+**EC-01**: **Progress percentage at exactly 75.00%** — classifies as `NORMAL`, the inclusive upper bound
+established by SDS §2.4.3's `<=` and AC-01; `WARNING` begins only strictly above this value.
+
+**EC-02**: **Progress percentage at exactly 100.00%** — classifies as `EXCEEDED`, the inclusive lower
+bound established by SDS §2.4.3's `>=` and AC-03; `WARNING` ends strictly below this value.
+
+**EC-03**: **Progress percentage just above the NORMAL boundary (e.g. 75.01%)** — classifies as `WARNING`,
+confirming the boundary in EC-01 is not rounded or widened in `WARNING`'s favor.
+
+**EC-04**: **Progress percentage just below the EXCEEDED boundary (e.g. 99.99%)** — classifies as
+`WARNING`, confirming the boundary in EC-02 is not rounded or widened in `WARNING`'s favor.
+
+**EC-05**: **A budget's spending is reduced after having already crossed a threshold** — handled by AC-06;
+listed here because it is the only scenario in which a single budget's status can be observed to move
+backward (`EXCEEDED` → `NORMAL`, per SDS §2.4.3), and the system must not retain the earlier, higher
+classification.
+
+**EC-06**: **A budget's status is never `DRAFT` or `ARCHIVED`** — `DRAFT` describes a budget before it has
+ever been read, and `ARCHIVED` describes a budget whose period has ended; neither state is ever observable
+through this endpoint (see *Assumptions & Dependencies* for why each is structurally unreachable here).
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **compute**, for every budget the list endpoint already returns, a status
+  value classifying its progress percentage as `NORMAL`, `WARNING`, or `EXCEEDED` (SDS §2.4.3; AC-01..AC-03).
+- **FR-02**: The system must **classify** a progress percentage of 75.00% or less — including exactly
+  zero — as `NORMAL` (AC-01, AC-04, EC-01).
+- **FR-03**: The system must **classify** a progress percentage strictly greater than 75.00% and strictly
+  less than 100.00% as `WARNING` (AC-02, EC-03, EC-04).
+- **FR-04**: The system must **classify** a progress percentage of 100.00% or more as `EXCEEDED` (AC-03,
+  EC-02).
+- **FR-05**: The system must **compute** status at the moment of each request, from the budget's current
+  progress percentage, and must **never** persist it or reuse a value computed on an earlier request
+  (AC-06, EC-05).
+- **FR-06**: The system must **never return** `DRAFT` or `ARCHIVED` as a budget's status through this
+  endpoint (AC-07, EC-06).
+- **FR-07**: The system must **return** status as an additional field alongside — never replacing — the
+  seven fields BM-US-02 already documents for each listed budget (AC-05).
+- **FR-08**: The system must **create no** alert, notification, or audit record when a budget's status is
+  `WARNING` or `EXCEEDED` (AC-08).
+
+#### Business Rules
+
+- **BR-01**: A budget's status is derived entirely from its already-computed amount spent and amount
+  limit; `budgets` gains no status column of its own (extends BM-US-01's own "no status column" ruling
+  to this story's classification value; FR-05).
+- **BR-02**: The three reachable statuses are mutually exclusive and exhaustive over every possible
+  progress percentage: `NORMAL` is at or below 75%, `WARNING` is strictly between 75% and 100%, and
+  `EXCEEDED` is at or above 100% — every value maps to exactly one of the three (FR-02, FR-03, FR-04).
+- **BR-03**: `DRAFT` and `ARCHIVED` are never observable through this endpoint. `DRAFT` describes a budget
+  before its first read, which this system has no code path to produce or persist; `ARCHIVED` describes a
+  budget whose period has ended, already excluded from this listing by BM-US-02 BR-05 before this story's
+  classification logic ever runs (FR-06).
+- **BR-04**: No notification or alert delivery mechanism exists in this system; a classified status is
+  exposed as response data only, for a client to interpret and render (FR-08).
+
+#### Key Entities
+
+- **Budget**: As BM-US-01 defined it and BM-US-02 extended it with `amount_spent`/`progress_percentage`,
+  this story adds one further derived, read-time-only attribute — `status` — classifying that same
+  percentage into `NORMAL`/`WARNING`/`EXCEEDED`. No new column; `budgets` carries no status of its own.
+- **Transaction**: Reused unchanged from BM-US-02 — status is computed from the same `amount_spent` figure
+  BM-US-02 already derives from Transaction data; this story reads no additional Transaction field.
+- **User**: Reused unchanged — the same ownership scope BM-US-02 already established.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: Every budget returned by the list endpoint carries a status accurately reflecting its current
+  progress percentage against the fixed 75%/100% thresholds.
+- **SC-02**: The two documented boundary values — exactly 75% and exactly 100% — always classify according
+  to SDS §2.4.3's inclusive/exclusive rule, never rounded or treated ambiguously.
+- **SC-03**: A budget's status always reflects the data at the moment of the request; it is never a value
+  computed earlier and never a value that survives a change to the underlying spending data.
+- **SC-04**: No budget is ever observed in the `DRAFT` or `ARCHIVED` state through this endpoint.
+- **SC-05**: No persisted alert, notification, or audit artifact is created by this story under any
+  circumstance.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01), Create a Wallet (WM-US-01), Create a Category (CM-US-01), Create a Budget
+  (BM-US-01), and List Budgets (BM-US-02) are already implemented.** This story adds no new endpoint and
+  reads no data BM-US-02 does not already compute — it is purely an interpretation of
+  `progress_percentage`, already present on every item `GET /api/v1/budgets` returns.
+- **Of the state machine's five states, only `NORMAL`, `WARNING`, and `EXCEEDED` are reachable through this
+  endpoint — reasoned through explicitly, not assumed.**
+  - **`DRAFT` is unreachable.** Every budget in this system is created, in full, by one atomic
+    `POST /api/v1/budgets` call (BM-US-01) that already fixes `amount_limit` and `period` before the row
+    exists at all — there is no multi-step or "save as draft" creation path anywhere in this codebase, and
+    no AC in BM-US-01 or BM-US-02 describes an incomplete, unreadable budget. The instant a budget can be
+    read at all, BM-US-02 already computes a real `progress_percentage` for it — defaulting `amount_spent`
+    to zero when no transaction exists yet (BM-US-02 AC-11/BR-07), which this story's own AC-04 classifies
+    as `NORMAL`. So `DRAFT`, which the state diagram places strictly before `[*]`'s very first transition
+    into `NORMAL`, describes a moment this system's data model has no way to make observable — it is the
+    diagram's academic starting point, not a state this story's classification logic is ever asked to
+    assign.
+  - **`ARCHIVED` is unreachable through this endpoint.** BM-US-02's own listing already restricts every
+    response to budgets whose `period` equals the current calendar month (BM-US-02 A5/BR-05); a budget
+    whose period has ended simply stops being returned by the underlying list query, before this story's
+    classification logic ever runs on it. This mirrors how BM-US-02 itself reasoned "active" into existence
+    for its own listing scope — this story inherits that same gate rather than building a second one.
+  - Recorded as `plan.md` A1.
+- **"Alerts" reads as exposing classification data for a client to render, not as a persisted
+  notification/delivery mechanism.** SDS §5.5.3's goal ("display visual warning indicators") and SRS
+  UXR-02 ("dashboard widgets ... convey financial health ... without reading raw data tables") both
+  describe a UI rendering concern — color tokens and visual hierarchy a client applies to a status value —
+  not a backend-persisted alert record or a delivery channel. Feature-08 Notification Management
+  (SRS/SDS NM-US-01) is a separate, unbuilt feature explicitly out of this round (CLAUDE.md §5); building
+  toward it here would be extending, not aligning, the reference documents. This story's job ends at
+  returning the classified `status` field. Recorded as `plan.md` A5.
+- **Extending the existing `GET /api/v1/budgets` response is the right shape, not a new endpoint or a new
+  DTO.** Unlike BM-US-02's own decision not to reuse BM-US-01's `BudgetRead` (plan.md A2) — which was
+  about *two different endpoints*, creation and listing — this story adds one field to the *same*
+  endpoint BM-US-02 already built for exactly this purpose (SDS §5.5.2's own goal already named "current
+  progress percentages" as a step toward this story's classification). The field is purely additive: a
+  caller reading only the previously documented seven fields is unaffected.
+- **This additive field conflicts with BM-US-02's own `test_cases.md` TC-28, which asserts the response
+  carries "exactly the seven documented fields ... and in particular no `status`."** That assertion was
+  true and correctly tested as of BM-US-02; this story is precisely what makes it no longer true going
+  forward. Per `CLAUDE.md` §1.1, TC-28's own text is never rewritten. The resolution — a new TC in this
+  story's own `test_cases.md` section documenting the response's new eight-field shape, leaving TC-28's
+  prose untouched, with an open task to update only the underlying pytest function body (a separate,
+  not-yet-formally-designed artifact per `CLAUDE.md` §1.1 rule 0) at the Implement step — is recorded as
+  `plan.md` A4.
+
+---
+
+## BM-US-04: Update a Budget
+
+> **IDs in this section are local to BM-US-04.** `AC-01` below is not BM-US-01/02/03's own `AC-01`;
+> each story section numbers its own criteria, per `artifact-templates/spec-templates.md` and this
+> codebase's own CM-US-02/WM-US-02/TM-US-02/BM-US-02/BM-US-03 precedent. Only `TC-NN` (and `QF-NN`) in
+> `test_cases.md` run continuously across the epic (`CLAUDE.md` §1.1 rule 4).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-05 — searched in full; no entry for BM-US-04 exists**
+> The same situation BM-US-02 and BM-US-03 were already in (their own Source sections above document
+> this precedent): `### Feature-05: Budget Management` contains exactly one story, `#### US-05-01:
+> Create a Budget for a Wallet [MVP]` (quoted in full in this file's BM-US-01 section), immediately
+> followed by `### Feature-06: Transaction Management`. There is no `US-05-02`, `US-05-03`, or `US-05-04`
+> header at all. This story is grounded the same way BM-US-02/BM-US-03 were: in SRS §1.5's conceptual
+> domain model and SRS §2 FR-05's text directly, not in a bare story header that does not exist.
+
+**SRS §1.5 Conceptual Domain Model**
+> **Budget** — A spending limit a User sets for one Category within one Wallet, over a monthly period,
+> that Transactions are measured against (FR-05).
+
+**SRS §2 FR-05 — Budget Tracking & Overspending Alerts**
+> The System shall allow Users to define spending caps (`Budget`) per Category and Wallet for a monthly
+> timeframe. The System shall track spending against this limit and trigger visual warnings when
+> thresholds (75%, 100%) are reached.
+
+**SDS §5.5.4 BM-US-04: Update a Budget (USER)**
+> **Goal:** Adjust spending caps for an active budget.
+
+One sentence — the same thinness BM-US-02's and BM-US-03's own SDS goals carried before them.
+
+**SDS §6.3 API Index**
+> Confirmed stale, not a contract to match — it currently lists no row at all for any already-shipped
+> Budget/Category/Report endpoint (BM-US-01/02/03, CM-US-01/02, FR-US-01), so its absence of a
+> Budget-update row carries no meaning. Noted as an aside, not reconciled here — reconciling the whole
+> table is not this story's job.
+
+**constitution.md API-03**
+> HTTP status codes: `200` read/update · `201` creation · ... — an update response is `200`, not `201`.
+
+**constitution.md API-05**
+> No generic `updateStatus` endpoint. Each business state transition gets its own explicit endpoint
+> (`/users/activate`, not `PATCH /users/{id}` with a status field).
+
+**constitution.md SEC-08, VL-06**
+> SEC-08: Queries for user-owned data filter on the authenticated `user_id` at the repository layer.
+> VL-06: Referenced entities are verified to exist and be active before use — `404` if absent, `409` if
+> present but in the wrong state.
+
+**`specs/005-budget-management/spec.md` BM-US-01 "Acceptance Criteria"** *(this story's own inherited precedent)*
+> AC-04/AC-06: "the system creates nothing and returns the same not-found outcome in either case — the
+> response gives no indication of which of the two happened."
+
+**`specs/005-budget-management/spec.md` BM-US-02 "Assumptions & Dependencies"** *(this story's own inherited open question)*
+> "'Active' reads as 'the budget's period equals the current calendar month' ... the only reading under
+> which 'current progress percentages' ... is well-defined for every listed row."
+
+SDS §5.5.4's own "active budget" wording was initially read against that same established precedent, then
+revised away after the project owner's review — see *Assumptions & Dependencies* for the reasoning.
+
+### Out of scope for this story
+
+BM-US-01/02/03 (create, list, status — all implemented) · BM-US-05 (delete a budget) · changing a
+budget's wallet, category, or period once created (reasoned through explicitly below, not merely
+declined) · WM-US-*, CM-US-*, UM-US-04/05, DC-US-01/02 · Features 06–11 · SRS §6 Feature-10/11
+placeholders.
+
+Deliberately excluded even though adjacent: re-targeting a budget to a different wallet or category, or
+moving it to a different period — this story's contract accepts only a new amount limit (see
+*Assumptions & Dependencies* for the full reasoning); recomputing or re-deriving `amount_spent`,
+`progress_percentage`, or `status` — those remain BM-US-02/BM-US-03's own read-time computations,
+unaffected by this story except as a natural consequence of a new amount limit on the next read; and any
+mobile/UI screen — no SRS UXR names one this round, and `mobile/` stays a fixture-driven prototype scoped
+to UM-US-01 only (`CLAUDE.md` §5).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to change the spending limit on one of my own budgets, so that I
+can adjust my spending cap as my plans or circumstances change, without having to delete and recreate
+the budget.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully update a budget's amount limit**
+**Given** an authenticated User who owns a budget,
+**When** the User submits a new, positive amount limit within the system's supported precision for that
+budget,
+**Then** the system updates that budget's amount limit, leaves its wallet, category, and period
+unchanged, and returns a success result carrying the budget's identifier, wallet, category, the updated
+amount limit, and period.
+
+**AC-02: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to update a budget,
+**Then** the system denies the request before evaluating anything else, changes nothing, and returns an
+unauthenticated error.
+
+**AC-03: Reject an update to a budget that does not exist**
+**Given** an authenticated User,
+**When** the submitted budget reference matches no budget at all,
+**Then** the system changes nothing and returns a not-found error.
+
+**AC-04: Reject an update to a budget owned by a different User**
+**Given** an authenticated User,
+**When** the submitted budget reference matches a budget owned by a different User,
+**Then** the system changes nothing and returns the same not-found outcome AC-03 describes — the
+response gives no indication of which of the two happened.
+
+**AC-05: Reject a missing amount limit**
+**Given** an authenticated User who owns a budget,
+**When** the amount limit is absent from the submission,
+**Then** the system changes nothing and returns a validation error identifying the amount limit field.
+
+**AC-06: Reject an amount limit that is zero or negative**
+**Given** an authenticated User who owns a budget,
+**When** the submitted amount limit is zero or a negative value,
+**Then** the system changes nothing and returns a validation error rather than treating it as a valid
+cap.
+
+**AC-07: Reject an amount limit carrying more than two decimal places**
+**Given** an authenticated User who owns a budget,
+**When** the submitted amount limit carries more than two digits after the decimal point,
+**Then** the system changes nothing and returns a validation error rather than rounding or truncating
+the value.
+
+**AC-08: A successful update changes only the amount limit**
+**Given** an authenticated User who successfully updates one of their own budgets,
+**When** the update completes,
+**Then** that budget's wallet reference, category reference, and period are identical to their values
+immediately before the request — only the amount limit changes.
+
+**AC-09: Return exactly the documented budget fields**
+**Given** an authenticated User successfully updates a budget,
+**When** the system returns the success result,
+**Then** the result carries exactly the budget's identifier, wallet reference, category reference, the
+updated amount limit, and period — no other field, and no data belonging to any other User's wallet,
+category, or budget.
+
+### Edge Cases
+
+**EC-01**: **Amount limit at the smallest positive value** — a submitted amount limit of `0.01` is
+accepted; the boundary excluded by AC-06 is exactly zero and below, not any positive value however
+small.
+
+**EC-02**: **Amount limit exceeding the total digit width of `DECIMAL(15,2)`** — a value with more than
+13 digits before the decimal point (15 significant digits in total, per constitution VL-07) is rejected
+with a validation error, distinctly from AC-07's decimal-places check but under the same `Decimal(15,2)`
+rule.
+
+**EC-03**: **A budget reference that is not even a well-formed identifier** — a value such as
+`"not-a-real-id"` is refused with the same not-found outcome as a well-formed but non-existent reference
+(AC-03). No separate malformed-identifier error exists; a reference either resolves to a budget the
+caller owns, or it does not, regardless of its shape.
+
+**EC-04**: **An amount limit set below the budget's current amount spent** — accepted; this story
+performs no comparison against spending activity. The budget's status and progress percentage, computed
+fresh by BM-US-02/BM-US-03 on the next read, simply reflect the new, smaller limit — including
+classifying as `EXCEEDED` if spending already surpasses it.
+
+**EC-05**: **An amount limit equal to the value the budget already holds** — accepted as an ordinary
+successful update, not treated as a no-op error or rejected as unchanged.
+
+**EC-06**: **A wallet, category, or period value submitted alongside the amount limit** — the request
+body additionally carries a wallet-, category-, or period-shaped value; the updated budget's wallet,
+category, and period remain exactly what they were before the request, and the response carries no echo
+of the submitted value. This story's contract has no field for a caller to populate any of the three
+(see *Assumptions & Dependencies*), so the extra key is silently ignored, never honoured.
+
+**EC-07**: **A caller who owns one or more budgets of their own, attempting to update a different User's
+budget** — refused with the identical outcome AC-04 describes; owning some budget never entitles a
+caller to act on another User's budget.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to submit a new amount limit,
+  identifying the budget to update by its own identifier, in order to update that budget (SDS §5.5.4).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before anything else (constitution API-08; mirrors BM-US-01 FR-02).
+- **FR-03**: The system must **require** the submitted budget reference to resolve to a budget owned by
+  the authenticated caller, and **refuse** the request with an identical outcome whether no such budget
+  exists at all or it exists and is owned by a different User (AC-03, AC-04, EC-03, EC-07; constitution
+  SEC-08, VL-06).
+- **FR-04**: The system must **require** the amount limit, **store** it as a `Decimal` value with at most
+  two digits after the decimal point and at most fifteen significant digits in total, and **reject** —
+  rather than round or truncate — a value carrying more of either (AC-05, AC-07, EC-02; constitution
+  VL-07).
+- **FR-05**: The system must **reject** an amount limit that is zero or negative (AC-06, EC-01).
+- **FR-06**: The system must **leave** the budget's wallet reference, category reference, and period
+  unchanged by this operation, and **ignore** any wallet-, category-, or period-shaped value submitted in
+  the request body — this story's contract declares no field capable of changing any of the three
+  (AC-08, EC-06).
+- **FR-07**: The system must **return**, on success, exactly the budget's identifier, `wallet_id`,
+  `category_id`, the updated amount limit, and `period` (AC-09).
+
+#### Business Rules
+
+- **BR-01**: `amount_limit` is validated by the identical rule BM-US-01 BR-03 already established for
+  creation — a `Decimal` value with at most two decimal places and at most fifteen significant digits in
+  total, strictly greater than zero; a value violating any of these is refused, never rounded, truncated,
+  or clamped (constitution VL-07; FR-04, FR-05).
+- **BR-02**: A budget's ownership for this operation is established the same way BM-US-01 BR-01 already
+  established it for creation — entirely transitive through the budget's own `wallet_id`, since the
+  budget carries no owner column of its own. A budget reference that does not resolve to a row the caller
+  owns is refused identically whether no such row exists at all or it exists and belongs to a different
+  User (FR-03).
+- **BR-03**: A budget's `wallet_id`, `category_id`, and `period` are immutable once the budget is
+  created; no operation in this story's contract can change any of them (FR-06).
+
+#### Key Entities
+
+- **Budget**: As BM-US-01 defined it and BM-US-02/BM-US-03 extended with read-time computed fields, this
+  is the first story to **write** to an existing Budget row rather than only creating or reading one.
+  Only `amount_limit` is mutable through this story's contract; `wallet_id`, `category_id`, and `period`
+  stay exactly as BM-US-01 set them at creation (BR-03).
+- **Wallet**: Reused unchanged. Referenced, not owned, by this story — a budget's ownership for the
+  purpose of this update is reached through `wallet_id`, the same path BM-US-01/02 already established.
+- **Category**: Reused unchanged. Not read by this story at all — unlike creation, which validates both
+  `wallet_id` and `category_id` as caller-owned references, this story accepts no `category_id` input to
+  validate.
+- **User**: Reused unchanged — the authenticated caller's own ownership of the referenced Wallet, and
+  transitively the Budget, is the only scope this story ever updates.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can update the amount limit of one of their own budgets in one call,
+  and the response reflects exactly the new value.
+- **SC-02**: No budget can be updated without an authenticated caller.
+- **SC-03**: A budget can never be updated by a User who does not own it — whether because the reference
+  does not exist at all, or because it belongs to someone else, the request is refused identically either
+  way.
+- **SC-04**: An updated amount limit is always stored at the precision and sign the User specified — never
+  silently rounded, truncated, defaulted, or permitted to be zero or negative.
+- **SC-05**: A budget's wallet, category, and period never change as a result of this operation, no matter
+  what a caller submits alongside the amount limit.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01), Create a Budget (BM-US-01), List Budgets (BM-US-02), and View Budget Status
+  (BM-US-03) are already implemented.** Every acceptance criterion here presupposes at least one budget
+  already on record, owned by the authenticated caller.
+- **Only `amount_limit` is updatable through this story's contract — `wallet_id`, `category_id`, and
+  `period` are not, reasoned through explicitly rather than assumed.** SDS §5.5.4's own goal text says
+  "Adjust spending **caps**" — the plural of "cap," i.e. `amount_limit` — not "move a budget to a
+  different wallet or category" or "change which month it covers." Accepting a new `wallet_id` or
+  `category_id` would also reopen BM-US-01 BR-05's uniqueness constraint in a materially harder form: a
+  request changing any of `wallet_id`/`category_id`/`period` would need to re-validate the *new*
+  combination against every other budget the caller owns, decide what happens on a collision (refuse the
+  update, or silently merge two budgets' histories — neither of which any source describes), and
+  re-validate ownership of a newly-submitted wallet or category reference exactly as creation already
+  does. None of that complexity is asked for by SRS §1.5, SDS §5.5.4, or any AC a reasonable reading of
+  either supports — and the single-field reading leaves BM-US-01 BR-05 structurally inapplicable to this
+  story, since the triple that constraint keys on never changes. This is the same "prefer the
+  interpretation that invents the fewest additional rules" discipline BM-US-01 A2 already used for its
+  own undictated `period` field. Recorded as `plan.md` A1.
+- **No restriction is imposed on which budgets may be updated based on their period.** An earlier design
+  draft read SDS §5.5.4's "Adjust spending caps for an **active** budget" wording as requiring the
+  budget's period to equal the current calendar month, applying BM-US-02's own "active" reading to this
+  story as well, and refused any other budget with a conflict error. The project owner reviewed this
+  design and rejected the restriction: budgets are never deleted or otherwise time-boxed anywhere else in
+  this system — recorded transactions remain permanent regardless of date — and nothing in SRS/SDS or the
+  built system gives a reason a caller should be unable to correct an older budget's cap, such as fixing a
+  typo. This story therefore places no restriction on a budget's period: a caller may update the
+  `amount_limit` of any budget they own. The decision is recorded as `plan.md` A8.
+- **Lowering an amount limit below the budget's current amount spent requires no new validation.**
+  BM-US-03's status classification is computed fresh on every `GET /api/v1/budgets` call from whatever
+  `amount_limit` is currently stored (BM-US-03 AC-06) — this story simply writes a new `amount_limit`;
+  the next read naturally reflects it, including reclassifying the budget as `EXCEEDED` if warranted.
+  Building a warning or a block into this story would duplicate BM-US-03's own read-time logic for no
+  requirement that asks for it.
+- **This story introduces the first "fetch one row by its own id, scoped to the caller" repository
+  function and the first write-after-creation operation anywhere in this codebase's Budget Management
+  epic** — there is no existing precedent within `budgets` to match exactly; the design in `plan.md`
+  instead generalises BM-US-01's `get_owned_by_id()` shape (originally built for validating a
+  *referenced* wallet/category at creation time) to look up the budget *being acted on itself*, and
+  reuses BM-US-02 A3's single-join-on-`wallets` ownership scoping unchanged.

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(planned)*
+> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(implemented, verified — 420 total passing)* · BM-US-03 *(planned)* · BM-US-04 *(planned)*
 
 ---
 
@@ -766,3 +766,552 @@ role restriction) and no `404`/`409` (a read has nothing to find-by-id or confli
 | T-05 | `budget_service.list_budgets(db, *, owner, page, page_size) -> BudgetListRead`, plus local `_month_bounds()` helper (A2, A4, A5, A7, A11, A12) | `backend/app/services/budget_service.py` | Open |
 | T-06 | `GET /api/v1/budgets` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `CurrentUserDep`, no `db.commit()` (A8, A10) | `backend/app/api/v1/budgets.py` | Open |
 | T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_02_list_budgets.py` | Open |
+
+---
+
+## BM-US-03: View Budget Status & Alerts
+
+> **IDs in this section are local to BM-US-03** (`A*`/`T-NN`), continuing the demonstrated convention:
+> BM-US-02's own plan.md header note above already confirmed `A*`/`T-NN` restart per story while only
+> `test_cases.md`'s `TC-NN`/`QF-NN` run continuously across the epic file. `test_cases.md`'s `TC-NN`
+> below continues from `TC-52` and `QF-NN` from `QF-13`, matching BM-US-02's own `TC-27`/`QF-07` start.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Domain / State | **Only `NORMAL`, `WARNING`, and `EXCEEDED` are reachable through `GET /api/v1/budgets`; `DRAFT` and `ARCHIVED` are not implemented and can never be returned.** `DRAFT` has no code path to persist or read — every budget is created whole, by one atomic `POST /budgets` call (BM-US-01), and the instant it is readable at all BM-US-02 already computes a real `progress_percentage` for it (defaulting to zero), which this story's own classification maps to `NORMAL` — there is no "half-created" budget this system can produce. `ARCHIVED` is excluded one layer upstream: BM-US-02's own `list_owned()` already filters to `period == current month` (BM-US-02 A5/BR-05), so a budget whose period has ended never reaches this story's classification step at all. Full reasoning in `spec.md` Assumptions. Not escalated as `[NEEDS RULING]` — nothing in SRS/SDS disagrees; the state machine itself is silent on which states are reachable through which endpoint, and reading two of its five states as unreachable here is reasoning about this system's own actual data model, not a disagreement with the reference documents. | ✅ Resolved |
+| A2 | Architecture / Data | **Status is computed at read time inside `budget_service.list_budgets()` and is never persisted — no new column, no migration.** Narrows BM-US-01 A8 ("deriving and persisting real progress against that state machine is BM-US-03's job") by resolving the "persisting" half in the negative: nothing in this story's own AC set asks for a stored value, and AC-06 (status must reflect data "computed fresh ... at the moment of the request") is actually easier to satisfy by never storing it at all — a cached value would need its own invalidation logic the moment a Transaction changes, which this story has no AC asking it to build. `budgets` keeps exactly its five original ERD columns (BM-US-01 A7/A8/A11); the only persisted change this story's own package layout lists is zero — see *Architecture* below. | ✅ Resolved |
+| A3 | API | **Status is added as an eighth field directly on the existing `BudgetProgressRead`/`GET /api/v1/budgets` response — no new endpoint, no new DTO.** Distinguished from BM-US-02 A2's own decision *not* to reuse BM-US-01's `BudgetRead`: that decision was about two different endpoints (`POST /budgets` vs. `GET /budgets`), where extending the creation response would have silently grown a field no creation AC asks for. Here, the *same* endpoint BM-US-02 built specifically to carry "current progress percentages" (SDS §5.5.2's own goal) is simply completing the interpretation of that same percentage — an intended, additive evolution of one resource's own response shape, not a reach into an unrelated one. A caller reading only BM-US-02's seven original fields is unaffected. | ✅ Resolved |
+| A4 | Testing / Cross-doc | **This additive field conflicts with BM-US-02's own `test_cases.md` TC-28 and its underlying pytest function, which assert the response carries exactly seven fields "and in particular no `status`."** That assertion was correct and faithfully tested as of BM-US-02 — this story is exactly what makes it stop being true. `CLAUDE.md` §1.1 forbids rewriting an existing `TC-NN`'s text, so TC-28's prose in `test_cases.md` stays as written, a historical record of BM-US-02's own tested contract at the time. The resolution: this story's own `test_cases.md` section adds `TC-60`, asserting the now-current eight-field contract (including `status`) as the shape future readers should trust going forward; and `T-04` below opens an Implement-step task to update only the **pytest function body** behind TC-28 (`test_response_item_exposes_exactly_seven_fields_wrapped_in_paginated_envelope`, in `backend/tests/integration/test_bm_us_02_list_budgets.py`) to assert eight fields and the presence of `status` — the automation file is its own, separately-tracked artifact (`CLAUDE.md` §1.1 rule 0's "known gap"), not `test_cases.md`'s protected prose, so updating it keeps the suite honest without rewriting a TC. Not silently papered over: recorded here and flagged in the gate report. | ✅ Resolved |
+| A5 | Domain / Scope | **"Alerts" means returning classification data for a client to render, not a persisted notification or delivery mechanism.** SDS §5.5.3's goal ("display visual warning indicators") and SRS UXR-02 ("dashboard widgets ... convey financial health ... without reading raw data tables") both describe UI rendering — color tokens and visual hierarchy a client applies to a `status` value — not a backend-persisted alert record or delivery channel. Feature-08 Notification Management (NM-US-01) is a separate, unbuilt feature explicitly out of this round (`CLAUDE.md` §5); building toward it here would be extending, not aligning, the reference documents. This story's responsibility ends at the `status` field. | ✅ Resolved |
+| A6 | Domain | **Boundary semantics taken verbatim from SDS §2.4.3, not re-derived:** `progress_percentage <= 75.00` → `NORMAL`; `75.00 < progress_percentage < 100.00` → `WARNING`; `progress_percentage >= 100.00` → `EXCEEDED`. Implemented as a straight-line comparison chain, evaluated in that order, against the `Decimal` `progress_percentage` BM-US-02 A12 already quantizes to two decimal places — so the two boundary values are always compared as exact `Decimal("75.00")`/`Decimal("100.00")`, never a floating-point approximation. | ✅ Resolved |
+| A7 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** This story adds no new route; the existing `GET /api/v1/budgets` route already carries this guard (BM-US-01 A9, BM-US-02 A8), and nothing about status classification changes who may call the endpoint. | ✅ Resolved |
+| A8 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families; neither budget creation (BM-US-01 A10) nor listing (BM-US-02 A9) qualified, and classifying an already-returned value qualifies even less. Directly enforces spec AC-08/FR-08/BR-04. | ✅ Resolved |
+| A9 | Domain / Type | **`status` is typed as `Literal["NORMAL", "WARNING", "EXCEEDED"]` on `BudgetProgressRead`, not a general enum that also lists `DRAFT`/`ARCHIVED`.** This makes spec FR-06/BR-03's unreachability claim structural rather than only a prose promise: if a future change to the classification helper ever produced a fourth value by mistake, Pydantic's own response validation would raise before the result could leave the service, rather than silently serializing an undocumented string. | ✅ Resolved |
+| A10 | Testing / Scope | **`test_cases.md` TC-62 reads "that transaction is then deleted," but no `DELETE /api/v1/transactions` endpoint exists this round — confirmed directly against the live OpenAPI route list, which has only `post`/`get` on `/api/v1/transactions`. TM-US-05 (Delete a Transaction) is a separate, unbuilt story and explicitly out of this round's scope (`CLAUDE.md` §5).** TC-62's own underlying claim — "status is computed fresh every request, never cached" (spec AC-06/FR-05) — is still true and still worth proving regardless of which mechanism changes the underlying data, so the Implement-step test (`backend/tests/integration/test_bm_us_03_budget_status.py`) exercises it by deleting the `TransactionModel` row directly through the test's own `db: Session` fixture (`db.delete(transaction_model); db.commit()`) rather than calling a delete endpoint — the same established idiom `test_bm_us_02_list_budgets.py`'s own helpers already use for state no public endpoint can produce. This is **not** licence to build `DELETE /api/v1/transactions` here; that remains TM-US-05's own scope. | ✅ Resolved |
+| A11 | Testing | **BM-US-02's own TC-27 test (`test_authenticated_user_lists_every_active_budget_they_own_with_computed_progress`) asserts an exact field-set per item, the same way TC-28's test did — but TC-27's own `test_cases.md` prose only lists the fields a budget "carries," without TC-28's "exactly," so the exact-match assertion was stricter than TC-27 itself ever claimed.** Discovered at the Implement step: once `status` became a real eighth field (A3), TC-27's test broke alongside TC-28's, even though only TC-28's test was named in T-04/QF-15. Resolved the same way as T-04: `test_cases.md`'s TC-27 prose is untouched (`CLAUDE.md` §1.1), and only the pytest function body changes — from an exact `set(...) ==` comparison to a `.issubset(...)` containment check, which stays faithful to what TC-27 actually asserts ("carrying" these fields) without claiming exclusivity TC-27 never promised. The exclusivity check remains solely TC-28's (now eight fields) and TC-60's job. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only — no new top-level module, no migration; the smallest package-layout
+footprint of any Budget Management story so far, because A2 rules out any persisted change).
+
+```text
+backend/app/
+├── schemas/
+│   └── budget.py                     # update: add `status` field to BudgetProgressRead (A3, A9)
+└── services/
+    └── budget_service.py             # update: add `_classify_status()`, call it from list_budgets() (A1, A2, A6)
+
+backend/tests/
+├── integration/test_bm_us_03_budget_status.py   # NEW  written at the Implement step from test_cases.md
+└── integration/test_bm_us_02_list_budgets.py    # update: TC-28's pytest function body only (A4, T-04) —
+                                                   # test_cases.md's own TC-28 prose is untouched
+```
+
+No change to `models/budget.py`, no new Alembic revision, no change to `api/v1/budgets.py`'s route
+signature, no change to `core/deps.py` — `CurrentUserDep` is reused exactly as BM-US-01/BM-US-02 already
+established (A7).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `BudgetModel` | `budgets` | none | Still exactly the five ERD columns (BM-US-01 A7/A8/A11) — no `status` column is ever added (A2). |
+| `BudgetProgressRead` (DTO) | — | **adds** `status: Literal["NORMAL", "WARNING", "EXCEEDED"]` | Eighth field, additive (A3, A9). The seven fields BM-US-02 already documents are unchanged. |
+
+**DTO change** (`app/schemas/budget.py`, addition to the existing `BudgetProgressRead`)
+
+```python
+class BudgetProgressRead(BaseModel):
+    """Per-item shape for the list endpoint. BM-US-03 adds `status` as an
+    eighth, purely additive field (plan.md A3) — the seven fields BM-US-02
+    already documents are unchanged.
+    """
+
+    id: str
+    wallet_id: str
+    category_id: str
+    amount_limit: Decimal
+    period: date
+    amount_spent: Decimal
+    progress_percentage: Decimal
+
+    # BM-US-03: classified at read time from progress_percentage, never
+    # stored on BudgetModel (A1, A2). Only the three reachable states are
+    # valid values — Pydantic itself rejects anything else (A9).
+    status: Literal["NORMAL", "WARNING", "EXCEEDED"]
+```
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| `progress_percentage <= 75.00` classifies `NORMAL`, including exactly `0.00` and exactly `75.00` | AC-01, AC-04, EC-01, FR-02, A6 | `_classify_status()`'s first comparison |
+| `75.00 < progress_percentage < 100.00` classifies `WARNING` | AC-02, EC-03, EC-04, FR-03, A6 | `_classify_status()`'s second branch |
+| `progress_percentage >= 100.00` classifies `EXCEEDED`, including exactly `100.00` | AC-03, EC-02, FR-04, A6 | `_classify_status()`'s final branch |
+| Status computed fresh every request, never persisted or cached | AC-06, EC-05, FR-05, A2 | No column, no cache — `list_budgets()` calls `_classify_status()` inline on each request's own freshly-computed `progress_percentage` |
+| `status` never `DRAFT`/`ARCHIVED` | AC-07, EC-06, FR-06, A1, A9 | Structurally — `_classify_status()`'s return type and `BudgetProgressRead.status`'s `Literal` admit no other value |
+| Response carries status as an eighth field, the existing seven unchanged | AC-05, FR-07, A3 | `BudgetProgressRead` addition only |
+| No alert/notification/audit record created | AC-08, FR-08, BR-04, A5, A8 | `list_budgets()` calls no `audit.record()`, no notification service — none exists in this codebase to call |
+
+**Service addition** (`app/services/budget_service.py`)
+
+```python
+from typing import Literal
+
+def _classify_status(progress_percentage: Decimal) -> Literal["NORMAL", "WARNING", "EXCEEDED"]:
+    """SDS §2.4.3, read literally (plan.md A1, A6): `<= 75%` is NORMAL
+    (inclusive upper bound), the open interval `(75%, 100%)` is WARNING, and
+    `>= 100%` is EXCEEDED (inclusive lower bound). `DRAFT`/`ARCHIVED` are
+    never produced here — neither is reachable through this endpoint (A1),
+    and the return type admits no other value (A9).
+    """
+    if progress_percentage <= Decimal("75.00"):
+        return "NORMAL"
+    if progress_percentage < Decimal("100.00"):
+        return "WARNING"
+    return "EXCEEDED"
+```
+
+`list_budgets()`'s existing comprehension gains one line — `status=_classify_status(progress_percentage)`
+— computed from the same `progress_percentage` value already assembled per item; no new repository call,
+no new query.
+
+**Router**
+
+No change. `GET /api/v1/budgets` already exists (BM-US-02); its `response_model=BudgetListRead` picks up
+the new field automatically once `BudgetProgressRead` gains it.
+
+**Sequence diagram — View Budget Status & Alerts**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request into
+`API` answered back to `UI` with a status code, one workflow. This story adds no new request/response
+pair — it is the same `GET /budgets` flow BM-US-02 already drew, with the classification step made
+explicit.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as BudgetService
+    participant Store as Store
+
+    Note over UI,Store: Main flow — authenticated caller, page within range
+    UI->>API: GET /budgets
+    API->>Svc: list(input)
+    Note over Svc: The period is always the current calendar month, read from the system clock — never from the request
+    Svc->>Store: find a page of the caller's own budgets for the current period, plus the caller's own total count
+    Store-->>Svc: page of budgets, total count
+    Svc->>Store: find the caller's own expense totals for the current period, grouped by wallet and category
+    Store-->>Svc: expense totals per wallet-category pair
+    Note over Svc: Amount spent and progress percentage are computed per budget, defaulting to zero when no expense exists
+    Note over Svc: Each budget's status is classified from its own progress percentage — at or below 75% is NORMAL, between 75% and 100% is WARNING, at or above 100% is EXCEEDED (BR-02) — computed fresh on every request, never stored
+    Svc-->>API: budget list page, each with amount spent, progress percentage, and status
+    API-->>UI: 200 budgets — id, wallet, category, amount limit, period, spent, progress, status, plus page and total
+
+    Note over UI,Store: Refusal scenarios — every branch below still returns a status to UI
+    opt Unauthenticated or expired credentials
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+    opt page or page_size outside the accepted range
+        API-->>UI: 422 VALIDATION_ERROR
+    end
+```
+
+Only one workflow is drawn (DG-07) — the classification `Note` is an elaboration of the one flow's own
+assembly step, not a second flow, mirroring how BM-US-02's own diagram folded its multi-query read into
+a single picture.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials | 401 | `NOT_AUTHENTICATED` |
+| `page` or `page_size` not a positive integer, or `page_size` > 100 | 422 | `VALIDATION_ERROR` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+No new error class, no new scenario — this story introduces no new failure mode; both codes already exist
+in `core/errors.py`, reused as-is, identical to BM-US-02's own table. All in the flat envelope
+`{"error_code", "message", "details"}` (SDS §6.6, constitution API-02). No `403` (A7) and no `404`/`409`
+(a read has nothing to find-by-id or conflict on).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `_classify_status()` is the only place that decides what a progress percentage means; it is pure, no I/O |
+| AR-02 Thin router | N/A | No router change — the existing router is untouched |
+| AR-03 Repository isolation | N/A | No new repository call; status is computed from data `list_budgets()` already holds |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | `status` is assembled in `budget_service.list_budgets()`'s existing comprehension, same place the other six computed/mapped fields already live |
+| AR-05 No framework objects in services | Required | `_classify_status()` takes a plain `Decimal`; no `Request`/`Response` |
+| AR-06 One transaction per request | N/A | Pure read, nothing to commit (unchanged from BM-US-02 A10) |
+| AR-07 Router → service → repository | N/A | No new repository call this story makes |
+| AR-08 Module layout | Required | No new top-level package; one field added to an existing schema, one private function added to an existing service |
+| API-01 Versioned plural path | N/A | No new route |
+| API-02 Flat error envelope | Required | Unchanged — no new error this story introduces |
+| API-03 Status codes | N/A | No new status code — `200`/`401`/`422` unchanged from BM-US-02 |
+| API-04 Prefixed error codes | N/A | No new error code |
+| API-05 No generic status endpoint | N/A | No new endpoint at all |
+| API-06 Pagination | N/A | Unchanged from BM-US-02 |
+| API-07 Explicit response_model | Required | `response_model=BudgetListRead` unchanged; the model's own field list grows, which FastAPI/Pydantic reflects in the generated OpenAPI schema automatically |
+| API-08 Public endpoint list | N/A | This route is already protected (BM-US-01/02); unaffected |
+| NC-01 Module naming | N/A | No new module |
+| NC-02 Naming | Required | `BudgetProgressRead` keeps its name; no new DTO (A3) |
+| NC-04 Column naming | N/A | No column added (A2) |
+| NC-05 Enum serialisation | Required | `status` serialises as the literal `UPPER_SNAKE_CASE` string (`"NORMAL"`/`"WARNING"`/`"EXCEEDED"`); no human-readable label is returned — that is a client concern per NC-05's own text |
+| NC-06 Concise service methods | Required | `_classify_status`, a private helper scoped to `budget_service` — not `classify_budget_status_for_list_endpoint` |
+| VL-01 Pydantic is the source of truth | Required | The `Literal` type itself is the validation that only three values are ever accepted out of the service |
+| VL-02 Errors grouped | N/A | No new validation scenario — `_classify_status()` cannot fail; it is a total function over `Decimal` |
+| VL-07 Decimal money | N/A | `status` is a string classification, not money or a ratio; `progress_percentage`/`amount_spent` keep their existing `Decimal` typing from BM-US-02 A12, unchanged |
+| SEC-07 Authz proven by test | N/A (unchanged) | No new route; BM-US-02's own `401` test already covers this route |
+| SEC-08 Ownership filter | N/A (unchanged) | No new query; BM-US-02's own join-based scoping is untouched |
+| SEC-10 No enumeration | N/A | This endpoint takes no email or identifying parameter to probe (unchanged from BM-US-02) |
+| SEC-11 Rate limiting | N/A | Scoped by its own text to the invitation and activation endpoints |
+| LA-01 No secrets in logs | N/A | No credential or token is handled by this story |
+| LA-02 / LA-04 Audit | N/A (by decision) | Classifying an already-returned value is not one of LA-04's three named audited events (A8) |
+| PF-01 300 ms p95 | Required | `_classify_status()` is an in-memory comparison chain with no I/O — negligible cost added to BM-US-02's existing two indexed lookups |
+| PF-02 Indexed lookups | N/A | No new query |
+| PF-03 DTO projection | Required | `BudgetProgressRead` — eight fields, still no ORM graph |
+| PF-04 Bounded lists | N/A | Unchanged from BM-US-02 |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| TST-05 Boundaries | Required | `EC-01`/`EC-02` cover the exact `75.00%`/`100.00%` boundaries; `EC-03`/`EC-04` cover the adjacent non-boundary values |
+| DOD-02 Migration | N/A | No model change — no Alembic revision this story (A2) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No budget-status screen exists this round — the same treatment BM-US-01/BM-US-02 gave their own endpoints. SRS UXR-02's color-token guidance names a future dashboard widget, not a screen any story this round builds (`CLAUDE.md` §5). |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `_classify_status(progress_percentage) -> Literal["NORMAL", "WARNING", "EXCEEDED"]` (A1, A6, A9) | `backend/app/services/budget_service.py` | Open |
+| T-02 | Add `status` field to `BudgetProgressRead`, wire `list_budgets()`'s comprehension to call `_classify_status()` (A2, A3) | `backend/app/schemas/budget.py`, `backend/app/services/budget_service.py` | Open |
+| T-03 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_03_budget_status.py` | Open |
+| T-04 | Update the **pytest function body** of BM-US-02's `test_response_item_exposes_exactly_seven_fields_wrapped_in_paginated_envelope` (TC-28) to assert eight fields and the presence of `status` — `test_cases.md`'s own TC-28 prose stays unchanged per `CLAUDE.md` §1.1; only the automation file changes (A4) | `backend/tests/integration/test_bm_us_02_list_budgets.py` | Open |
+
+---
+
+## BM-US-04: Update a Budget
+
+> **IDs in this section are local to BM-US-04** (`A*`/`T-NN`), continuing the demonstrated convention:
+> every second-or-later story in this file restarts `A*`/`T-NN` locally, while `test_cases.md`'s `TC-NN`
+> and `QF-NN` run continuously across the epic file. `test_cases.md`'s `TC-NN` below continues from
+> `TC-64` and `QF-NN` from `QF-16`, matching BM-US-03's own `TC-52`/`QF-13` start.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Domain / Scope | **Only `amount_limit` is updatable; `wallet_id`, `category_id`, and `period` have no corresponding field on the request DTO at all.** SDS §5.5.4's own goal text says "Adjust spending **caps**" — the plural of "cap," i.e. `amount_limit` — not "re-target a budget." Accepting a new `wallet_id`/`category_id`/`period` would reopen BM-US-01 BR-05's uniqueness constraint in a materially harder form: the *new* combination would need re-validating against every other budget the caller owns, with no source describing what happens on a collision (refuse, or silently merge two budgets' histories), plus re-validating ownership of any newly-submitted wallet/category reference exactly as creation already does. None of that is asked for by any source, and the single-field reading leaves BR-05 structurally inapplicable here, since the triple it keys on never changes under this contract. Same "fewest invented rules" discipline as BM-US-01 A2. Full reasoning in `spec.md` Assumptions. | ✅ Resolved |
+| A2 | API | **`PATCH /api/v1/budgets/{budget_id}` — a verb-free path on the resource's own id, not a `/budgets/{id}/amount-limit`-style action endpoint, and not a generic `PATCH /budgets/{id}` accepting a `status` field.** Constitution API-05 forbids collapsing a **business state transition** into a generic setter (its own example: `/users/activate`, not `PATCH /users/{id}` with a status field) — the concern is specifically about a named lifecycle move (an entity crossing between enumerated states, each with its own side effects and preconditions a generic setter can't enforce distinctly). `amount_limit` is not a state or status field: it carries no enum of named states and no transition rules, and `Budget` already *has* a real status field — BM-US-03's computed `NORMAL`/`WARNING`/`EXCEEDED` — which this story never touches and cannot set. Updating `amount_limit` is an ordinary scalar business-field edit, structurally identical to editing a wallet's name or balance, which is exactly the shape constitution NC-03 reserves `PATCH`/`PUT` on a resource's own id for ("no verbs except for explicit state transitions permitted by API-05" — implying the *default*, verb-free path is for everything else). Since this story's own contract exposes exactly one field, it is also not "generic" in API-05's sense — there is only one operation this endpoint can ever perform. `PATCH` (not `PUT`) because the request is a partial update of one field on a five-field resource, matching HTTP's own semantics for the verb and constitution API-03's "`200` read/update" mapping. | ✅ Resolved |
+| A3 | Architecture | **New `budget_repo.get_owned_by_id(db, *, budget_id, user_id)` — the first "fetch one budget by its own id, scoped to the caller" lookup in this codebase.** Generalises BM-US-01's `wallet_repo.get_owned_by_id()`/`category_repo.get_owned_by_id()` shape — built there for a *referenced* row at creation time — to the budget being acted on directly. Reuses BM-US-02 A3's single-join-on-`wallets` ownership scoping unchanged: every stored budget's `category_id` is already guaranteed to belong to the same owner as its `wallet_id`, by construction, at creation time (BM-US-01 FR-13/BR-02), so one join suffices here too, with no second join to `categories` needed. Scoped by `user_id` in the query itself, so "no such budget" and "exists, owned by someone else" collapse to the identical `None` by construction (constitution SEC-08). | ✅ Resolved |
+| A4 | Architecture | **New `budget_repo.update_amount_limit(db, *, budget, amount_limit)` — the first write-after-creation function in this codebase's Budget Management epic.** Takes the already-fetched, already-ownership-verified `BudgetModel` instance from A3 and mutates only its `amount_limit` attribute — never `wallet_id`/`category_id`/`period` (spec BR-03). Flushed, not committed (AR-06) — the router owns the transaction boundary, the same shape every other write function in this codebase already follows. | ✅ Resolved |
+| A5 | API | **The success response reuses `BudgetRead` unchanged (five fields) — not `BudgetProgressRead`, and not a new DTO.** `BudgetProgressRead` (BM-US-02/03) carries `amount_spent`/`progress_percentage`/`status`, three fields this write-only operation never computes and has no reason to serve — those remain the *list* endpoint's own job. `BudgetRead` is exactly the shape BM-US-01 already established for "what a write to a budget returns," and this update's response is structurally identical in kind to that one: the budget's own five stored/computed-at-write-time fields, nothing derived from Transaction data. Symmetry with BM-US-01, not a new invention. | ✅ Resolved |
+| A6 | API / Domain | **New request DTO `BudgetUpdate` with exactly one field, `amount_limit`, validated by the identical `Decimal(15,2)`, `gt=0` rule `BudgetCreate.amount_limit` already carries (BM-US-01 A4).** Reused unchanged, not redefined — the same cap a caller sets at creation time is the same cap they adjust here, and inventing a second, looser or stricter rule for the identical business concept would contradict BM-US-01 BR-03 for no reason any source gives. The field is required, not optional: because it is the DTO's *only* field, a "partial" update of zero fields is simply not a request this endpoint does anything with — an absent `amount_limit` is a validation failure (spec AC-05), not a no-op 200. | ✅ Resolved |
+| A7 | Security / API | **One new error class: `BudgetNotFoundError` (404, `BUDGET_NOT_FOUND`).** Neither existing budget error fits: `BudgetWalletNotFoundError`/`BudgetCategoryNotFoundError` (BM-US-01) are about a *referenced* wallet/category failing to resolve, not about the budget-being-updated itself; `BudgetAlreadyExistsError` is BM-US-01's own uniqueness conflict, which A1 already established cannot be triggered by this story (see A8). `BudgetNotFoundError` is constitution VL-06's "404 if absent" branch, applied to the budget's own id for the first time. This story produces no `409` of any kind (see A8) — an earlier design draft's own period-based conflict class was removed after the project owner's review. | ✅ Resolved |
+| A8 | Domain | **No `409` is reachable through this endpoint at all.** BM-US-01 BR-05's uniqueness conflict (`BudgetAlreadyExistsError`) is structurally unreachable here: BR-05 scopes uniqueness to the triple `(wallet_id, category_id, period)` — A1 fixes all three as immutable under this contract, so no update performed through `PATCH /budgets/{id}` can ever produce a *new* triple to collide with an existing budget. An earlier design draft also refused updates to a budget whose period was not the current calendar month, with its own `409 BUDGET_NOT_ACTIVE` conflict — the project owner rejected that restriction at the design-gate review (budgets are not time-boxed anywhere else in this system; see `spec.md` Assumptions & Dependencies), and that error class has been removed. Both conflicts are therefore out of this story's error catalog: the only responses this endpoint can ever produce are `200`, `401`, `404`, and `422`. | ✅ Resolved |
+| A9 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.5.4 tags this story "(USER)", identical to every other Budget Management story's own tag. Mirrors BM-US-01 A9, BM-US-02 A8, BM-US-03 A7. | ✅ Resolved |
+| A10 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families; neither budget creation (BM-US-01 A10), listing (BM-US-02 A9), nor status classification (BM-US-03 A8) qualified, and updating a cap value is no closer to any of the three than those were. No AC or FR here asks for one. | ✅ Resolved |
+| A11 | Architecture | **No new Alembic migration.** `amount_limit` already exists as a column on `budgets` (BM-US-01 T-01) — this story changes a value in an existing column, not the schema. `DOD-02` is therefore N/A, the first write-shaped Budget Management story with no migration of its own. | ✅ Resolved |
+| A12 | Architecture | **The router issues exactly one `db.commit()`, after the service call succeeds** — identical to BM-US-01's `create_budget` router (AR-06). `budget_service.update_budget()` itself only flushes (via A4's `update_amount_limit()`), never commits. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only — no new top-level module, no migration; the first story in this
+epic to add a route with a path parameter and the first to modify an existing row).
+
+```text
+backend/app/
+├── schemas/
+│   └── budget.py                     # update: add BudgetUpdate (A5, A6)
+├── repositories/
+│   └── budget_repo.py                # update: add get_owned_by_id(), update_amount_limit() (A3, A4)
+├── services/
+│   └── budget_service.py             # update: add update_budget() (A1, A5)
+├── core/
+│   └── errors.py                     # update: add BudgetNotFoundError (A7)
+└── api/v1/
+    └── budgets.py                    # update: add PATCH /budgets/{budget_id} (A2, A9)
+
+backend/tests/
+└── integration/test_bm_us_04_update_budget.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No change to `models/budget.py` (A11), no new Alembic revision, no change to `core/deps.py` —
+`CurrentUserDep` is reused exactly as BM-US-01/02/03 already established (A9).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `BudgetModel` | `budgets` | `amount_limit` (write) | The only column this story ever writes. `wallet_id`/`category_id`/`period` are read (for the ownership check) but never written (A1, spec BR-03). No schema change (A11). |
+| `BudgetUpdate` (DTO) | — | `amount_limit` | New request DTO (A6) — one required field, identical validation to `BudgetCreate.amount_limit`. |
+| `BudgetRead` (DTO) | — | *(reused, unchanged)* | BM-US-01's own five-field response shape, reused for this write's response too (A5). |
+
+**DTO addition** (`app/schemas/budget.py`)
+
+```python
+class BudgetUpdate(BaseModel):
+    """Request DTO for PATCH /budgets/{budget_id} (BM-US-04). The budget's
+    only mutable field (plan.md A1) -- wallet_id/category_id/period are
+    immutable post-creation (spec BR-03) and have no corresponding field
+    here, so a caller cannot even name them meaningfully; any such key
+    submitted anyway is silently ignored by Pydantic's default BaseModel
+    behaviour (spec EC-06).
+
+    Validation identical to BudgetCreate.amount_limit (BM-US-01 A4), reused
+    unchanged -- Decimal(15,2), reject-don't-round, strictly positive (A6).
+    """
+
+    amount_limit: Decimal = Field(max_digits=15, decimal_places=2, gt=0)
+```
+
+**Repository additions** (`app/repositories/budget_repo.py`)
+
+```python
+def get_owned_by_id(db: Session, *, budget_id: str, user_id: str) -> BudgetModel | None:
+    """spec FR-03, BR-02, constitution SEC-08 (plan.md A3). The first "fetch
+    one budget by its own id, scoped to the caller" lookup in this
+    codebase -- generalises BM-US-01's wallet_repo/category_repo
+    get_owned_by_id() shape (built there for a *referenced* row) to the
+    budget being acted on directly. Reuses BM-US-02 A3's single-join-on-
+    wallets ownership scoping unchanged: every stored budget's category_id
+    already belongs to the same owner as its wallet_id by construction
+    (BM-US-01 FR-13/BR-02), so one join suffices. "No such budget" and
+    "exists, owned by someone else" collapse to the identical None by
+    construction, not a check that could be forgotten.
+    """
+    return db.scalar(
+        select(BudgetModel)
+        .join(WalletModel, BudgetModel.wallet_id == WalletModel.id)
+        .where(BudgetModel.id == budget_id, WalletModel.user_id == user_id)
+    )
+
+
+def update_amount_limit(db: Session, *, budget: BudgetModel, amount_limit: Decimal) -> BudgetModel:
+    """spec AC-01, FR-04, FR-06, BR-01, BR-03 (plan.md A4). Mutates only
+    amount_limit on an already-fetched, already-ownership-verified row --
+    wallet_id, category_id, and period are never touched. Flushed, not
+    committed (AR-06) -- the router owns the transaction boundary.
+    """
+    budget.amount_limit = amount_limit
+    db.add(budget)
+    db.flush()
+    return budget
+```
+
+**Service** (`app/services/budget_service.py`, addition)
+
+```python
+def update_budget(
+    db: Session, *, owner: UserModel, budget_id: str, amount_limit: Decimal
+) -> BudgetRead:
+    """spec AC-01, FR-03 (plan.md A1, A3, A4, A5). Looks up the budget
+    scoped to the caller, then updates its amount limit directly -- no
+    further precondition check follows ownership. An earlier design draft
+    also required the budget's period to equal the current calendar month;
+    that restriction was removed after the project owner's design-gate
+    review (spec.md Assumptions & Dependencies) -- budgets are not
+    time-boxed anywhere else in this system.
+    """
+    budget = budget_repo.get_owned_by_id(db, budget_id=budget_id, user_id=owner.id)
+    if budget is None:
+        raise BudgetNotFoundError()
+
+    budget = budget_repo.update_amount_limit(db, budget=budget, amount_limit=amount_limit)
+    return BudgetRead(
+        id=budget.id,
+        wallet_id=budget.wallet_id,
+        category_id=budget.category_id,
+        amount_limit=budget.amount_limit,
+        period=budget.period,
+    )
+```
+
+**Router** (`app/api/v1/budgets.py`, addition)
+
+```python
+@router.patch(
+    "/{budget_id}",
+    response_model=BudgetRead,
+    status_code=status.HTTP_200_OK,
+    summary="Update a budget's amount limit",
+    description=(
+        "Updates the amount limit of one of the authenticated caller's own "
+        "budgets, identified by its own id. Only the amount limit may be "
+        "changed -- the budget's wallet, category, and period are "
+        "immutable."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "BUDGET_NOT_FOUND"},
+        422: {"description": "VALIDATION_ERROR"},
+    },
+)
+def update_budget(
+    budget_id: str,
+    payload: BudgetUpdate,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> BudgetRead:
+    result = budget_service.update_budget(
+        db, owner=current_user, budget_id=budget_id, amount_limit=payload.amount_limit
+    )
+    db.commit()
+    return result
+```
+
+**New errors** (`app/core/errors.py`, appended under a new `# --- BM-US-04: Update a Budget` section)
+
+```python
+class BudgetNotFoundError(AppError):
+    """spec AC-03 / AC-04 / FR-03. Identical for "no such budget" and "not
+    this caller's budget" (constitution VL-06's `404 if absent` branch) --
+    the first time this codebase looks a budget up by its own id rather
+    than validating a *referenced* wallet/category."""
+    status_code = 404
+    error_code = "BUDGET_NOT_FOUND"
+    default_message = "The referenced budget was not found."
+```
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Authenticated User of any role may update their own budget's amount limit | AC-01, FR-01, A9 | `PATCH /api/v1/budgets/{budget_id}` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before anything else is evaluated | AC-02, FR-02 | `CurrentUserDep` resolves before the body is validated |
+| `budget_id` must resolve to the caller's own budget; not-found and not-owned collapsed | AC-03, AC-04, EC-03, EC-07, FR-03, A3 | `budget_repo.get_owned_by_id()` returns `None` for both cases by construction; service raises `BudgetNotFoundError` |
+| `amount_limit` required, `Decimal(15,2)`, reject not round, strictly positive | AC-05..AC-07, EC-01, EC-02, FR-04, FR-05, A6 | `BudgetUpdate.amount_limit`'s `Field` bounds, identical to `BudgetCreate`'s |
+| `wallet_id`/`category_id`/`period` never change; any submitted value ignored | AC-08, EC-06, FR-06, A1 | `BudgetUpdate` declares no such field; `update_amount_limit()` touches only `amount_limit` |
+| Response exposes exactly five fields | AC-09, FR-07, constitution PF-03 | `BudgetRead` — no ORM graph, no extra field (A5) |
+| No audit event | A10 | `budget_service.update_budget()` calls no `audit.record()` |
+
+**Sequence diagram — Update a Budget**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request into
+`API` answered back to `UI` with a status code, one workflow.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as BudgetService
+    participant Store as Store
+
+    UI->>API: PATCH /budgets/:id
+    API->>Svc: update(input)
+    Svc->>Store: find budget owned by the caller
+    Store-->>Svc: budget, or none
+
+    alt Budget not found, or found but not owned by the caller (AC-03/AC-04, collapsed outcome)
+        API-->>UI: 404 BUDGET_NOT_FOUND
+    else Budget owned by the caller
+        Svc->>Store: update the budget's amount limit
+        Store-->>Svc: budget updated
+        Svc-->>API: budget
+        API-->>UI: 200 budget updated
+    end
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-02)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+    opt Malformed payload — missing, non-positive, or over-precise amount limit (AC-05..AC-07)
+        API-->>UI: 422 VALIDATION_ERROR
+    end
+```
+
+Only one workflow is drawn (DG-07). The nested `alt`/`else` blocks are the one flow's own branches — not
+a second flow — mirroring how every prior Budget Management diagram folded its own refusal paths into a
+single picture.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-02) | 401 | `NOT_AUTHENTICATED` |
+| Missing, non-positive, or over-precise amount limit (AC-05..AC-07) | 422 | `VALIDATION_ERROR` |
+| Budget not found, or found but not owned by the caller (AC-03, AC-04) | 404 | `BUDGET_NOT_FOUND` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02). No
+`403` (A9: no role restriction), and no `409` of any kind (A8) — this endpoint produces only `200`,
+`401`, `404`, `422`, or `500`. BM-US-01's own `BUDGET_ALREADY_EXISTS` conflict is **not** in this
+table — it is structurally unreachable through this endpoint (A8).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `budget_service.update_budget()` is the only place that decides what a failed lookup means |
+| AR-02 Thin router | Required | Router binds the path param and payload, resolves `CurrentUserDep`, calls the service, commits, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `budget_repo.get_owned_by_id()`/`update_amount_limit()` are queries and persistence only (A3, A4) |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | `BudgetModel` → `BudgetRead` mapping happens in `budget_service.update_budget()`, the same place BM-US-01's `create_budget()` already does it |
+| AR-05 No framework objects in services | Required | `update_budget()` takes plain values (`owner`, `budget_id`, `amount_limit`); no `Request`/`Response` |
+| AR-06 One transaction per request | Required | Service flushes at most once (after the ownership lookup succeeds); the router commits once (A12) |
+| AR-07 Router → service → repository | Required | The router never calls `budget_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only to existing modules |
+| API-01 Versioned plural path | Required | `PATCH /api/v1/budgets/{budget_id}` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required | `200` update (not `201`) · `401` · `404` · `422` |
+| API-04 Prefixed error codes | Required | `BUDGET_NOT_FOUND` — catalogued above |
+| API-05 No generic status endpoint | Required (reasoned) | See A2 — `amount_limit` is a concrete business field, not a state-machine status; `Budget`'s real status field (BM-US-03) is untouched and unsettable by this endpoint; a single-field `PATCH` on the resource's own id is the default shape constitution NC-03 reserves verb-named endpoints *from* |
+| API-06 Pagination | N/A | Single-resource update; no list in this story |
+| API-07 Explicit response_model | Required | `response_model=BudgetRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `budget_repo.py`/`budget_service.py`/`budgets.py`/`errors.py` |
+| NC-02 Naming | Required | `BudgetUpdate` new (SDS §2.1 has no registry entry for it, the same gap BM-US-01 A1 already found for `BudgetCreate`/`BudgetRead`); `BudgetRead` reused unchanged |
+| NC-03 No verbs except state transitions | Required | `/budgets/{budget_id}` — no verb in the path (A2) |
+| NC-04 Column naming | N/A | No column renamed; no column added (A11) |
+| NC-05 Enum serialisation | N/A | No enum touched by this story |
+| NC-06 Concise service methods | Required | `budget_service.update_budget`, matching `create_budget`/`list_budgets`'s own naming |
+| VL-01 Pydantic is the source of truth | Required | `BudgetUpdate.amount_limit`'s `Field` bounds are the validation |
+| VL-02 Errors grouped | Required | Reused `RequestValidationError` handler — moot in practice with only one field, but the mechanism is the same unchanged one |
+| VL-05 Two-level uniqueness | N/A | No new uniqueness constraint; BM-US-01's own constraint is structurally unreachable here (A8) |
+| VL-06 Referenced entities verified before use | Required (404 only) | `404` if the budget is absent/not owned (A3) — the only branch this story uses. No "wrong state" / `409` branch applies — an earlier design draft's period-based conflict was removed after the project owner's review (A8) |
+| VL-07 Decimal money | Required | `Decimal`, `max_digits=15, decimal_places=2, gt=0` — reused unchanged from `BudgetCreate` (A6) |
+| SEC-06 JWT parameters | N/A | Consumed via `CurrentUserDep`, not defined here |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case to test (A9) |
+| SEC-08 Ownership filter | Required | `get_owned_by_id()` filters by `user_id` via the join to `wallets`, the same shape BM-US-02 A3 established |
+| SEC-09 Secrets from .env | N/A | No secret introduced by this story |
+| SEC-10 No enumeration | N/A (reasoning reused) | Same discipline as BM-US-01's own note — VL-06's absent-vs-present collapse (A3) means a non-owner learns nothing from a `404` |
+| SEC-11 Rate limiting | N/A | Scoped by its own text to the invitation and activation endpoints |
+| LA-01 No secrets in logs | N/A | No credential or token handled by this story |
+| LA-02 / LA-04 Audit | N/A (by decision) | Updating an amount limit is not one of LA-04's three named audited events, and no AC/FR asks for one (A10) |
+| PF-01 300 ms p95 | Required | One indexed lookup (join on `wallets.user_id`, already indexed by WM-US-02) plus one update, no slow I/O off the request path |
+| PF-02 Indexed lookups | Required | `budgets.id` is the primary key; `wallets.user_id` is already indexed (WM-US-02); `budgets.wallet_id` already indexed (BM-US-01) |
+| PF-03 DTO projection | Required | `BudgetRead` — five fields, no ORM graph (A5) |
+| PF-04 Bounded lists | N/A | No list endpoint in this story |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| DOD-02 Migration | N/A | `amount_limit` already exists as a column (A11) — no schema change, no Alembic revision |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No budget-update screen exists this round — the same treatment BM-US-01/02/03 each gave their own endpoints. `mobile/`'s fixture-driven prototype covers only UM-US-01's invite screen (`CLAUDE.md` §5). |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `BudgetUpdate` schema — one required field, `amount_limit` (A5, A6) | `backend/app/schemas/budget.py` | Open |
+| T-02 | `budget_repo.get_owned_by_id(db, *, budget_id, user_id)` — single join on `wallets` (A3) | `backend/app/repositories/budget_repo.py` | Open |
+| T-03 | `budget_repo.update_amount_limit(db, *, budget, amount_limit)` (A4) | `backend/app/repositories/budget_repo.py` | Open |
+| T-04 | Add `BudgetNotFoundError` (A7) | `backend/app/core/errors.py` | Open |
+| T-05 | `budget_service.update_budget(db, *, owner, budget_id, amount_limit)` — ownership lookup, then update; no active-period branch (FR-03) | `backend/app/services/budget_service.py` | Open |
+| T-06 | `PATCH /api/v1/budgets/{budget_id}` router; no new mount (router already exists) | `backend/app/api/v1/budgets.py` | Open |
+| T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_04_update_budget.py` | Open |
