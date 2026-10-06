@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** TM-US-01 *(TC-01…TC-36)* · TM-US-02 *(TC-37…TC-72)*
+> **Stories in this file:** TM-US-01 *(TC-01…TC-36)* · TM-US-02 *(TC-37…TC-72)* · TM-US-03 *(TC-73…TC-82)*
 
 ---
 
@@ -1119,4 +1119,201 @@ found at Verification; nothing here required root-causing.
 - **When:** The list is requested naming the two-transaction wallet's `wallet_id`
 - **Then:** The response is `200`; `total` is `2` — not `5`, the caller's combined cross-wallet total — proving the count query applies the same wallet filter the item query does
 - **AC:** AC-10, FR-07 *(assertion technique per QF-10)*
+- **Type:** integration
+
+---
+
+## TM-US-03: View a Transaction
+
+> **IDs in this section are local to TM-US-03** — except `TC-NN`, which continues this epic file's
+> own numbering: TM-US-02 used `TC-37`…`TC-72`, so this story continues from `TC-73`. **`QF-NN` also
+> continues here**, from `QF-14` (TM-US-01 used `QF-01`…`QF-08`, TM-US-02 used `QF-09`…`QF-13`) — per
+> this epic file's own TM-US-02 header note, which already settled the continuing convention for this
+> file.
+
+### Quality Findings
+
+#### QF-14
+
+**Description.** AC-03/AC-04 require a transaction reference that does not exist at all and one that
+exists but belongs to a different User to produce "the same not-found outcome" — `plan.md` A1 makes
+this true by construction, since `transaction_repo.get_owned_by_id()` filters by `user_id` in the
+query itself and returns `None` either way. A test that merely checks both cases return *some* `404`
+would not distinguish "genuinely identical" from "two different messages that both happen to carry
+status 404" — the same risk TM-US-01 QF-01/TM-US-02 QF-11/BM-US-04 QF-16 each already flagged for
+their own ownership-collapse cases.
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — the same class of minor information leak about another User's data those earlier
+findings already warned against.
+
+**Recommendation.** `TC-76` compares the full response body of the ownership-mismatch case (a
+different User's real transaction) against `TC-75`'s not-found-at-all case and asserts they match
+exactly — `error_code`, `message`, and `details` all identical, not merely the status code. `TC-80`
+extends the same comparison to a caller who owns a transaction of their own but names someone else's.
+
+#### QF-15
+
+**Description.** AC-05 requires the response to carry exactly the seven fields `TransactionRead`
+already fixes for a created (TM-US-01) or listed (TM-US-02) transaction — no more, no fewer, and in
+particular no embedded wallet or category name, despite this endpoint's own "view detailed
+information" framing (SDS §5.6.3) inviting more fields the way "list" did not. A test asserting only
+that the documented fields are *present* would not prove no others were *also* added.
+
+**Impact.** A future change that accidentally enriched this specific endpoint — exactly the
+temptation TM-US-02 A8 already rejected once for the list case, and this story's own `spec.md`
+Out-of-scope section rejects again — would pass a weak test and quietly diverge this story's response
+shape from TM-US-01/02's own precedent.
+
+**Recommendation.** `TC-79` asserts the response body's keys are exactly `id`, `wallet_id`,
+`category_id`, `amount`, `type`, `timestamp`, `note` — no more, and in particular no `wallet_name`/
+`category_name`/`user_id` — the same technique TM-US-01 QF-05 used for its own
+easy-to-accidentally-leak fields.
+
+### Acceptance Criteria Classification
+
+No transaction-detail screen exists in `mobile/` this round — confirmed directly in
+`mobile/app/(tabs)/transactions/index.tsx`'s own source comments, which name TM-US-03 by number as a
+screen that prototype deliberately does not build. No SRS UXR names one either.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully view a transaction the caller owns | **[API]** | No UI surface exists — confirmed directly in mobile's own source comments naming this story out of scope |
+| AC-02 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-03 | Reject a transaction reference that does not exist at all | **[API]** | Persistence/ownership contract; bounded by QF-14 |
+| AC-04 | Reject a transaction reference belonging to a different User | **[API]** | Persistence/ownership contract; bounded by QF-14 |
+| AC-05 | Return exactly the documented transaction fields | **[API]** | Response-payload contract; bounded by QF-15 |
+| EC-01 | A transaction reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
+| EC-02 | A caller who owns a different transaction attempts to view another User's transaction | **[API]** | Persistence/ownership contract; bounded by QF-14 |
+| EC-03 | An ADMIN-role caller attempting to view a transaction they do not own | **[API]** | Ownership contract independent of role |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-73, TC-74 | — |
+| AC-02 | [API] | TC-77, TC-82 | — |
+| AC-03 | [API] | TC-75 | — |
+| AC-04 | [API] | TC-76 | — |
+| AC-05 | [API] | TC-74, TC-79 | — |
+| EC-01 | [API] | TC-78 | — |
+| EC-02 | [API] | TC-80 | — |
+| EC-03 | [API] | TC-81 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no
+> transaction-detail screen exists this round, confirmed directly in mobile's own source rather than
+> inferred (QF reasoning above). This story never touches `budgets` (spec *Out of scope*), so no test
+> here exercises the SDS §2.4.3 Budget Monitoring State machine.
+
+### Test Implementation Map *(filled at step 4)*
+
+Not yet populated — this dispatch covers steps 1–3 (Spec, Design, Quality) only; no test code exists
+yet for TM-US-03. `backend/tests/integration/test_tm_us_03_view_transaction.py` will be written at the
+Implement dispatch (steps 4–6) from the test cases below, one test per `TC-NN`, each carrying its
+`TC-NN` id in its docstring, following TM-US-01/02's own Test Implementation Map precedent in this
+same file.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-73 | *(not yet implemented)* | — |
+| TC-74 | *(not yet implemented)* | — |
+| TC-75 | *(not yet implemented)* | — |
+| TC-76 | *(not yet implemented)* | — |
+| TC-77 | *(not yet implemented)* | — |
+| TC-78 | *(not yet implemented)* | — |
+| TC-79 | *(not yet implemented)* | — |
+| TC-80 | *(not yet implemented)* | — |
+| TC-81 | *(not yet implemented)* | — |
+| TC-82 | *(not yet implemented)* | — |
+
+---
+
+### TC-73: An authenticated User views a transaction they own — 200 with the full detail, note included
+
+- **US:** TM-US-03
+- **Given:** An authenticated User who owns a wallet and an `EXPENSE`-typed category, with one transaction created against them carrying `amount` `50.00`, `type` `"EXPENSE"`, and `note` `"Weekly grocery run"`
+- **When:** The User requests that transaction by its own `id`
+- **Then:** The response is `200`; the body carries `id` equal to the created transaction's id, `wallet_id`, `category_id`, `amount` `50.00`, `type` `"EXPENSE"`, the exact `timestamp` recorded at creation, and `note` equal to exactly `"Weekly grocery run"`
+- **AC:** AC-01, FR-01, FR-05
+- **Type:** integration
+
+### TC-74: Viewing a transaction created with no note returns the note as exactly null
+
+- **US:** TM-US-03
+- **Given:** An authenticated User who owns a wallet and a category, with one transaction created against them with the `note` field entirely absent
+- **When:** The User requests that transaction by its own `id`
+- **Then:** The response is `200`; the body's `note` key is present and its value is exactly `null` — not an empty string and not the key omitted, the same distinction TM-US-01 TC-23 already proved at creation, now proved again through the read path
+- **AC:** AC-01, AC-05, FR-05
+- **Type:** integration
+
+### TC-75: A transaction_id matching no transaction at all is rejected with 404 TRANSACTION_NOT_FOUND
+
+- **US:** TM-US-03
+- **Given:** An authenticated User
+- **When:** The User requests a transaction by an `id` that matches no transaction in the system
+- **Then:** The response is `404` with `error_code` `TRANSACTION_NOT_FOUND`
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-76: A transaction belonging to a different User is rejected with the identical outcome as TC-75
+
+- **US:** TM-US-03
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a wallet with one transaction logged against it and `A` owns nothing of the kind
+- **When:** `A` requests `B`'s transaction by its own `id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-75's response
+- **AC:** AC-04, FR-03 *(assertion technique per QF-14)*
+- **Type:** integration
+
+### TC-77: An unauthenticated caller is denied with 401
+
+- **US:** TM-US-03
+- **Given:** A caller presenting no `Authorization` header, and an existing transaction belonging to some other, real User
+- **When:** The caller requests that transaction by its own `id`
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-78: A malformed transaction reference is rejected with the same outcome as a well-formed but non-existent one
+
+- **US:** TM-US-03
+- **Given:** An authenticated User
+- **When:** The User requests a transaction by the `id` value `"not-a-real-id"`
+- **Then:** The response is `404` `TRANSACTION_NOT_FOUND`, identical to TC-75's response
+- **AC:** EC-01, FR-03
+- **Type:** integration
+
+### TC-79: The response exposes exactly the seven documented fields
+
+- **US:** TM-US-03
+- **Given:** An authenticated User who owns a wallet and a category, with one transaction created against them
+- **When:** The User requests that transaction by its own `id`
+- **Then:** The response body's keys are exactly `id`, `wallet_id`, `category_id`, `amount`, `type`, `timestamp`, `note` — no more, and in particular no `user_id`, no embedded wallet or category name
+- **AC:** AC-05, FR-05 *(assertion technique per QF-15)*
+- **Type:** integration
+
+### TC-80: A caller who owns a transaction of their own cannot view a different User's transaction
+
+- **US:** TM-US-03
+- **Given:** Two authenticated Users `A` and `B`, where `A` owns a wallet with one transaction of their own and `B` owns a separate wallet with one transaction of their own
+- **When:** `A` requests `B`'s transaction by its own `id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-75's response — owning a transaction of their own gives `A` no access to `B`'s
+- **AC:** EC-02, FR-03 *(assertion technique per QF-14)*
+- **Type:** integration
+
+### TC-81: An ADMIN-role caller cannot view another User's transaction through this endpoint
+
+- **US:** TM-US-03
+- **Given:** An authenticated User whose role is `ADMIN`, and a second User (any role) who owns a wallet with one transaction of their own
+- **When:** The ADMIN requests the other User's transaction by its own `id`
+- **Then:** The response is `404` `TRANSACTION_NOT_FOUND` — the same outcome any non-ADMIN caller would get; no role grants visibility through this endpoint
+- **AC:** EC-03, FR-04
+- **Type:** integration
+
+### TC-82: Credentials are evaluated before the transaction reference is looked up
+
+- **US:** TM-US-03
+- **Given:** A caller presenting no credentials
+- **When:** The caller requests a transaction by an `id` that does not match any transaction in the system
+- **Then:** The response is `401` `NOT_AUTHENTICATED`, not `404` — mirrors TM-US-02 TC-41/UM-US-03 TC-61's own ordering
+- **AC:** AC-02, FR-02
 - **Type:** integration

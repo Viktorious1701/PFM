@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** TM-US-01 *(specified)* · TM-US-02 *(specified)*
+> **Stories in this file:** TM-US-01 *(specified)* · TM-US-02 *(specified)* · TM-US-03 *(specified)*
 
 ---
 
@@ -698,3 +698,224 @@ as one combined, most-recent-first sequence rather than grouped or limited to a 
 - **This story never reads or writes the `budgets` table**, for the same reason TM-US-01 already
   recorded: BM-US-03 owns spending-vs-budget computation, not this story, even though a listed
   Transaction is exactly the kind of record that computation eventually reads.
+
+---
+
+## TM-US-03: View a Transaction
+
+> **IDs in this section are local to TM-US-03.** `AC-01` below is not TM-US-01's or TM-US-02's own
+> `AC-01`; each story section numbers its own criteria, per `artifact-templates/spec-templates.md`
+> and this epic file's own TM-US-01/TM-US-02 precedent. Only `TC-NN` in `test_cases.md` runs
+> continuously across the epic (`CLAUDE.md` §1.1 rule 4) — this story continues from `TC-73`.
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-06 — searched in full; no entry for "view a single transaction" exists**
+> `### Feature-06: Transaction Management` contains exactly three story headers: `#### US-06-01:
+> Create a Transaction for a Wallet [MVP]` (with Gherkin, quoted in full in this file's TM-US-01
+> section), a bare `#### US-06-02: View List of Transactions [MVP]`, and a bare `#### US-06-03:
+> Update/Delete a Transaction` (no `[MVP]` tag, no Gherkin). There is no fourth header, and no entry
+> of any kind for viewing one transaction by itself — thinner anchoring than even TM-US-02 had, which
+> at least got a bare header of its own. Grounded instead in SRS §1.5's domain model and SRS §2
+> FR-06's text directly, the same way BM-US-02/CM-US-02 grounded their own no-SRS-header situations
+> (see *Assumptions & Dependencies*). Not a source contradiction, so no `[NEEDS RULING]` follows.
+
+**SRS §1.5 Conceptual Domain Model**
+> **Transaction** — A single recorded movement of money, in or out, against one Wallet and one
+> Category, at a point in time (FR-06).
+>
+> | Relationship | Cardinality | Meaning |
+> | Wallet contains Transaction | one Wallet → many Transactions | Every Transaction moves money
+> into or out of exactly one Wallet (FR-06) |
+> | Category classifies Transaction | one Category → many Transactions | Every Transaction is
+> tagged with exactly one Category (FR-06) |
+
+**SRS §2 FR-06 — Transaction Management**
+> The System shall allow Users to log income and expense Transactions against a designated Wallet
+> and Category. The System shall automatically recalculate and persist wallet balances atomically.
+
+**SDS §5.6.3 TM-US-03: View a Transaction (USER)**
+> **Goal:** View detailed information for a single transaction item.
+
+One sentence — the same thinness every other Transaction Management story's own SDS goal carried
+before it (TM-US-02's own Source section already made this observation for itself).
+
+**SDS §6.3 API Index**
+> No row exists for any single-transaction read endpoint — the same pre-existing gap TM-US-02's own
+> Source section already found and left alone; this dispatch's scope is the three files in
+> `specs/006-transaction-management/`, not `SDS.md`.
+
+**SDS §2.2 Domain Object** *(reused, unchanged by this story)*
+> **Transaction:** Ledger entry representing monetary movement (`id`, `wallet_id`, `category_id`,
+> `amount`, `type`, `timestamp`, `note`).
+
+**constitution.md SEC-08, VL-06**
+> SEC-08: Queries for user-owned data filter on the authenticated `user_id` at the repository layer.
+> VL-06: Referenced entities are verified to exist and be active before use — `404` if absent, `409`
+> if present but in the wrong state.
+
+**`specs/006-transaction-management/spec.md` TM-US-01 BR-01** *(this story's own inherited precedent)*
+> "A transaction's wallet and its category must each belong to the authenticated caller; the
+> transaction itself carries no owner column of its own, so its ownership is entirely transitive
+> through `wallet_id` and `category_id`."
+
+### Out of scope for this story
+
+TM-US-01 (create a transaction) · TM-US-02 (list transactions) · TM-US-04 (update a transaction) ·
+TM-US-05 (delete a transaction) · BM-US-02..05 · WM-US-03..05 · CM-US-03..05 · UM-US-04/05,
+DC-US-01/02 · Features 07 (Financial Reporting), 08 (Notifications), 09 (Dashboard) · SRS §6
+Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: changing or removing the viewed transaction
+(TM-US-04/05); any field beyond the seven TM-US-01 already established — in particular, no embedded
+wallet name, category name, or any other entity's data folded into the response, which stays a
+client-side concern exactly as TM-US-02's own Assumptions already settled for the list endpoint; and
+any spending-vs-budget computation or the 75%/100% threshold alert (BM-US-03's own job, per
+TM-US-01/02's own Out-of-scope notes).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to view the full detail of one of my own transactions by its
+own identifier, so that I can inspect a single entry from my spending or income history without
+paging through the whole list to find it.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully view a transaction the caller owns**
+**Given** an authenticated User who owns a wallet with a transaction logged against it,
+**When** the User requests that transaction by its own identifier,
+**Then** the system returns a success result carrying exactly that transaction's identifier, wallet
+reference, category reference, amount, type, timestamp, and note, matching what was recorded.
+
+**AC-02: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to view a transaction,
+**Then** the system denies the request before evaluating the submitted reference, returns nothing,
+and returns an unauthenticated error.
+
+**AC-03: Reject a transaction reference that does not exist at all**
+**Given** an authenticated User,
+**When** the submitted transaction reference matches no transaction in the system,
+**Then** the system returns a not-found error.
+
+**AC-04: Reject a transaction reference belonging to a different User**
+**Given** an authenticated User,
+**When** the submitted transaction reference matches a transaction belonging to a wallet owned by a
+different User,
+**Then** the system returns the same not-found outcome AC-03 describes — the response gives no
+indication of which of the two happened.
+
+**AC-05: Return exactly the documented transaction fields**
+**Given** an authenticated User successfully views one of their own transactions,
+**When** the system returns the success result,
+**Then** the result carries exactly the transaction's identifier, wallet reference, category
+reference, amount, type, timestamp, and note — no other field, no embedded wallet or category name,
+and no data belonging to any other User's wallet or category.
+
+### Edge Cases
+
+**EC-01**: **A transaction reference that is not even a well-formed identifier** — a value such as
+`"not-a-real-id"` is refused with the same not-found outcome as a well-formed but non-existent
+reference (AC-03). No separate malformed-identifier error exists; a reference either resolves to a
+transaction the caller owns, or it does not, regardless of its shape.
+
+**EC-02**: **A caller who owns one or more transactions of their own, attempting to view a different
+User's transaction** — refused with the identical outcome AC-04 describes; owning some transaction
+never entitles a caller to view another User's transaction.
+
+**EC-03**: **A caller whose role is ADMIN, attempting to view a transaction they do not themselves
+own** — refused exactly as EC-02 describes for any other caller. This endpoint has no ADMIN-wide
+sense at all; it is scoped to the caller regardless of role, the same scoping TM-US-02 EC-04 already
+established for the list endpoint.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to retrieve a single
+  transaction they own by its own identifier (SDS §5.6.3; mirrors TM-US-01 FR-01, TM-US-02 FR-01).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating
+  credentials before the submitted reference (constitution API-08; mirrors TM-US-01 FR-02, TM-US-02
+  FR-03).
+- **FR-03**: The system must **require** the submitted transaction reference to resolve to a
+  transaction belonging to a wallet owned by the authenticated caller, and **refuse** the request
+  with an identical outcome whether no such transaction exists at all or it exists and belongs to a
+  wallet owned by a different User (AC-03, AC-04, EC-01, EC-02; constitution SEC-08, VL-06).
+- **FR-04**: The system must **never grant** greater visibility to a caller whose role is ADMIN —
+  this operation is scoped to the caller regardless of role, with no role-wide view of another
+  User's transactions (EC-03; mirrors TM-US-02 FR-15).
+- **FR-05**: The system must **return**, on success, exactly the transaction's identifier,
+  `wallet_id`, `category_id`, `amount`, `type`, `timestamp`, and `note` — the same seven fields
+  TM-US-01 already established, no other field, and no other entity's data folded in (AC-05;
+  constitution PF-03).
+
+#### Business Rules
+
+- **BR-01**: A transaction's ownership for this operation is established the same way TM-US-01 BR-01
+  already established it for creation and TM-US-02 BR-01 for listing — entirely transitive through
+  the transaction's own `wallet_id`, since the transaction carries no owner column of its own. A
+  transaction reference that does not resolve to a row the caller owns is refused identically
+  whether no such row exists at all or it exists and belongs to a different User (FR-03).
+- **BR-02**: No role — including ADMIN — grants visibility into another User's transaction through
+  this operation (FR-04).
+
+#### Key Entities
+
+- **Transaction**: A single recorded movement of money, in or out, against one Wallet and one
+  Category, at a point in time (SRS §1.5; TM-US-01). This story only reads one transaction TM-US-01
+  already created, identified by its own id — the first story in this codebase to fetch a single
+  Transaction by its own identifier rather than creating one (TM-US-01) or listing many (TM-US-02);
+  it creates, updates, and deletes none.
+- **Wallet**: Reused from WM-US-01 with no new column. Referenced, not owned, by this story — a
+  transaction's ownership for the purpose of this read is reached through `wallet_id`, the same path
+  TM-US-01/02 already established.
+- **Category**: Reused from CM-US-01 with no new column. Referenced by this story only as a field
+  already carried by the transaction; not itself queried for ownership by this story, the same
+  treatment TM-US-02 already gave it.
+- **User**: Reused from Feature-01/Feature-02 with no new column. The authenticated caller's own
+  identifier, reached through the wallet the viewed transaction belongs to, is the only scope this
+  story ever queries by (constitution SEC-08).
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can retrieve the full detail of any one of their own
+  transactions, by its own identifier, in one call, and the response reflects exactly what is
+  stored.
+- **SC-02**: No transaction can be viewed without an authenticated caller.
+- **SC-03**: A transaction can never be viewed by a User who does not own it — whether because the
+  reference does not exist at all or belongs to someone else — refused identically in both cases,
+  regardless of the caller's role.
+- **SC-04**: The response for a single transaction always carries exactly the same seven fields a
+  created or listed transaction already carries — no more, no fewer, and no other entity's data
+  folded in.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01) and TM-US-01 (Create a Transaction) are already implemented** — there is
+  nothing to view otherwise, mirroring how TM-US-02 depended on the same two stories.
+- **`SRS.md` §6 has no entry at all for this story** — not even a bare header the way TM-US-02's
+  `US-06-02` got one. `US-06-03`'s own header ("Update/Delete a Transaction") is the closest-numbered
+  SRS entry, and it names a different operation entirely. Grounded instead directly in SRS §1.5's
+  domain model and SRS §2 FR-06's text, the same way BM-US-02/CM-US-02 grounded their own
+  no-SRS-header stories. Recorded once, here, rather than against each AC — this is the expected
+  condition for this story, not a source contradiction, so no `[NEEDS RULING]` follows from it.
+- **This is the first single-resource "view by id" story in this codebase.** No WM/CM/BM epic has
+  built one yet either: Budget's own `03` slot (BM-US-03) is a different kind of story (computed
+  status/alerts over the list, not a fetch-one-by-id read), and WM-US-03/CM-US-03 are unbuilt. The
+  closest shape-precedent is BM-US-04 (Update a Budget)'s own `get_owned_by_id()` — read for the
+  *pattern* of "fetch one row scoped to the caller, refuse identically whether absent or not owned,"
+  not because this story updates anything. Full design reasoning, stated in this story's own terms
+  rather than assumed to transfer automatically from Budget's: `plan.md` A1.
+- **The response reuses `TransactionRead` unchanged — no new DTO, no enrichment.** TM-US-01 A14 and
+  TM-US-02 A8 already settled, for this exact entity, that no other entity's data is folded into a
+  transaction response; this story adds nothing new to that reasoning, it simply applies again to a
+  single-item read. Mobile-side name resolution is this app's own established pattern for exactly
+  this gap — `mobile/app/(tabs)/transactions/index.tsx`'s own header comment states it directly:
+  "`TransactionRead` carries only `wallet_id`/`category_id`... never a display name — so wallets and
+  categories are fetched up front... [to render] each row's name/currency/glyph."
+- **No transaction-detail screen exists in `mobile/` this round** — confirmed directly in
+  `mobile/app/(tabs)/transactions/index.tsx`'s own source comments, which name this story by number
+  as a screen that prototype deliberately does not build ("TM-US-03/04 (a transaction-detail screen)
+  are out of scope"). No SRS UXR names a transaction-detail screen either.
+- **This story never reads or writes the `budgets` table**, for the same reason TM-US-01/02 already
+  recorded: BM-US-03 owns spending-vs-budget computation, not this story.

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** TM-US-01 *(planned)* · TM-US-02 *(planned)*
+> **Stories in this file:** TM-US-01 *(planned)* · TM-US-02 *(planned)* · TM-US-03 *(planned)*
 
 ---
 
@@ -930,3 +930,288 @@ join-based ownership scope is described in prose in a `Note`, per DG-04's own al
 `#` in any label (DG-06), and the one `UI→API` request (`GET /transactions`) is answered by exactly
 one of the three terminal branches, each carrying an HTTP status back to `UI` (DG-05). One workflow
 only (DG-07).
+
+---
+
+## TM-US-03: View a Transaction
+
+> **IDs in this section are local to TM-US-03** (`A*`/`T-NN`), matching `spec.md`'s convention. Only
+> `TC-NN` in `test_cases.md` continues across this epic file — this story continues from `TC-73`.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Architecture | **`transaction_repo.get_owned_by_id()` needs exactly one join, to `wallets` — no second join to `categories`.** This generalises this same module's own `list_owned()` ownership scoping (TM-US-02 A2) from "a page of the caller's own matching transactions" to "one transaction, fetched by its own id, scoped to the caller" — the identical widening BM-US-04 A3 applied to `budget_repo.list_owned()`'s own single-join design (BM-US-02 A3) when it built `budget_repo.get_owned_by_id()`. `TransactionModel` carries no `user_id` (TM-US-01 A11); ownership is entirely transitive through `wallet_id` → `wallets.user_id`. The join-suffices argument rests on an invariant fixed at creation time, not discovered at read time: TM-US-01 FR-04/FR-06/BR-01 independently validate both `wallet_id` and `category_id` against the same caller before a `TransactionModel` row is ever built, so every stored transaction's `category_id` is already guaranteed to belong to the same owner as its `wallet_id` — there is no code path today that can produce a row whose wallet and category belong to different Users. This is the identical invariant TM-US-02 A2 already relied on for the list case; this decision restates it for the single-row case rather than re-deriving it, because fetching one row instead of many changes nothing about what the invariant guarantees. Stated on its own terms, not by citing Budget's reasoning as if it transferred automatically: `budget_repo.get_owned_by_id()`'s own docstring grounds the identical join-suffices argument in *Budget's* own creation-time invariant (BM-US-01 FR-13/BR-02 — two references independently validated at creation). Checked directly against this story's own precedent rather than assumed: the two stories are not different in *kind* here — Transaction's FR-04/FR-06/BR-01 is the same shape of guarantee, not a weaker or absent one, so a premise that Transaction has "no analogous structure to lean on" does not hold up on inspection; it has the identical structure, under its own rule numbers, already exercised once for exactly this purpose by TM-US-02 A2. The one genuine difference between the two tables is narrower than the join argument itself: Transaction carries no uniqueness constraint at all (TM-US-01 A15 — "the first money-bearing story in this codebase where VL-05 does not apply"), where Budget's own uniqueness key additionally spans `period` (BM-US-01 BR-05) — so this story's version of the invariant has one fewer dimension to state than Budget's, not a missing one. "No such transaction" and "exists, owned by someone else" collapse to the identical `None` by construction, not a check that could be forgotten (constitution SEC-08) — the same collapse `wallet_repo`/`category_repo`/`budget_repo`'s own `get_owned_by_id()` functions already establish for their own tables. A malformed `transaction_id` (spec EC-01) collapses into the same `None` for the same reason TM-US-01 A8 already gave for `wallet_id`/`category_id`: this codebase's `id` columns are free-text `String(36)` (constitution ENV-03), so a malformed value simply matches no row rather than needing a distinct validation error. | ✅ Resolved |
+| A2 | API | **`GET /api/v1/transactions/{transaction_id}` — a plain resource-read on the collection's own id, not a new verb or a nested path.** Matches API-01 (versioned, plural resource noun) and NC-03 (no verb except an explicit state-transition, not applicable here — this is an ordinary read). Declared on the same router (`transactions.py`) as the existing `POST /transactions` and `GET /transactions` (list), with no path collision: a bare `/transactions` and a `/transactions/{transaction_id}` are different path shapes to FastAPI/Starlette's router, so declaration order between the list route and this one does not matter here — worth recording since this is the first time this router gains a path parameter. | ✅ Resolved |
+| A3 | API / Domain | **The response reuses `TransactionRead` unchanged — no new DTO.** TM-US-01 A14 and TM-US-02 A8 already settled, for this exact entity, that a transaction response carries exactly its own seven fields with no other entity's data folded in; this story's own "detail view" framing does not change that, despite "detail" inviting more fields than "list" might — `spec.md`'s own Out-of-scope section says so explicitly. No wallet name, no category name, no `message` field (TM-US-01 A14's own reasoning for omitting one applies again unchanged: this is not a creation, the `200` status alone communicates success). | ✅ Resolved |
+| A4 | Security / API | **One new error class: `TransactionNotFoundError` (404, `TRANSACTION_NOT_FOUND`).** None of the four existing `Transaction`-prefixed errors fit: `TransactionWalletNotFoundError`/`TransactionCategoryNotFoundError` (TM-US-01) are about a *referenced* wallet or category failing to resolve at creation time, not about the transaction being viewed itself; `TransactionCategoryTypeMismatchError`/`TransactionInsufficientBalanceError` are creation-time conflicts this story cannot reach (there is nothing to mismatch or to afford when merely reading a row). `TransactionNotFoundError` is constitution VL-06's "404 if absent" branch, applied to the transaction's own id for the first time — the same distinction BM-US-04 A7 drew between `BudgetNotFoundError` and `BudgetWalletNotFoundError`/`BudgetCategoryNotFoundError`. | ✅ Resolved |
+| A5 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.6.3 tags this story "(USER)", identical to TM-US-01/02's own tag. Mirrors TM-US-01 A12, TM-US-02 A11. An ADMIN caller who does not own the requested transaction is refused exactly as any other caller would be (spec EC-03) — nothing elevates an ADMIN's visibility here, the same scoping TM-US-02 A11 already established for the list endpoint. | ✅ Resolved |
+| A6 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families (invitations sent, activations completed, logins); viewing one transaction is no closer to any of them than creating one (TM-US-01 A13) or listing them (TM-US-02 A10) already were. No AC or FR here asks for one. | ✅ Resolved |
+| A7 | Architecture | **The router issues no `db.commit()`.** Pure read, nothing to commit — mirrors `GET /wallets` (WM-US-02 A4) and `GET /transactions` (TM-US-02 A9). | ✅ Resolved |
+| A8 | Architecture | **No new Alembic migration.** This story adds no column, no index, and no table — the first Transaction Management story needing neither (TM-US-01/02 each added one). `DOD-02` is therefore N/A, the same position BM-US-04 A11 recorded for its own first non-schema-changing story in the Budget epic. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only — no new top-level module, no migration; the first Transaction
+Management story to add a route with a path parameter and the first to need neither a new column nor
+a new index).
+
+```text
+backend/app/
+├── repositories/
+│   └── transaction_repo.py           # update: add get_owned_by_id() (A1)
+├── services/
+│   └── transaction_service.py        # update: add get_transaction() (A1)
+├── core/
+│   └── errors.py                     # update: add TransactionNotFoundError (A4)
+└── api/v1/
+    └── transactions.py               # update: add GET /transactions/{transaction_id} (A2, A5)
+
+backend/tests/
+└── integration/test_tm_us_03_view_transaction.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No change to `models/transaction.py` or `schemas/transaction.py` (`TransactionRead` reused unchanged,
+A3), `wallet_repo.py` (its own `get_owned_by_id()` is not called here — this story's ownership proof
+is the join inside `transaction_repo.get_owned_by_id()` itself, not a separate wallet lookup),
+`category_repo.py` (this story issues no query against `categories` at all, the same position TM-US-02
+A2 already took), `core/deps.py` (`CurrentUserDep` reused exactly as TM-US-01/02 already established,
+A5), and `api/v1/router.py` (`transactions.router` is already mounted, TM-US-01). No new Alembic
+revision (A8).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `TransactionModel` | `transactions` | none (read-only) | This story only reads, by `id` (primary key, indexed by construction) joined through `wallet_id` (already indexed, TM-US-01). No new column, no new index — the first Transaction Management story needing neither. |
+| `WalletModel` | `wallets` | none (read-only, join only) | Joined, never selected from directly — only `wallets.user_id` participates, to prove ownership (A1). Already indexed (WM-US-01). |
+| `TransactionRead` (DTO) | — | *(reused, unchanged)* | TM-US-01's own seven-field shape, reused for this single-item read too (A3). |
+
+**Repository addition** (`app/repositories/transaction_repo.py`)
+
+```python
+def get_owned_by_id(db: Session, *, transaction_id: str, user_id: str) -> TransactionModel | None:
+    """spec FR-03, BR-01, constitution SEC-08 (plan.md A1). The first "fetch
+    one transaction by its own id, scoped to the caller" lookup in this
+    codebase. Generalises this same module's own list_owned() single-join-
+    on-wallets ownership scoping (TM-US-02 A2) from a page of matching rows
+    to exactly one. Every stored transaction's category_id already belongs
+    to the same owner as its wallet_id by construction (TM-US-01 FR-04/
+    FR-06/BR-01), so one join suffices here too, with no second join to
+    categories needed. Scoped by user_id in the query itself, so "no such
+    transaction" and "exists, owned by someone else" collapse to the
+    identical None by construction, not a check that could be forgotten.
+    """
+    return db.scalar(
+        select(TransactionModel)
+        .join(WalletModel, TransactionModel.wallet_id == WalletModel.id)
+        .where(TransactionModel.id == transaction_id, WalletModel.user_id == user_id)
+    )
+```
+
+**Service** (`app/services/transaction_service.py`, addition)
+
+```python
+def get_transaction(db: Session, *, owner: UserModel, transaction_id: str) -> TransactionRead:
+    """spec AC-01, FR-03 (plan.md A1). Looks up the transaction scoped to
+    the caller; no further precondition follows ownership -- unlike
+    create_transaction()'s multi-step check order (TM-US-01 A4), there is
+    nothing else about a transaction's own state to check once it is
+    confirmed to belong to the caller, because a view changes nothing.
+    """
+    transaction = transaction_repo.get_owned_by_id(
+        db, transaction_id=transaction_id, user_id=owner.id
+    )
+    if transaction is None:
+        raise TransactionNotFoundError()
+
+    return TransactionRead(
+        id=transaction.id,
+        wallet_id=transaction.wallet_id,
+        category_id=transaction.category_id,
+        amount=transaction.amount,
+        type=transaction.type,
+        timestamp=clock.ensure_aware(transaction.timestamp),
+        note=transaction.note,
+    )
+```
+
+**Router** (`app/api/v1/transactions.py`, addition)
+
+```python
+@router.get(
+    "/{transaction_id}",
+    response_model=TransactionRead,
+    status_code=status.HTTP_200_OK,
+    summary="View a transaction",
+    description=(
+        "Returns the full detail of one of the authenticated caller's own "
+        "transactions, identified by its own id."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "TRANSACTION_NOT_FOUND"},
+    },
+)
+def get_transaction(
+    transaction_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> TransactionRead:
+    """Pure read -- no db.commit() (plan.md A7)."""
+    return transaction_service.get_transaction(
+        db, owner=current_user, transaction_id=transaction_id
+    )
+```
+
+**New error** (`app/core/errors.py`, appended under a new `# --- TM-US-03: View a Transaction` section)
+
+```python
+class TransactionNotFoundError(AppError):
+    """spec AC-03 / AC-04 / FR-03. Identical for "no such transaction" and
+    "not this caller's transaction" (constitution VL-06's `404 if absent`
+    branch) -- the first time this codebase looks a transaction up by its
+    own id rather than validating a *referenced* wallet/category. Distinct
+    from TransactionWalletNotFoundError/TransactionCategoryNotFoundError
+    (TM-US-01), which are about a *referenced* wallet or category failing
+    to resolve, not about the transaction being viewed itself -- the same
+    distinction BM-US-04 A7 drew for Budget.
+    """
+    status_code = 404
+    error_code = "TRANSACTION_NOT_FOUND"
+    default_message = "The referenced transaction was not found."
+```
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Authenticated User of any role may view their own transaction | AC-01, FR-01, A5 | `GET /api/v1/transactions/{transaction_id}` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before anything else is evaluated | AC-02, FR-02 | `CurrentUserDep` resolves before the path parameter is used |
+| `transaction_id` must resolve to a transaction owned by the caller; not-found and not-owned collapsed | AC-03, AC-04, EC-01, EC-02, FR-03, A1 | `transaction_repo.get_owned_by_id()` returns `None` for both cases by construction; service raises `TransactionNotFoundError` |
+| No role elevation — ADMIN sees only their own | EC-03, FR-04 | Same `get_owned_by_id()` call, same `user_id` scope, regardless of `current_user.role` |
+| Response exposes exactly seven fields, unchanged | AC-05, FR-05, constitution PF-03 | `TransactionRead` — no ORM graph, no extra field, no embedded Wallet/Category (A3) |
+| No audit event | A6 | `transaction_service.get_transaction()` calls no `audit.record()` |
+
+**Sequence diagram — View a Transaction**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request
+into `API` answered back to `UI` with a status code, one workflow.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as TransactionService
+    participant Store as Store
+
+    UI->>API: GET /transactions/:id
+    API->>Svc: get(input)
+    Svc->>Store: find the transaction owned by the caller
+    Store-->>Svc: transaction, or none
+
+    alt Transaction not found, or found but not owned by the caller (AC-03/AC-04, collapsed outcome)
+        API-->>UI: 404 TRANSACTION_NOT_FOUND
+    else Transaction owned by the caller
+        Svc-->>API: transaction
+        API-->>UI: 200 transaction
+    end
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-02)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+```
+
+Only one workflow is drawn (DG-07). Verified with `check.mjs` (`mermaid.parse()`) — see *Verification
+note* below.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-02) | 401 | `NOT_AUTHENTICATED` |
+| Transaction not found, or found but not owned by the caller (AC-03, AC-04) | 404 | `TRANSACTION_NOT_FOUND` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02). No
+`403` (A5: no role restriction), no `422` (the only input is a path parameter with no shape
+constraint, A1), and no `409` (a read has nothing to conflict on, mirrors TM-US-02).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `transaction_service.get_transaction()` is the only place that decides what a failed lookup means |
+| AR-02 Thin router | Required | Router binds the path parameter, resolves `CurrentUserDep`, calls the service, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `transaction_repo.get_owned_by_id()` is a query only |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | Mapping to `TransactionRead` happens in the service |
+| AR-05 No framework objects in services | Required | `get_transaction()` takes plain values (`owner: UserModel`, `transaction_id`); no `Request`/`Response` |
+| AR-06 One transaction per request | N/A | Pure read, nothing to commit (A7) |
+| AR-07 router → service → repository | Required | Router never calls `transaction_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only |
+| API-01 Versioned plural path | Required | `GET /api/v1/transactions/{transaction_id}` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required | `200` read · `401` · `404` |
+| API-04 Prefixed error codes | Required | `TRANSACTION_NOT_FOUND` — catalogued above |
+| API-05 No generic status endpoint | Required | A plain resource-read, not a state-transition |
+| API-06 Pagination | N/A | Single-resource read; no list in this story |
+| API-07 Explicit response_model | Required | `response_model=TransactionRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `transaction_repo.py`/`transaction_service.py`/`transactions.py` |
+| NC-02 Naming | Required | `TransactionRead` reused unchanged (SDS §2.1); no new DTO |
+| NC-03 API paths | Required | `/transactions/{transaction_id}` — no verb |
+| NC-04 Column naming | N/A | No column change this story |
+| NC-06 Concise service methods | Required | `transaction_service.get_transaction`, matching `budget_service.update_budget`'s own concision within its module |
+| VL-01 Pydantic is the source of truth | N/A | No request body or query parameter this story validates — the only input is a path parameter with no shape constraint (A1) |
+| VL-06 Referenced entities verified before use | Required | `transaction_id` resolved through an ownership-scoped lookup before any response is built (absent → 404) |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case to test (A5: no role restriction) |
+| SEC-08 Ownership filter | Required | The viewed transaction itself, not merely a *referenced* row, is filtered by `user_id` through the wallet join (A1) — the same extension TM-US-02 first made for a list, now made for a single row |
+| SEC-10 No enumeration | N/A (reasoning reused) | An authenticated caller who does not own a real transaction id learns nothing about who does, because the identical `404` covers both cases (A1) |
+| LA-02 / LA-04 Audit | N/A (by decision) | Viewing a transaction is not one of LA-04's three named audited events (A6) |
+| PF-01 300 ms p95 | Required | One indexed lookup, no I/O off the request path |
+| PF-02 Indexed lookups | Required | The lookup is by `transactions.id` (primary key) joined to `wallets.id` (primary key) filtered by `wallets.user_id` (indexed, WM-US-01) — every column already indexed, no new index needed |
+| PF-03 DTO projection | Required | `TransactionRead` — seven fields, no ORM graph, no embedded Wallet/Category (A3) |
+| PF-04 Bounded lists | N/A | Not a list endpoint |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| DOD-02 Migration | N/A | No schema change — the first Transaction Management story with none (mirrors BM-US-04 A11) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No transaction-detail screen exists — confirmed directly in `mobile/app/(tabs)/transactions/index.tsx`'s own source comments, which name TM-US-03 by number as a screen that prototype deliberately does not build ("TM-US-03/04 (a transaction-detail screen) are out of scope"). No SRS UXR names one either. |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `transaction_repo.get_owned_by_id(db, *, transaction_id, user_id)` — single join on `wallets` (A1) | `backend/app/repositories/transaction_repo.py` | Open |
+| T-02 | `transaction_service.get_transaction(db, *, owner, transaction_id) -> TransactionRead` (A1) | `backend/app/services/transaction_service.py` | Open |
+| T-03 | Add `TransactionNotFoundError` | `backend/app/core/errors.py` | Open |
+| T-04 | `GET /api/v1/transactions/{transaction_id}` route (A2, A5, A7) | `backend/app/api/v1/transactions.py` | Open |
+| T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_03_view_transaction.py` | Open |
+
+**Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram
+above was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`, scratch install
+already present in this session's scratchpad per `CLAUDE.md` §3) before this gate was claimed:
+
+```
+=== specs/006-transaction-management/plan.md — 3 mermaid block(s) found ===
+  OK   block starting at line 366
+  OK   block starting at line 820
+  OK   block starting at line 1104
+
+3/3 mermaid blocks parsed cleanly.
+```
+
+The block at line 1104 is this story's own diagram; it parses cleanly. By eye/grep: four lanes only
+(`UI`, `API`, `Svc`, `Store`), no `Repo`/`DB` lane, no `SELECT`/`INSERT`/`UPDATE … WHERE`/`JOIN`/
+`rowcount`/table-and-column syntax in any arrow label, no `;` or `#` in any label (DG-06), and the
+one `UI→API` request (`GET /transactions/:id`) is answered by exactly one of the two terminal
+branches, each carrying an HTTP status back to `UI` (DG-05). One workflow only (DG-07).

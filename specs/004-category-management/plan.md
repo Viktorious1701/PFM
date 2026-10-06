@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(planned)*
+> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(implemented, verified — 391 passed)* · CM-US-04 *(planned)*
 
 ---
 
@@ -485,3 +485,403 @@ in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitu
 | T-03 | `category_service.list_categories(db, *, owner, page, page_size) -> CategoryListRead` (A2, A3) | `backend/app/services/category_service.py` | Open |
 | T-04 | `GET /api/v1/categories` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `CurrentUserDep`, no `db.commit()` (A4, A6) | `backend/app/api/v1/categories.py` | Open |
 | T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_02_list_categories.py` | Open |
+
+---
+
+## CM-US-04: Update a Category
+
+> **IDs in this section are local to CM-US-04** (`A*`/`T-NN`), continuing the demonstrated convention:
+> every second-or-later story in this file restarts `A*`/`T-NN` locally (CM-US-02 already did this,
+> restarting from `A1`/`T-01`), while `test_cases.md`'s `TC-NN` and `QF-NN` run continuously across the
+> epic file. `test_cases.md`'s `TC-NN` below continues from `TC-35` and `QF-NN` from `QF-09` — confirmed
+> by direct count of that file's own current end (`TC-34`, `QF-08`), not from the number this dispatch
+> was originally briefed with (see that file's own header note).
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Domain / API | **`name`, `type`, and `icon` are each independently optional on `CategoryUpdate`; at least one is required.** SDS §5.4.4's own goal text — "Modify category name, type, **or** icon" — names three concrete fields disjunctively, unlike BM-US-04's own single-field `BudgetUpdate` (A6 there), where "required" and "optional" were the same question. A cross-field `model_validator` rejects a submission naming none of the three — the same technique TM-US-02 A7 already used for its own `date_from`/`date_to` ordering check, reused here for *how* to express a cross-field rule, not for what it says. Full reasoning: `spec.md` Assumptions. | ✅ Resolved |
+| A2 | API | **`PATCH /api/v1/categories/{category_id}`** — a verb-free path on the resource's own id, not a generic status endpoint and not a dedicated per-field action route. Category has no status/lifecycle field of any kind (unlike Budget, which already has a real computed status BM-US-04 A2 had to reason around) — `name`/`type`/`icon` are ordinary business fields, so the "is this secretly a state machine" question does not even arise. `PATCH`, not `PUT`, because the request is a genuine partial update of up to three of five fields. Mirrors BM-US-04 A2. | ✅ Resolved |
+| A3 | Architecture | **Reuse `category_repo.get_owned_by_id(db, *, category_id, user_id)` unchanged for this story's own ownership-scoped lookup — no new repository *read* function.** Confirmed directly from the file: it already exists, built for BM-US-01's own creation-time category-ownership check. Unlike Budget's own equivalent (BM-US-04 A3, which had to generalise a *wallet-join* lookup because Budget carries no owner column of its own), Category already carries its own `user_id` directly, so this function is already the exact single-table shape this story needs — nothing to generalise, nothing to add. | ✅ Resolved |
+| A4 | Architecture | **New `category_repo.update_category(db, *, category, name, category_type, icon)`.** Takes the already-fetched, already-ownership-verified `CategoryModel` instance from A3 and sets only the attributes the caller actually submitted (each parameter `None` means "leave unchanged," consistent with A1/A12) — never touches `user_id`. Flushed, not committed (AR-06) — the router owns the transaction boundary, the same shape every other write function in this codebase follows. | ✅ Resolved |
+| A5 | Domain / ERD | **New Alembic migration adding a nullable `icon` column, `String(50)`, no default, `down_revision` = the current head `f3a9c1d4e8b2`.** This is CM-US-01 A4's own deferred decision landing here, exactly as CM-US-01 A4 itself said it would: "Adding it is CM-US-04's own decision to make, since CM-US-04 ... is the story whose goal actually names icon-editing." Nullable because every category CM-US-01/02 already created has no value for it, and no AC requires a default other than absent. Length 50: see A11. | ✅ Resolved |
+| A6 | API | **`CategoryRead` is extended to a fifth field, `icon` — reused across create, list, *and* update, not a separate "detail" DTO.** A separate DTO (e.g. `CategoryDetailRead`, used only by this endpoint) was considered and rejected: it would mean a caller who successfully sets an icon through this endpoint, then immediately calls `GET /api/v1/categories` (CM-US-02), would see the icon vanish again — a worse, inconsistent design nothing justifies, when SDS's own aligned domain object (§2.2, §4.3.3) already describes `icon` as one Category attribute among the other four, not a write-only or update-only one. **Consequence, flagged, not hidden:** CM-US-01's `TC-14` and CM-US-02's `TC-19` — both already `PASS`, both already implemented — assert the response carries "exactly" four keys with no `icon`. Extending `CategoryRead` makes that literal assertion false going forward. Their own `TC-NN` text in `test_cases.md` is **not** rewritten here (`CLAUDE.md` §1.1 rule 4) — it remains an accurate record of what CM-US-01/CM-US-02 themselves guaranteed, which CM-US-01 A4 itself already flagged as provisional ("the column is CM-US-04's own decision to add"). The pytest code implementing those two TCs will need a one-line update, at the Implement step for *this* story, to expect the added key (value `None` unless set) — recorded here as `T-07`, not performed in this artifacts-only dispatch. `CategoryListRead` itself needs no change at all: it wraps `CategoryRead` unchanged, so the new field flows through automatically. | ✅ Resolved |
+| A7 | Security / API | **New error class `CategoryNotFoundError` (404, `CATEGORY_NOT_FOUND`).** `core/errors.py` checked directly first, the same question BM-US-04 A7 worked through for Budget: neither `BudgetCategoryNotFoundError` nor `TransactionCategoryNotFoundError` fits — both are about a category *referenced* by a Budget or a Transaction failing to resolve at *that* story's own creation time, not about the category *being updated* resolving against the caller here. `CategoryNotFoundError` is constitution VL-06's "404 if absent" branch, applied to a category's own id for the first time — the identical move BM-US-04 A7 made for Budget one epic earlier. | ✅ Resolved |
+| A8 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.4.4 tags this story "(USER)", identical to every other Category Management story's own tag. Mirrors CM-US-01 A7, CM-US-02 A6, BM-US-04 A9. | ✅ Resolved |
+| A9 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families; category creation (CM-US-01 A8) and listing (CM-US-02 A5) were already excluded, and updating fields is no closer to any of the three. No AC or FR here asks for one. | ✅ Resolved |
+| A10 | Architecture | **The router issues exactly one `db.commit()`, after the service call succeeds** — identical to every other write endpoint in this codebase (AR-06). `category_service.update_category()` itself only flushes (via A4's `update_category()`), never commits. | ✅ Resolved |
+| A11 | Domain | **`icon` is bounded at 50 characters, trimmed, required non-blank when submitted, and carries no format constraint beyond that** — no URL shape, no enum of known icon names. No SRS/SDS source states a length or format rule (the same situation CM-US-01 A1 faced for `name`, resolved the same way: reuse a close precedent rather than invent an unrelated number). 50, not `name`'s own 100, because an icon is expected to be a short identifier or slug (`test_cases.md` TC-13's own fixture, `"shopping-cart"`, is representative), not a label-length piece of text. Declining to constrain the format further mirrors CM-US-02 A8's own restraint about an unrequested `type` filter. | ✅ Resolved |
+| A12 | Domain / API | **Submitting `icon` as `null` and omitting it are indistinguishable — both leave the current value unchanged; there is no "clear my icon" operation in this story's contract.** Supporting a true clear-to-absent operation would require distinguishing "the key was sent with value null" from "the key was not sent at all" (Pydantic's `model_fields_set`/`exclude_unset`), a sentinel distinction nothing in SRS or SDS asks for. Declining it mirrors BM-US-04 A1's own "fewest invented rules" discipline. If a future story needs it, that is a gap to raise then. | ✅ Resolved |
+| A13 | Domain | **A category's `type` is freely editable with no retroactive effect — reasoned against the real code, not assumed.** `transaction_service.create_transaction()` compares a category's `type` to a submitted Transaction's `type` **once, at that Transaction's own creation time** (TM-US-01 BR-03) and never again; `TransactionModel`/`TransactionRead` carry their own independently-stored `type`, never re-derived from the category afterward. `transaction_repo.get_expense_totals_by_wallet_category()` — the function BM-US-02's budget spend-aggregation calls — filters on `TransactionModel.type == TransactionType.EXPENSE` (the **transaction's own stored type**) grouped by `(wallet_id, category_id)`; it never joins `CategoryModel` and never reads a category's `type` at all. No restriction is therefore placed on changing `type` after a Transaction or Budget already references the category — there is no invariant anywhere in this codebase past creation time for such a restriction to protect. Full reasoning: `spec.md` Assumptions; demonstrated: `test_cases.md` TC-60/TC-61/TC-62. | ✅ Resolved |
+| A14 | Scope | **CM-US-03 (View a Category) is not a dependency of this story.** `category_repo.get_owned_by_id()` is a repository-level function with no dependency on a public single-resource `GET` endpoint existing (A3); the category id a caller acts on is already available to them from CM-US-01's create response or CM-US-02's list response. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions/updates only — CM-US-01/02's foundation is reused as-is unless noted; the
+first schema change to `categories` since its own creation).
+
+```text
+backend/app/
+├── models/
+│   └── category.py                   # update: add `icon` column (A5)
+├── schemas/
+│   └── category.py                   # update: CategoryRead gains `icon` (A6); NEW CategoryUpdate (A1, A11, A12)
+├── repositories/
+│   └── category_repo.py              # update: add update_category() (A4); get_owned_by_id() reused unchanged (A3)
+├── services/
+│   └── category_service.py           # update: add update_category() (A1, A3, A4, A6); create_category()/list_categories() map the new `icon` field (A6)
+├── core/
+│   └── errors.py                     # update: add CategoryNotFoundError (A7)
+└── api/v1/
+    └── categories.py                 # update: add PATCH /categories/{category_id} (A2, A8, A10)
+
+backend/migrations/versions/
+└── <rev>_add_icon_to_categories.py   # NEW nullable icon column, down_revision = f3a9c1d4e8b2 (current head, A5)
+
+backend/tests/
+└── integration/test_cm_us_04_update_category.py   # NEW written at the Implement step from test_cases.md
+    (plus a one-line update to test_cm_us_01_create_category.py's TC-14 test and
+     test_cm_us_02_list_categories.py's TC-19 test, to expect the new `icon` key — A6, T-07)
+```
+
+No change to `core/deps.py` — `CurrentUserDep` is reused exactly as CM-US-01/02 already established
+(A8).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `CategoryModel` | `categories` | `name`, `type`, `icon` (write); `icon` column added (A5) | The first story to write to an existing category row. `user_id` is read (for the ownership check) but never written (A3, spec BR-05). |
+| `CategoryUpdate` (DTO) | — | `name`, `type`, `icon` | New request DTO (A1) — all three optional; a `model_validator` rejects a submission with all three `None` (A1). |
+| `CategoryRead` (DTO) | — | *(extended)* | Gains a fifth field, `icon: str \| None` (A6) — reused unchanged by create and list as well as this story's own response. |
+
+**DTO changes** (`app/schemas/category.py`)
+
+```python
+class CategoryUpdate(BaseModel):
+    """Request DTO for PATCH /categories/{category_id} (CM-US-04). All three
+    fields are independently optional (plan.md A1) -- None means "leave this
+    field unchanged," including for icon (A12): there is no way to submit a
+    null that clears an existing icon, only a new non-blank string that
+    replaces it. At least one field must be given a non-None value (A1) or
+    the request is refused -- the first multi-field optional update contract
+    in this codebase.
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    type: CategoryType | None = None
+    # Bounded at 50, not name's 100 -- an icon is a short identifier/slug,
+    # not a label (plan.md A11). No format constraint beyond length and
+    # non-blankness (A11).
+    icon: str | None = Field(default=None, min_length=1, max_length=50)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        """Only runs when a value was actually submitted -- Pydantic skips a
+        field validator for a field left at its None default. Same
+        trim-then-reject-blank technique as CategoryCreate.validate_name.
+        """
+        if v is None:
+            return v
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("Category name cannot be empty or whitespace only")
+        return trimmed
+
+    @field_validator("icon")
+    @classmethod
+    def validate_icon(cls, v: str | None) -> str | None:
+        """Same technique as validate_name, applied to icon (plan.md A11)."""
+        if v is None:
+            return v
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("Category icon cannot be empty or whitespace only")
+        return trimmed
+
+    @model_validator(mode="after")
+    def validate_at_least_one_field(self) -> "CategoryUpdate":
+        """spec AC-05, FR-04 (plan.md A1) -- the one cross-field rule
+        Pydantic cannot express on a single field, the same class of rule
+        TM-US-02 A7 already needed for date_from/date_to ordering.
+        """
+        if self.name is None and self.type is None and self.icon is None:
+            raise ValueError("At least one of name, type, or icon must be provided.")
+        return self
+
+
+class CategoryRead(BaseModel):
+    """SDS §2.2 (as aligned). Now five fields (plan.md A6) -- icon added for
+    the first time; None until a category has one set via this story's own
+    PATCH.
+    """
+
+    id: str
+    user_id: str
+    name: str
+    type: CategoryType
+    icon: str | None
+```
+
+**Repository additions** (`app/repositories/category_repo.py`)
+
+```python
+def update_category(
+    db: Session,
+    *,
+    category: CategoryModel,
+    name: str | None,
+    category_type: CategoryType | None,
+    icon: str | None,
+) -> CategoryModel:
+    """spec AC-01, FR-05..FR-08, BR-02, BR-05 (plan.md A1, A4). Mutates only
+    the attributes actually submitted on an already-fetched,
+    already-ownership-verified row -- user_id is never touched. Flushed, not
+    committed (AR-06) -- the router owns the transaction boundary.
+    """
+    if name is not None:
+        category.name = name
+    if category_type is not None:
+        category.type = category_type
+    if icon is not None:
+        category.icon = icon
+    db.add(category)
+    db.flush()
+    return category
+```
+
+`get_owned_by_id()` is reused unchanged (A3) — no addition needed.
+
+**Service** (`app/services/category_service.py`, addition)
+
+```python
+def update_category(
+    db: Session,
+    *,
+    owner: UserModel,
+    category_id: str,
+    name: str | None,
+    category_type: CategoryType | None,
+    icon: str | None,
+) -> CategoryRead:
+    """spec AC-01, FR-03 (plan.md A3, A4, A6). Looks up the category scoped
+    to the caller, then updates exactly the submitted fields -- no further
+    precondition check follows ownership (no uniqueness, no referenced-data
+    check: nothing this story's contract touches is referenced by anything
+    else in a way that requires one, A13).
+    """
+    category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
+    if category is None:
+        raise CategoryNotFoundError()
+
+    category = category_repo.update_category(
+        db, category=category, name=name, category_type=category_type, icon=icon
+    )
+    return CategoryRead(
+        id=category.id,
+        user_id=category.user_id,
+        name=category.name,
+        type=category.type,
+        icon=category.icon,
+    )
+```
+
+`create_category()` and `list_categories()` (both existing, CM-US-01/02) each need one added line
+mapping `icon=category.icon` / `icon=c.icon` into the `CategoryRead(...)` they already construct (A6,
+T-07) — not shown again here in full; the only change is that one field per call site.
+
+**Router** (`app/api/v1/categories.py`, addition)
+
+```python
+@router.patch(
+    "/{category_id}",
+    response_model=CategoryRead,
+    status_code=status.HTTP_200_OK,
+    summary="Update a category",
+    description=(
+        "Updates one or more of the name, type, and icon of one of the "
+        "authenticated caller's own categories, identified by its own id. "
+        "Any field not submitted is left unchanged; the category's owner "
+        "can never be changed."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "CATEGORY_NOT_FOUND"},
+        422: {"description": "VALIDATION_ERROR"},
+    },
+)
+def update_category(
+    category_id: str,
+    payload: CategoryUpdate,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> CategoryRead:
+    result = category_service.update_category(
+        db,
+        owner=current_user,
+        category_id=category_id,
+        name=payload.name,
+        category_type=payload.type,
+        icon=payload.icon,
+    )
+    db.commit()
+    return result
+```
+
+**New error** (`app/core/errors.py`, appended under a new `# --- CM-US-04: Update a Category` section)
+
+```python
+class CategoryNotFoundError(AppError):
+    """spec AC-03 / AC-04 / FR-03. Identical for "no such category" and "not
+    this caller's category" (constitution VL-06's `404 if absent` branch) --
+    the first time this codebase looks a category up by its own id rather
+    than validating a *referenced* category from Budget or Transaction
+    (plan.md A7)."""
+    status_code = 404
+    error_code = "CATEGORY_NOT_FOUND"
+    default_message = "The referenced category was not found."
+```
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Authenticated User of any role may update their own category's fields | AC-01, FR-01, A8 | `PATCH /api/v1/categories/{category_id}` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before anything else is evaluated | AC-02, FR-02 | `CurrentUserDep` resolves before the body is validated |
+| `category_id` must resolve to the caller's own category; not-found and not-owned collapsed | AC-03, AC-04, EC-08, EC-11, FR-03, A3 | `category_repo.get_owned_by_id()` returns `None` for both cases by construction; service raises `CategoryNotFoundError` |
+| At least one of name/type/icon required | AC-05, FR-04, A1 | `CategoryUpdate`'s `model_validator` |
+| `name`, when submitted: non-blank, trimmed, ≤100 chars | AC-06, AC-07, EC-02, FR-05 | `CategoryUpdate.name`'s `Field`/validator, reusing CM-US-01's own bound |
+| `type`, when submitted: exactly INCOME/EXPENSE, no folding/trimming | AC-08, EC-01, EC-09, FR-06 | `type: CategoryType \| None` — Pydantic's enum validation, reusing CM-US-01's own rule |
+| `icon`, when submitted: non-blank, trimmed, ≤50 chars | AC-09, AC-10, EC-07, EC-12, FR-07, A11 | `CategoryUpdate.icon`'s `Field`/validator |
+| Owner and unsubmitted fields never change | AC-11, EC-05, FR-08, BR-05 | `category_repo.update_category()` only sets a column whose argument is not `None`; no `user_id` parameter exists to set it with |
+| Response exposes exactly five fields | AC-12, FR-09, constitution PF-03 | `CategoryRead` — no ORM graph, no extra field (A6) |
+| Every validation failure reported together | EC-04, FR-10, constitution VL-02 | Reuses the existing `RequestValidationError` handler — unchanged |
+| No uniqueness constraint on name | EC-03, FR-11 | No unique index; no service-layer duplicate check (reuses CM-US-01 A3) |
+| `type` changes carry no retroactive effect | EC-10, FR-12, BR-04, A13 | `update_category()` performs no Transaction/Budget lookup or revalidation of any kind |
+| No audit event | A9 | `category_service.update_category()` calls no `audit.record()` |
+
+**Sequence diagram — Update a Category**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request into
+`API` answered back to `UI` with a status code, one workflow.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as CategoryService
+    participant Store as Store
+
+    UI->>API: PATCH /categories/:id
+    API->>Svc: update(input)
+    Svc->>Store: find category owned by the caller
+    Store-->>Svc: category, or none
+
+    alt Category not found, or found but not owned by the caller (AC-03/AC-04, collapsed outcome)
+        API-->>UI: 404 CATEGORY_NOT_FOUND
+    else Category owned by the caller
+        Svc->>Store: update exactly the submitted fields of the category
+        Store-->>Svc: category updated
+        Svc-->>API: category
+        API-->>UI: 200 category updated
+    end
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-02)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+    opt Malformed payload — none of name, type, icon submitted, or a submitted field invalid (AC-05..AC-10)
+        API-->>UI: 422 VALIDATION_ERROR
+    end
+```
+
+Only one workflow is drawn (DG-07). The nested `alt`/`else` blocks are the one flow's own branches — not
+a second flow — mirroring BM-US-04's own diagram shape.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-02) | 401 | `NOT_AUTHENTICATED` |
+| None of name/type/icon submitted, or a submitted field invalid (AC-05..AC-10) | 422 | `VALIDATION_ERROR` |
+| Category not found, or found but not owned by the caller (AC-03, AC-04) | 404 | `CATEGORY_NOT_FOUND` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02). No `403`
+(A8: no role restriction) and no `409` of any kind — nothing this story's own contract touches carries a
+uniqueness constraint (BR-03) or a referenced-entity precondition beyond the category's own existence/
+ownership (A13).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `category_service.update_category()` is the only place that decides what a failed lookup means, and which fields actually change |
+| AR-02 Thin router | Required | Router binds the path param and payload, resolves `CurrentUserDep`, calls the service, commits, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `category_repo.get_owned_by_id()`/`update_category()` are queries and persistence only (A3, A4) |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | `CategoryModel` → `CategoryRead` mapping happens in `category_service.update_category()`, the same place `create_category()`/`list_categories()` already do it |
+| AR-05 No framework objects in services | Required | `update_category()` takes plain values (`owner`, `category_id`, `name`, `category_type`, `icon`); no `Request`/`Response` |
+| AR-06 One transaction per request | Required | Service flushes at most once (after the ownership lookup succeeds); the router commits once (A10) |
+| AR-07 Router → service → repository | Required | The router never calls `category_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only to existing modules |
+| API-01 Versioned plural path | Required | `PATCH /api/v1/categories/{category_id}` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required | `200` update (not `201`) · `401` · `404` · `422` |
+| API-04 Prefixed error codes | Required | `CATEGORY_NOT_FOUND` — catalogued above |
+| API-05 No generic status endpoint | Required (reasoned) | See A2 — Category has no status/lifecycle field of any kind for this endpoint to collapse into a setter for |
+| API-06 Pagination | N/A | Single-resource update; no list in this story |
+| API-07 Explicit response_model | Required | `response_model=CategoryRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `category_repo.py`/`category_service.py`/`categories.py`/`errors.py` |
+| NC-02 Naming | Required | `CategoryUpdate` new (SDS §2.1 has no registry entry for it, the same gap BM-US-01 A1 already found for `BudgetCreate`/`BudgetRead`); `CategoryRead` extended, not replaced |
+| NC-03 No verbs except state transitions | Required | `/categories/{category_id}` — no verb in the path (A2) |
+| NC-04 Column naming | Required | `icon` snake_case, nullable, no new FK (A5) |
+| NC-05 Enum serialisation | N/A | No new enum; `type` continues to serialise as `"INCOME"`/`"EXPENSE"` unchanged when submitted |
+| NC-06 Concise service methods | Required | `category_service.update_category`, matching `create_category`/`list_categories`'s own naming |
+| VL-01 Pydantic is the source of truth | Required | `CategoryUpdate`'s `Field` bounds and `model_validator` are the validation |
+| VL-02 Errors grouped | Required | Reused `RequestValidationError` handler (EC-04) |
+| VL-05 Two-level uniqueness | N/A | No uniqueness constraint exists on `categories.name` to enforce (BR-03) |
+| VL-06 Referenced entities verified before use | Required (404 only) | `404` if the category is absent/not owned (A3) — the only branch this story uses; no "wrong state" / `409` branch applies, because Category carries no status for a category to be in the wrong state of |
+| VL-07 Decimal money | N/A | Category carries no monetary field |
+| SEC-06 JWT parameters | N/A | Consumed via `CurrentUserDep`, not defined here |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case to test (A8) |
+| SEC-08 Ownership filter | Required | `get_owned_by_id()` filters by `user_id` directly — Category's own column, no join needed (A3) |
+| SEC-09 Secrets from .env | N/A | No secret introduced by this story |
+| SEC-10 No enumeration | N/A (reasoning reused) | VL-06's absent-vs-present collapse (A3) means a non-owner learns nothing from a `404`, the same discipline BM-US-04 A3 already established |
+| SEC-11 Rate limiting | N/A | Scoped by its own text to the invitation and activation endpoints |
+| LA-01 No secrets in logs | N/A | No credential or token handled by this story |
+| LA-02 / LA-04 Audit | N/A (by decision) | Updating a category is not one of LA-04's three named audited events, and no AC/FR asks for one (A9) |
+| PF-01 300 ms p95 | Required | One indexed lookup (`categories.id` primary key, `user_id` already indexed) plus one update, no slow I/O off the request path |
+| PF-02 Indexed lookups | Required | `categories.id` is the primary key; `categories.user_id` already indexed (CM-US-01) |
+| PF-03 DTO projection | Required | `CategoryRead` — five fields, no ORM graph (A6) |
+| PF-04 Bounded lists | N/A | No list endpoint in this story |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| DOD-02 Migration | Required | One Alembic revision adding `icon`, `down_revision = f3a9c1d4e8b2` (current head) — the first schema change to `categories` since its own creation (A5) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No category-update screen exists this round — the same treatment CM-US-01/02 each gave their own endpoints. `mobile/`'s fixture-driven prototype covers only UM-US-01's invite screen (`CLAUDE.md` §5). |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | Alembic revision adding nullable `icon` column (`String(50)`), `down_revision = f3a9c1d4e8b2` (A5) | `backend/migrations/versions/` | Open |
+| T-02 | `CategoryModel.icon: Mapped[str \| None]` field addition (A5) | `backend/app/models/category.py` | Open |
+| T-03 | `CategoryRead` gains `icon`; new `CategoryUpdate` DTO (A1, A6, A11, A12) | `backend/app/schemas/category.py` | Open |
+| T-04 | `category_repo.update_category(db, *, category, name, category_type, icon)` (A4); `get_owned_by_id()` reused unchanged (A3) | `backend/app/repositories/category_repo.py` | Open |
+| T-05 | Add `CategoryNotFoundError` (A7) | `backend/app/core/errors.py` | Open |
+| T-06 | `category_service.update_category(db, *, owner, category_id, name, category_type, icon)` — ownership lookup, then partial update (A1, A3, A4) | `backend/app/services/category_service.py` | Open |
+| T-07 | Update `create_category()`/`list_categories()` to map `icon` into `CategoryRead`; update `test_cm_us_01_create_category.py`'s `TC-14` test and `test_cm_us_02_list_categories.py`'s `TC-19` test to expect the added `icon` key (A6) | `backend/app/services/category_service.py`, `backend/tests/integration/test_cm_us_01_create_category.py`, `backend/tests/integration/test_cm_us_02_list_categories.py` | Open |
+| T-08 | `PATCH /api/v1/categories/{category_id}` router; no new mount (router already exists) | `backend/app/api/v1/categories.py` | Open |
+| T-09 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_04_update_category.py` | Open |
+
+---

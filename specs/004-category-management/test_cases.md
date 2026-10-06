@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** CM-US-01 *(TC-01…TC-17, all PASS)* · CM-US-02 *(TC-18…TC-34)*
+> **Stories in this file:** CM-US-01 *(TC-01…TC-17, all PASS)* · CM-US-02 *(TC-18…TC-34, all PASS)* · CM-US-04 *(TC-35…TC-63)*
 
 ---
 
@@ -597,4 +597,453 @@ tests — every TC passed against the first version of the code; the only correc
 - **When:** The ADMIN requests the list of categories
 - **Then:** The response is `200`; `items` contains exactly the ADMIN's own one category — never either of the other User's — and `total` is `1`
 - **AC:** EC-04, FR-10, BR-01 *(assertion technique per QF-07)*
+- **Type:** integration
+
+---
+
+## CM-US-04: Update a Category
+
+> **IDs in this section are local to CM-US-04** — except `TC-NN`, which continues this epic file's own
+> numbering. **Correction to this dispatch's own briefing:** the brief that started this work stated the
+> epic's last entries were `TC-34`/`QF-12`; direct re-reading of this file before writing anything here
+> shows the last **heading** in this file is `#### QF-08` (CM-US-02's own last finding) — the strings
+> `QF-10` and `QF-12` that appear inside CM-US-02's own `QF-05`/`QF-08` prose are cross-references to
+> **other epics'** own finding numbers (TM-US-02's `QF-10`/`QF-12`, for its join-based ownership check and
+> its own un-constructable-case precedent respectively), not local headings in this file. Confirmed by
+> `grep -n '^#### QF-' test_cases.md`, which returns only `QF-01`…`QF-08`. This story therefore continues
+> from `TC-35` (correct as briefed) and `QF-09` (not `QF-13`).
+
+### Quality Findings
+
+#### QF-09
+
+**Description.** AC-03/AC-04 require a category reference that does not exist at all and one that exists
+but belongs to a different User to produce "the same not-found outcome" — mirrors BM-US-04 QF-16, now
+applied to a category's own id. `plan.md` A3 makes this true by construction, since
+`category_repo.get_owned_by_id()` filters by `user_id` in the query itself and returns `None` either way.
+A test that merely checks both cases return *some* `404` would not distinguish "genuinely identical" from
+"two different messages that both happen to carry status 404."
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — for instance, a message that only names "belongs to another account" in the
+ownership-mismatch case, itself a minor information leak about another User's data.
+
+**Recommendation.** `TC-44` compares the full response body of the ownership-mismatch case against
+`TC-43`'s not-found-at-all case and asserts they match exactly — `error_code`, `message`, and `details`
+all identical, not merely the status code. Directly mirrors BM-US-04 QF-16/TC-68.
+
+#### QF-10
+
+**Description.** AC-11's claim that every unsubmitted field is left unchanged could be satisfied by a
+test that only reads the `PATCH` response body — a service bug that mutated more than the submitted
+fields on the stored row, while still constructing a response DTO from stale in-memory values, would pass
+such a test undetected. This is the identical risk BM-US-04 QF-19 already named for Budget's own
+`wallet_id`/`category_id`/`period`, now with the added twist that this story has *three* independently
+optional fields instead of one always-untouched trio, so the risk is not just "did anything besides the
+mutable field change" but "did submitting only *some* of the mutable fields still leave the others
+genuinely untouched in storage, not merely reset to their current value by a careless 'update everything'
+implementation."
+
+**Impact.** A regression that let `update_category()` unconditionally overwrite all three columns
+(ignoring which were actually submitted) would still produce a correct-looking response for the single
+field the test checks, while silently corrupting or blanking the other two in storage, with every
+response-body-only test still passing.
+
+**Recommendation.** `TC-36`/`TC-37`/`TC-38` each submit exactly **one** of `name`/`type`/`icon`, and each
+asserts both the response body **and** a direct read of the stored `categories` row through the test's
+own `db` session for **all three** fields — the two not submitted must equal their pre-update values
+exactly, not merely "some value."
+
+#### QF-11
+
+**Description.** AC-05 requires a submission naming none of `name`/`type`/`icon` to be refused. Because
+this is the first cross-field (not per-field) validation rule in this story's own DTO, a weak test could
+submit a body that is invalid for an unrelated reason (e.g. a field with the wrong JSON type) and observe
+a `422`, without that `422` actually having been raised by *this* rule.
+
+**Impact.** A future refactor that silently dropped the `model_validator` — for instance, during a change
+that converts `CategoryUpdate` to use `exclude_unset` semantics — could pass a loosely-written test while
+no longer rejecting a syntactically well-formed but semantically empty submission such as `{}`.
+
+**Recommendation.** `TC-47` submits a body that is valid JSON and would deserialize cleanly into
+`CategoryUpdate` but names none of the three fields (an empty object, `{}`), and asserts the `422`
+response's `details`/`message` identifies the cross-field rule specifically (not a single field name),
+distinguishing it from `TC-48`/`TC-51`/`TC-54`'s per-field `422`s.
+
+#### QF-12
+
+**Description.** EC-10/BR-04 — that changing a category's `type` has no retroactive effect on any
+existing Transaction or Budget computation — is the single most consequential claim this story makes
+beyond ordinary field-update mechanics (`plan.md` A13), and it is also the easiest one to get
+"accidentally right" in a test that never actually creates the Transaction/Budget data that would reveal
+a regression. A test that only PATCHes a category's `type` and checks the `200` response proves nothing
+about history.
+
+**Impact.** A future change that, for instance, added an eager "recompute dependent Transactions" step to
+`update_category()` — plausible-looking defensive code a well-meaning future contributor might add,
+believing it keeps data "consistent" — would silently violate FR-12/BR-04 while every test that does not
+construct prior Transaction/Budget data first would keep passing.
+
+**Recommendation.** `TC-60` creates a Transaction against a category **before** changing that category's
+`type`, then re-reads the Transaction row directly and asserts its own stored `type` is exactly what it
+was at creation — never the category's new `type`. `TC-61` does the equivalent for a Budget's computed
+`amount_spent`/`status` on a subsequent list call. `TC-62` demonstrates the one real, forward-looking
+consequence: a *new* Transaction of the category's *old* type, submitted after the type change, is
+refused by TM-US-01's own existing `TRANSACTION_CATEGORY_TYPE_MISMATCH` check — proving the existing rule
+correctly sees the new type, not that this story invented a new one.
+
+#### QF-13
+
+**Description.** `plan.md` A12 records that submitting `"icon": null` and omitting `icon` entirely are
+indistinguishable by design — both leave the current value unchanged. A test that only checks "omitting
+icon leaves it unchanged" would not also prove the (deliberately identical) behaviour for an explicit
+`null`, leaving half of A12's own claim unverified.
+
+**Impact.** A future change that accidentally implemented `exclude_unset`-style semantics only for the
+omitted case — treating an explicit `"icon": null` as "clear the icon" while treating a missing key as
+"leave unchanged" — would contradict A12 while a test that never submits an explicit `null` would not
+catch it.
+
+**Recommendation.** `TC-38` submits `icon` as an explicit value to set it; a companion assertion within
+the same test submits a follow-up `PATCH` with `"icon": null` alongside a `name` change and confirms the
+icon set by the previous call is still present afterward, unchanged — not cleared.
+
+### Acceptance Criteria Classification
+
+No category-update screen exists in `mobile/` this round, and no SRS UXR names one — the same basis
+CM-US-01/CM-US-02 and BM-US-04 each used for their own all-`[API]` classification.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully update one or more of name, type, and icon | **[API]** | No UI surface exists or is named by any UXR this round |
+| AC-02 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-03 | Reject an update to a category that does not exist | **[API]** | Persistence/ownership contract; bounded by QF-09 |
+| AC-04 | Reject an update to a category owned by a different User | **[API]** | Persistence/ownership contract; bounded by QF-09 |
+| AC-05 | Reject a submission naming none of name, type, or icon | **[API]** | Cross-field validation contract; bounded by QF-11 |
+| AC-06 | Reject a blank name, when a name is submitted | **[API]** | Payload validation |
+| AC-07 | Reject a name exceeding the maximum length, when submitted | **[API]** | Payload validation |
+| AC-08 | Reject a type value that is not exactly INCOME/EXPENSE, when submitted | **[API]** | Payload validation |
+| AC-09 | Reject a blank icon, when an icon is submitted | **[API]** | Payload validation |
+| AC-10 | Reject an icon exceeding the maximum length, when submitted | **[API]** | Payload validation |
+| AC-11 | A successful update changes only the submitted field(s) | **[API]** | Response/persistence contract; bounded by QF-10 |
+| AC-12 | Return exactly the documented category fields | **[API]** | Response-payload contract |
+| EC-01 | Type submitted in lowercase or mixed case | **[API]** | Payload validation |
+| EC-02 | Name with surrounding whitespace | **[API]** | Persistence-shape (trimming) |
+| EC-03 | Updated name matches another of the caller's own categories' names | **[API]** | Backend rule (absence of a uniqueness constraint) |
+| EC-04 | More than one validation failure in a single submission | **[API]** | Backend validation-grouping contract |
+| EC-05 | Unrecognised `user_id` field submitted alongside valid fields | **[API]** | Structural-ignore / ownership-immutability contract |
+| EC-06 | Icon submitted for the first time, and changed a second time | **[API]** | Backend rule — not a special-cased no-op |
+| EC-07 | Icon with surrounding whitespace | **[API]** | Persistence-shape (trimming) |
+| EC-08 | A category reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
+| EC-09 | Type submitted with surrounding whitespace | **[API]** | Payload validation |
+| EC-10 | A category's type changed after a Transaction or Budget references it | **[API]** | Cross-story composition with TM-US-01/BM-US-02; bounded by QF-12 |
+| EC-11 | A caller who owns a different category attempts to update another User's category | **[API]** | Persistence/ownership contract; bounded by QF-09 |
+| EC-12 | Icon at the maximum supported length | **[API]** | Boundary value |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-35, TC-36, TC-37, TC-38, TC-39 | — |
+| AC-02 | [API] | TC-41, TC-42 | — |
+| AC-03 | [API] | TC-43 | — |
+| AC-04 | [API] | TC-44 | — |
+| AC-05 | [API] | TC-47 | — |
+| AC-06 | [API] | TC-48 | — |
+| AC-07 | [API] | TC-49 | — |
+| AC-08 | [API] | TC-51 | — |
+| AC-09 | [API] | TC-54 | — |
+| AC-10 | [API] | TC-55 | — |
+| AC-11 | [API] | TC-36, TC-37, TC-38, TC-58 | — |
+| AC-12 | [API] | TC-59 | — |
+| EC-01 | [API] | TC-52 | — |
+| EC-02 | [API] | TC-50 | — |
+| EC-03 | [API] | TC-40 | — |
+| EC-04 | [API] | TC-57 | — |
+| EC-05 | [API] | TC-58 | — |
+| EC-06 | [API] | TC-38, TC-39 | — |
+| EC-07 | [API] | TC-56 | — |
+| EC-08 | [API] | TC-45 | — |
+| EC-09 | [API] | TC-53 | — |
+| EC-10 | [API] | TC-60, TC-61, TC-62 | — |
+| EC-11 | [API] | TC-46 | — |
+| EC-12 | [API] | TC-63 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no
+> category-update screen exists this round, and none is named by any SRS UXR. **Known coverage limits,
+> accepted:** none — unlike CM-US-02 (QF-08, the "system category" question) and CM-US-01 (QF-04,
+> `icon`'s own absence), this story's own contract has no construction the public API cannot reach; every
+> AC/EC here is directly testable through `PATCH /api/v1/categories/{category_id}` and direct row reads.
+
+### Test Implementation Map *(filled at step 4)*
+
+All under `backend/tests/integration/test_cm_us_04_update_category.py`, plus the one-line amendments to
+`test_cm_us_01_create_category.py` (`TC-14`) and `test_cm_us_02_list_categories.py` (`TC-19`) `plan.md`
+A6/T-07 records. Run one with `uv run pytest -k <fragment>`.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-35 … TC-63 | *(assigned at the Implement step)* | Not yet run |
+
+---
+
+### TC-35: An authenticated User updates all three fields in one request — 200 with all three updated
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category with `name` `"Utilities"`, `type` `"EXPENSE"`, no icon
+- **When:** `PATCH /api/v1/categories/{id}` is sent with `name` `"Bills"`, `type` `"INCOME"`, `icon` `"receipt"`
+- **Then:** The response is `200`; the body carries `id` unchanged, `user_id` equal to the caller's id, `name` `"Bills"`, `type` `"INCOME"`, `icon` `"receipt"`
+- **AC:** AC-01, FR-01, FR-09
+- **Type:** integration
+
+### TC-36: Updating only `name` leaves `type` and `icon` unchanged, verified in storage
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category with `name` `"Utilities"`, `type` `"EXPENSE"`, `icon` `"bolt"` (set via a prior update)
+- **When:** A `PATCH` is submitted with only `name` `"Bills"`
+- **Then:** The response is `200` with `name` `"Bills"`, `type` `"EXPENSE"`, `icon` `"bolt"`; a direct read of the `categories` row confirms `type` and `icon` columns are unchanged
+- **AC:** AC-01, AC-11, FR-08 *(assertion technique per QF-10)*
+- **Type:** integration
+
+### TC-37: Updating only `type` leaves `name` and `icon` unchanged, verified in storage
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category with `name` `"Utilities"`, `type` `"EXPENSE"`, `icon` `"bolt"`
+- **When:** A `PATCH` is submitted with only `type` `"INCOME"`
+- **Then:** The response is `200` with `name` `"Utilities"`, `type` `"INCOME"`, `icon` `"bolt"`; a direct read of the `categories` row confirms `name` and `icon` columns are unchanged
+- **AC:** AC-01, AC-11, FR-08 *(assertion technique per QF-10)*
+- **Type:** integration
+
+### TC-38: Updating only `icon` for the first time leaves `name`/`type` unchanged; a later explicit null does not clear it
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category with `name` `"Utilities"`, `type` `"EXPENSE"`, and no `icon` set
+- **When:** A `PATCH` is submitted with only `icon` `"bolt"`; then a second `PATCH` is submitted with `name` `"Bills"` and `icon` explicitly `null`
+- **Then:** After the first call, the response and the stored row both show `icon` `"bolt"`, `name`/`type` unchanged; after the second call, `name` is `"Bills"` and `icon` is still `"bolt"` — the explicit `null` did not clear it
+- **AC:** AC-01, AC-11, EC-06, FR-08 *(assertion technique per QF-10, QF-13)*
+- **Type:** integration
+
+### TC-39: Changing an already-set icon to a different value succeeds as an ordinary update
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category with `icon` already set to `"bolt"`
+- **When:** A `PATCH` is submitted with `icon` `"flash"`
+- **Then:** The response is `200` with `icon` `"flash"`; the stored row confirms it, not a conflict or no-op
+- **AC:** AC-01, EC-06
+- **Type:** integration
+
+### TC-40: An updated name matching another of the caller's own categories' names still succeeds
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns two categories, `"Utilities"` and `"Groceries"`
+- **When:** A `PATCH` renames `"Groceries"` to `"Utilities"`
+- **Then:** The response is `200` with `name` `"Utilities"`; both categories now share the name, each with its own distinct id
+- **AC:** EC-03, FR-11, BR-03
+- **Type:** integration
+
+### TC-41: An unauthenticated caller is denied with 401
+
+- **US:** CM-US-04
+- **Given:** A caller presenting no `Authorization` header
+- **When:** A category update is submitted with an otherwise valid payload against a real category
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`; the target category's stored fields are unchanged
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-42: Credentials are evaluated before the payload
+
+- **US:** CM-US-04
+- **Given:** A caller presenting no credentials
+- **When:** A `PATCH` is submitted against a real category id with an empty body (`{}`, otherwise a 422-triggering payload)
+- **Then:** The response is `401` `NOT_AUTHENTICATED`, not `422` — an unauthenticated caller learns nothing about the validity of their payload, mirroring CM-US-02 TC-22's ordering
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-43: A category_id matching no category at all is rejected with 404 CATEGORY_NOT_FOUND
+
+- **US:** CM-US-04
+- **Given:** An authenticated User
+- **When:** `PATCH /api/v1/categories/{id}` is sent with a `category_id` that matches no category in the system
+- **Then:** The response is `404` with `error_code` `CATEGORY_NOT_FOUND`; nothing is changed
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-44: A category_id belonging to a different User is rejected with the identical outcome as TC-43
+
+- **US:** CM-US-04
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a category
+- **When:** `A` submits a `PATCH` against `B`'s `category_id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-43's response; `B`'s category is unchanged
+- **AC:** AC-04, FR-03 *(assertion technique per QF-09)*
+- **Type:** integration
+
+### TC-45: A category reference that is not a well-formed identifier gets the same outcome as a well-formed but non-existent one
+
+- **US:** CM-US-04
+- **Given:** An authenticated User
+- **When:** `PATCH /api/v1/categories/not-a-real-id` is sent with a valid payload
+- **Then:** The response is `404` `CATEGORY_NOT_FOUND`, identical to TC-43's response
+- **AC:** EC-08, FR-03
+- **Type:** integration
+
+### TC-46: A caller who owns a different category of their own cannot update another User's category
+
+- **US:** CM-US-04
+- **Given:** Two authenticated Users, `A` (owns category `CA`) and `B` (owns category `CB`)
+- **When:** `A` submits a `PATCH` against `CB`'s `category_id`
+- **Then:** The response is `404` `CATEGORY_NOT_FOUND`, identical to TC-43/TC-44's responses; `CB` is unchanged, and `A`'s own `CA` is also unaffected
+- **AC:** EC-11, FR-03
+- **Type:** integration
+
+### TC-47: A submission naming none of name, type, or icon is rejected with 422, identifying the cross-field rule
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with an empty JSON body, `{}`
+- **Then:** The response is `422` `VALIDATION_ERROR` whose `details`/`message` names the "at least one field" rule, not a single field; nothing is changed
+- **AC:** AC-05, FR-04, BR-02 *(assertion technique per QF-11)*
+- **Type:** integration
+
+### TC-48: A blank or whitespace-only name, when submitted, is rejected with 422
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with `name` `""` and, separately, `"   "`
+- **Then:** Each response is `422` `VALIDATION_ERROR` identifying the `name` field; nothing is persisted
+- **AC:** AC-06, FR-05
+- **Type:** integration
+
+### TC-49: A name exceeding 100 characters, when submitted, is rejected, not truncated
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with a `name` of 101 characters
+- **Then:** The response is `422` `VALIDATION_ERROR`; the stored name is unchanged, not truncated
+- **AC:** AC-07, FR-05
+- **Type:** integration
+
+### TC-50: A name with surrounding whitespace is stored trimmed
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with `name` `"  Bills  "`
+- **Then:** The response is `200`; the persisted `name` is `"Bills"` — interior spacing preserved, surrounding whitespace removed
+- **AC:** EC-02, FR-05
+- **Type:** integration
+
+### TC-51: A type value that is neither INCOME nor EXPENSE, when submitted, is rejected with 422
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with `type` in turn `"SAVINGS"`, `"TRANSFER"`, and `""`
+- **Then:** Each response is `422` `VALIDATION_ERROR` whose `details` names the `type` field; nothing is persisted
+- **AC:** AC-08, FR-06
+- **Type:** integration
+
+### TC-52: A lowercase or mixed-case type value, when submitted, is rejected, not case-folded
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with `type` `"expense"` and, separately, `"Income"`
+- **Then:** Each response is `422` `VALIDATION_ERROR` whose `details` names the `type` field; the stored `type` is unchanged — not case-folded and accepted
+- **AC:** EC-01, FR-06
+- **Type:** integration
+
+### TC-53: A type value with surrounding whitespace, when submitted, is rejected, not trimmed
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with `type` `" EXPENSE"` and, separately, `"INCOME "`
+- **Then:** Each response is `422` `VALIDATION_ERROR` whose `details` names the `type` field; the stored `type` is unchanged — unlike `name`/`icon`, `type` receives no trimming
+- **AC:** EC-09, FR-06
+- **Type:** integration
+
+### TC-54: A blank or whitespace-only icon, when submitted, is rejected with 422
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with `icon` `""` and, separately, `"   "`
+- **Then:** Each response is `422` `VALIDATION_ERROR` identifying the `icon` field; nothing is persisted
+- **AC:** AC-09, FR-07
+- **Type:** integration
+
+### TC-55: An icon exceeding 50 characters, when submitted, is rejected, not truncated
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with an `icon` of 51 characters
+- **Then:** The response is `422` `VALIDATION_ERROR`; the stored icon is unchanged, not truncated
+- **AC:** AC-10, FR-07
+- **Type:** integration
+
+### TC-56: An icon with surrounding whitespace is stored trimmed
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with `icon` `"  shopping-cart  "`
+- **Then:** The response is `200`; the persisted `icon` is `"shopping-cart"` — interior spacing preserved, surrounding whitespace removed
+- **AC:** EC-07, FR-07
+- **Type:** integration
+
+### TC-57: Multiple validation failures in one submission are reported together
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with `name` `""` and `type` `"SAVINGS"` in the same request
+- **Then:** The response is a single `422` whose `details` identifies both the `name` and the `type` fields — not just the first one encountered
+- **AC:** EC-04, FR-10
+- **Type:** integration
+
+### TC-58: A successful update never changes the category's owner, even when an unrecognised user_id is submitted
+
+- **US:** CM-US-04
+- **Given:** Two authenticated Users, `A` (owns a category) and `B`
+- **When:** `A` submits a `PATCH` against their own category with an otherwise valid `name` change that additionally includes an unrecognised `"user_id": "<B's id>"` key in the JSON body
+- **Then:** The response is `200`; the updated category's `user_id` is still `A`'s id, never `B`'s — verified both in the response and by a direct read of the stored row
+- **AC:** AC-11, EC-05, FR-08, BR-05 *(assertion technique per CM-US-01 QF-01/TC-12)*
+- **Type:** integration
+
+### TC-59: The response exposes exactly the five documented fields
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** An update is submitted successfully
+- **Then:** The response body's keys are exactly `id`, `user_id`, `name`, `type`, `icon` — no more
+- **AC:** AC-12, FR-09
+- **Type:** integration
+
+### TC-60: Changing a category's type does not alter an existing Transaction's own stored type
+
+- **US:** CM-US-04
+- **Given:** An authenticated User with a wallet, a category of type `EXPENSE`, and a Transaction of type `EXPENSE` already recorded against that wallet and category
+- **When:** The category's `type` is updated to `INCOME`
+- **Then:** The response is `200`; a direct read of the `transactions` row for that Transaction shows its own `type` is still `EXPENSE`, unchanged
+- **AC:** EC-10, FR-12, BR-04 *(per QF-12)*
+- **Type:** integration
+
+### TC-61: Changing a category's type does not alter a Budget's already-recorded spend computation
+
+- **US:** CM-US-04
+- **Given:** An authenticated User with a wallet, a category of type `EXPENSE`, a Budget for that wallet and category, and an `EXPENSE` Transaction of `150.00` already recorded against them, contributing to the Budget's `amount_spent`
+- **When:** The category's `type` is updated to `INCOME`, and the User then requests `GET /api/v1/budgets`
+- **Then:** The listed Budget's `amount_spent` is still `150.00`, reflecting the pre-existing Transaction exactly as before the type change — the sum is not recomputed away because the category's type no longer matches
+- **AC:** EC-10, FR-12, BR-04 *(per QF-12; cross-story composition with BM-US-02)*
+- **Type:** integration
+
+### TC-62: After a type change, a new Transaction of the category's old type is refused by TM-US-01's own existing check
+
+- **US:** CM-US-04
+- **Given:** An authenticated User with a category whose `type` was `EXPENSE` and has just been updated to `INCOME`
+- **When:** The User attempts to create a new Transaction of type `EXPENSE` against that category
+- **Then:** The response is `409` `TRANSACTION_CATEGORY_TYPE_MISMATCH` — TM-US-01's own existing rule, now correctly evaluated against the category's new type; this story introduces no new rule to produce this outcome
+- **AC:** EC-10, FR-12 *(per QF-12; cross-story composition with TM-US-01)*
+- **Type:** integration
+
+### TC-63: An icon of exactly 50 characters is accepted
+
+- **US:** CM-US-04
+- **Given:** An authenticated User who owns a category
+- **When:** A `PATCH` is submitted with an `icon` of exactly 50 characters
+- **Then:** The response is `200`; the stored `icon` is the full 50-character value — the cap is a ceiling, not a target: 50 is honoured, only 51 is rejected (TC-55)
+- **AC:** EC-12, FR-07
 - **Type:** integration

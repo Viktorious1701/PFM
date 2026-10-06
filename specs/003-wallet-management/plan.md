@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(planned)*
+> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(implemented, verified — 302 passed, 99% coverage)* · WM-US-04 *(planned)*
 
 ---
 
@@ -482,3 +482,346 @@ in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitu
 | T-03 | `wallet_service.list_wallets(db, *, owner, page, page_size) -> WalletListRead` (A2, A3) | `backend/app/services/wallet_service.py` | Open |
 | T-04 | `GET /api/v1/wallets` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `CurrentUserDep`, no `db.commit()` (A4, A6) | `backend/app/api/v1/wallets.py` | Open |
 | T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_02_list_wallets.py` | Open |
+
+---
+
+## WM-US-04: Update a Wallet
+
+> **IDs in this section are local to WM-US-04** (`A*`/`T-NN`), continuing the demonstrated convention:
+> every second-or-later story in this file restarts `A*`/`T-NN` locally, while `test_cases.md`'s `TC-NN`
+> and `QF-NN` run continuously across the epic file. `test_cases.md`'s `TC-NN` below continues from
+> `TC-39` and `QF-NN` from `QF-07`, matching WM-US-02's own `TC-23`/`QF-05` start — confirmed by direct
+> count against `test_cases.md`'s actual current end before writing this section, not assumed.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Domain / Scope | **Only `name` and `type` are updatable; `currency` and `balance` have no corresponding field on the request DTO at all.** `balance` is a derived ledger total, mutated exclusively by `wallet_repo.decrement_balance()`/`increment_balance()` from Transaction creation/deletion (TM-US-01) — never by any Wallet Management story — so exposing it here would let a caller falsify their own ledger with no matching Transaction row. `currency` is excluded for a stronger reason: `TransactionRead`/`TransactionModel` carry no currency field of their own at all (confirmed in `backend/app/schemas/transaction.py`), so every transaction's amount is interpreted entirely through its wallet's *current* currency — changing it after transactions exist would silently re-denominate every past amount with no conversion. Neither exclusion is asked for by any source, but SDS §5.3.4's own "rename or update **configuration**" wording supports the narrower reading, matching BM-US-04 A1's "fewest invented rules" discipline. No uniqueness re-validation risk exists the way BM-US-04 A1 had to reason through for Budget's triple key — WM-US-01 BR-05 already established wallet names carry no uniqueness constraint at all. Full reasoning in `spec.md` Assumptions. | ✅ Resolved |
+| A2 | API | **`PATCH /api/v1/wallets/{wallet_id}` — a verb-free path on the resource's own id, not a `/wallets/{id}/rename`-style action endpoint, and not a generic `PATCH /wallets/{id}` accepting a status field.** `name`/`type` are concrete business fields, not a state/status field — `Wallet` has no status field at all for this endpoint to touch — so constitution API-05's concern (collapsing a *business state transition* into a generic setter) does not apply, the identical reasoning BM-US-04 A2 used for `amount_limit`. `PATCH` (not `PUT`) because the request is a partial update of one or two fields on a six-field resource. | ✅ Resolved |
+| A3 | Architecture | **No new repository *read* function — `wallet_repo.get_owned_by_id(db, *, wallet_id, user_id)` is reused unchanged.** It already exists (built for BM-US-01's own referenced-wallet check) and already collapses "no such wallet" and "exists, owned by someone else" to the identical `None` by construction (constitution SEC-08) — exactly the lookup this story's own "fetch the wallet being acted on" need requires, with nothing to generalise the way BM-US-04 A3 had to generalise a *budget*-scoped version from scratch. Only a new *write* function, `wallet_repo.update_wallet()`, is added. | ✅ Resolved |
+| A4 | API / Domain | **New request DTO `WalletUpdate` with two optional fields, `name` and `type`, each validated by the identical bounds `WalletCreate` already carries (WM-US-01), plus a new model-level validator requiring at least one of the two to be present.** Unlike `BudgetUpdate` (BM-US-04 A6), which had exactly one *required* field, this story has two fields that must each be independently optional — a caller may rename only, retype only, or both. A submission with neither is refused (spec AC-05, BR-04), generalising BM-US-04 A6's "a zero-field update is not a no-op `200`" stance from one required field to two optional ones. This is the **first model-level (cross-field) Pydantic validator in this codebase** — every prior DTO validation has been field-level only. | ✅ Resolved |
+| A5 | Security / API | **One new error class: `WalletNotFoundError` (404, `WALLET_NOT_FOUND`).** Neither existing wallet-adjacent error fits: `BudgetWalletNotFoundError` (BM-US-01) and `TransactionWalletNotFoundError` (TM-US-01) are each about a *referenced* wallet failing to resolve during another entity's creation — not about the wallet being updated itself — and both carry a resource-prefixed error code (`BUDGET_`/`TRANSACTION_`) that would be actively misleading if raised from this endpoint. `WalletNotFoundError` is constitution VL-06's "404 if absent" branch, applied to the wallet's own id directly for the first time — the identical reasoning BM-US-04 A7 used to justify its own new `BudgetNotFoundError` over the existing `BudgetWalletNotFoundError`/`BudgetCategoryNotFoundError`. | ✅ Resolved |
+| A6 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.3.4 tags this story "(USER)", identical to WM-US-01/02's own tag. Mirrors WM-US-01 A8, WM-US-02 A6, BM-US-04 A9. | ✅ Resolved |
+| A7 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families; neither wallet creation (WM-US-01 A9) nor listing (WM-US-02 A5) qualified, and updating a name/type is no closer to any of the three than those were. No AC or FR here asks for one. | ✅ Resolved |
+| A8 | Architecture | **No new Alembic migration.** `name`, `type`, `currency`, and `balance` already exist as columns on `wallets` (WM-US-01 T-01) — this story changes values in existing columns, not the schema. | ✅ Resolved |
+| A9 | Architecture | **The router issues exactly one `db.commit()`, after the service call succeeds** — identical to WM-US-01's `create_wallet` router and BM-US-04's `update_budget` router (AR-06). `wallet_service.update_wallet()` itself only flushes (via A3's `update_wallet()` repository function), never commits. | ✅ Resolved |
+| A10 | Domain | **`WalletUpdate.type`'s validation reuses `WalletCreate.type`'s exact shape — `Field(min_length=1, max_length=50)`, no trim/whitespace-rejection validator.** `backend/app/schemas/wallet.py` confirms `WalletCreate.type` has no equivalent to `WalletCreate.name`'s trim-and-reject `field_validator` — a single-space `type` already passes uncaught at creation time today, even though WM-US-01 `spec.md` AC-05's own wording says type must be rejected when "absent, empty, or only whitespace." That gap belongs to WM-US-01 (already implemented, verified, out of this story's scope to correct); inventing stricter, asymmetric validation for `type` on update alone would be a new, undiscussed inconsistency, not a fix. `spec.md` AC-08 is worded to match what is actually enforced ("empty," not "blank or only whitespace"). | ✅ Resolved |
+| A11 | API / Domain | **Explicit JSON `null` for `name`/`type` is treated identically to the key being omitted — both mean "leave this field unchanged."** Neither field can be set to a blank/null value through `WalletCreate` in the first place (both are mandatory, non-empty at the model layer), so there is no distinct "clear the field" semantics for `WalletUpdate` to invent — doing so would be a new rule no source asks for. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only — no new top-level module, no migration; the first story in this
+epic to add a route with a path parameter and the first to modify an existing row).
+
+```text
+backend/app/
+├── schemas/
+│   └── wallet.py                     # update: add WalletUpdate (A4)
+├── repositories/
+│   └── wallet_repo.py                # update: add update_wallet() (A3) — get_owned_by_id() reused unchanged
+├── services/
+│   └── wallet_service.py             # update: add update_wallet() (A1, A3)
+├── core/
+│   └── errors.py                     # update: add WalletNotFoundError (A5)
+└── api/v1/
+    └── wallets.py                    # update: add PATCH /wallets/{wallet_id} (A2, A6)
+
+backend/tests/
+└── integration/test_wm_us_04_update_wallet.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No change to `models/wallet.py` (A8), no new Alembic revision, no change to `core/deps.py` —
+`CurrentUserDep` is reused exactly as WM-US-01/02 already established (A6).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `WalletModel` | `wallets` | `name`, `type` (write) | The only two columns this story ever writes. `currency`/`balance` are read (to echo in the response) but never written by this story (A1, spec BR-01). No schema change (A8). |
+| `WalletUpdate` (DTO) | — | `name`, `type` (both optional) | New request DTO (A4) — at most two fields, at least one required. |
+| `WalletRead` (DTO) | — | *(reused, unchanged)* | WM-US-01's own six-field response shape, reused for this write's response too (mirrors BM-US-04 A5). |
+
+**DTO addition** (`app/schemas/wallet.py`)
+
+```python
+class WalletUpdate(BaseModel):
+    """Request DTO for PATCH /wallets/{wallet_id} (WM-US-04). Both fields are
+    optional -- None means "leave this field's stored value unchanged,"
+    whether the key was omitted or submitted explicitly as null (plan.md
+    A11). `currency`/`balance` have no corresponding field at all (plan.md
+    A1) -- a caller cannot even name them meaningfully; any such key
+    submitted anyway is silently ignored by Pydantic's default BaseModel
+    behaviour (spec EC-07).
+
+    Validation identical to WalletCreate's own name/type bounds (WM-US-01),
+    reused unchanged -- including type's own lack of a trim/whitespace
+    validator (plan.md A10).
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    type: str | None = Field(default=None, min_length=1, max_length=50)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        """Mirrors WalletCreate.validate_name exactly, applied only when a
+        value is actually submitted (spec AC-06, EC-01)."""
+        if v is None:
+            return None
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("Wallet name cannot be empty or whitespace only")
+        return trimmed
+
+    @model_validator(mode="after")
+    def check_at_least_one_field(self) -> "WalletUpdate":
+        """spec AC-05, BR-04 (plan.md A4) -- the first model-level (as
+        opposed to field-level) validator in this codebase. A submission
+        naming neither name nor type has nothing for this endpoint to do,
+        and is refused rather than silently treated as a no-op 200."""
+        if self.name is None and self.type is None:
+            raise ValueError("At least one of name or type must be provided")
+        return self
+```
+
+**Repository addition** (`app/repositories/wallet_repo.py`)
+
+```python
+def update_wallet(
+    db: Session, *, wallet: WalletModel, name: str | None, wallet_type: str | None
+) -> WalletModel:
+    """spec AC-01, FR-05, FR-06, FR-07, FR-10, BR-01 (plan.md A1, A3). Mutates
+    only the field(s) actually submitted on an already-fetched,
+    already-ownership-verified row -- currency and balance are never
+    touched, and a field left as None keeps its existing stored value
+    exactly. Flushed, not committed (AR-06) -- the router owns the
+    transaction boundary.
+    """
+    if name is not None:
+        wallet.name = name
+    if wallet_type is not None:
+        wallet.type = wallet_type
+    db.add(wallet)
+    db.flush()
+    return wallet
+```
+
+`get_owned_by_id(db, *, wallet_id, user_id)` is reused **unchanged** from WM-US-01/BM-US-01's own
+precedent (A3) — no new read function is needed, since it already collapses "no such wallet" and "not
+this caller's wallet" to the identical `None`, by construction, for exactly the lookup this story needs.
+
+**Service** (`app/services/wallet_service.py`, addition)
+
+```python
+def update_wallet(
+    db: Session,
+    *,
+    owner: UserModel,
+    wallet_id: str,
+    name: str | None,
+    wallet_type: str | None,
+) -> WalletRead:
+    """spec AC-01, FR-03 (plan.md A1, A3, A4). Looks up the wallet scoped to
+    the caller, then updates whichever of name/type was actually submitted
+    -- no further precondition follows ownership, the same shape BM-US-04's
+    own update_budget() already established.
+    """
+    wallet = wallet_repo.get_owned_by_id(db, wallet_id=wallet_id, user_id=owner.id)
+    if wallet is None:
+        raise WalletNotFoundError()
+
+    wallet = wallet_repo.update_wallet(db, wallet=wallet, name=name, wallet_type=wallet_type)
+    return WalletRead(
+        id=wallet.id,
+        user_id=wallet.user_id,
+        name=wallet.name,
+        type=wallet.type,
+        currency=wallet.currency,
+        balance=wallet.balance,
+    )
+```
+
+**Router** (`app/api/v1/wallets.py`, addition)
+
+```python
+@router.patch(
+    "/{wallet_id}",
+    response_model=WalletRead,
+    status_code=status.HTTP_200_OK,
+    summary="Update a wallet",
+    description=(
+        "Updates the name, the type, or both, of one of the authenticated "
+        "caller's own wallets, identified by its own id. The wallet's "
+        "currency and balance are immutable through this endpoint."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "WALLET_NOT_FOUND"},
+        422: {"description": "VALIDATION_ERROR"},
+    },
+)
+def update_wallet(
+    wallet_id: str,
+    payload: WalletUpdate,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> WalletRead:
+    result = wallet_service.update_wallet(
+        db,
+        owner=current_user,
+        wallet_id=wallet_id,
+        name=payload.name,
+        wallet_type=payload.type,
+    )
+    db.commit()
+    return result
+```
+
+**New error** (`app/core/errors.py`, appended under a new `# --- WM-US-04: Update a Wallet` section)
+
+```python
+class WalletNotFoundError(AppError):
+    """spec AC-03 / AC-04 / FR-03. Identical for "no such wallet" and "not
+    this caller's wallet" (constitution VL-06's `404 if absent` branch) --
+    distinct from BudgetWalletNotFoundError/TransactionWalletNotFoundError,
+    which cover a *referenced* wallet failing to resolve during another
+    entity's creation, not the wallet being acted on directly (plan.md A5).
+    """
+
+    status_code = 404
+    error_code = "WALLET_NOT_FOUND"
+    default_message = "The referenced wallet was not found."
+```
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Authenticated User of any role may update their own wallet's name/type | AC-01, FR-01, A6 | `PATCH /api/v1/wallets/{wallet_id}` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before anything else is evaluated | AC-02, FR-02 | `CurrentUserDep` resolves before the body is validated |
+| `wallet_id` must resolve to the caller's own wallet; not-found and not-owned collapsed | AC-03, AC-04, EC-03, EC-08, FR-03, A3 | `wallet_repo.get_owned_by_id()` returns `None` for both cases by construction; service raises `WalletNotFoundError` |
+| At least one of name/type required | AC-05, FR-04, BR-04, A4 | `WalletUpdate`'s model-level validator |
+| name: non-empty after trim, ≤100, when submitted | AC-06, AC-07, EC-01, FR-05 | `WalletUpdate.name`'s `Field` bound + reused `field_validator` |
+| type: non-empty, ≤50, no enum, when submitted | AC-08, AC-09, EC-02, FR-06, A10 | `WalletUpdate.type`'s `Field` bound — identical shape to `WalletCreate.type` |
+| currency/balance never change; any submitted value ignored | AC-10, EC-07, FR-07, A1 | `WalletUpdate` declares no such field; `update_wallet()` touches only `name`/`type` |
+| Unsubmitted field keeps its exact prior value | EC-04, EC-05, FR-10 | `wallet_repo.update_wallet()`'s `if … is not None` guards |
+| Response exposes exactly six fields | AC-11, FR-08, constitution PF-03 | `WalletRead` — no ORM graph, no extra field |
+| No audit event | A7 | `wallet_service.update_wallet()` calls no `audit.record()` |
+
+**Sequence diagram — Update a Wallet**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request into
+`API` answered back to `UI` with a status code, one workflow.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as WalletService
+    participant Store as Store
+
+    UI->>API: PATCH /wallets/:id
+    API->>Svc: update(input)
+    Svc->>Store: find wallet owned by the caller
+    Store-->>Svc: wallet, or none
+
+    alt Wallet not found, or found but not owned by the caller (AC-03/AC-04, collapsed outcome)
+        API-->>UI: 404 WALLET_NOT_FOUND
+    else Wallet owned by the caller
+        Svc->>Store: update whichever of name or type was submitted
+        Store-->>Svc: wallet updated
+        Svc-->>API: wallet
+        API-->>UI: 200 wallet updated
+    end
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-02)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+    opt Malformed payload — neither field submitted, blank or over-long name, empty or over-long type (AC-05..AC-09)
+        API-->>UI: 422 VALIDATION_ERROR
+    end
+```
+
+Only one workflow is drawn (DG-07). The nested `alt`/`else` blocks are the one flow's own branches — not
+a second flow — mirroring how BM-US-04's own diagram folded its own refusal paths into a single picture.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-02) | 401 | `NOT_AUTHENTICATED` |
+| Neither name nor type submitted, blank/over-long name, empty/over-long type (AC-05..AC-09) | 422 | `VALIDATION_ERROR` |
+| Wallet not found, or found but not owned by the caller (AC-03, AC-04) | 404 | `WALLET_NOT_FOUND` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02). No
+`403` (A6: no role restriction), and no `409` of any kind — wallet names carry no uniqueness constraint
+to reopen (WM-US-01 BR-05), so this endpoint produces only `200`, `401`, `404`, `422`, or `500`.
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `wallet_service.update_wallet()` is the only place that decides what a failed lookup means and which field(s) to write |
+| AR-02 Thin router | Required | Router binds the path param and payload, resolves `CurrentUserDep`, calls the service, commits, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `wallet_repo.get_owned_by_id()`/`update_wallet()` are queries and persistence only (A3) |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | `WalletModel` → `WalletRead` mapping happens in `wallet_service.update_wallet()`, the same place `create_wallet()`/`list_wallets()` already do it |
+| AR-05 No framework objects in services | Required | `update_wallet()` takes plain values (`owner`, `wallet_id`, `name`, `wallet_type`); no `Request`/`Response` |
+| AR-06 One transaction per request | Required | Service flushes at most once (after the ownership lookup succeeds); the router commits once (A9) |
+| AR-07 Router → service → repository | Required | The router never calls `wallet_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only to existing modules |
+| API-01 Versioned plural path | Required | `PATCH /api/v1/wallets/{wallet_id}` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required | `200` update (not `201`) · `401` · `404` · `422` |
+| API-04 Prefixed error codes | Required | `WALLET_NOT_FOUND` — catalogued above |
+| API-05 No generic status endpoint | Required (reasoned) | See A2 — `name`/`type` are concrete business fields, not a state-machine status; `Wallet` has no status field at all for this endpoint to touch; a partial `PATCH` on the resource's own id is the default shape constitution NC-03 reserves verb-named endpoints *from* |
+| API-06 Pagination | N/A | Single-resource update; no list in this story |
+| API-07 Explicit response_model | Required | `response_model=WalletRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `wallet_repo.py`/`wallet_service.py`/`wallets.py`/`errors.py` |
+| NC-02 Naming | Required | `WalletUpdate` new (SDS §2.1/§6.2.1 has no registry entry for it, the same gap WM-US-02 A2 already found for `WalletListRead`); `WalletRead` reused unchanged |
+| NC-03 No verbs except state transitions | Required | `/wallets/{wallet_id}` — no verb in the path (A2) |
+| NC-04 Column naming | N/A | No column renamed; no column added (A8) |
+| NC-05 Enum serialisation | N/A | No enum touched by this story — `type` remains a plain bounded string (WM-US-01 A1) |
+| NC-06 Concise service methods | Required | `wallet_service.update_wallet`, matching `create_wallet`/`list_wallets`'s own naming |
+| VL-01 Pydantic is the source of truth | Required | `WalletUpdate`'s `Field` bounds and model-level validator are the validation |
+| VL-02 Errors grouped | Required | Reused `RequestValidationError` handler — covers both fields' failures together (EC-09) |
+| VL-06 Referenced entities verified before use | Required (404 only) | `404` if the wallet is absent/not owned (A3) — the only branch this story uses; no "wrong state" / `409` branch applies (no status field, no uniqueness constraint to reopen — spec.md Assumptions) |
+| VL-07 Decimal money | N/A | This story's contract has no monetary field at all — `balance` is explicitly excluded (A1) — the first write-shaped story in this codebase's Wallet/Budget/Transaction lineage to touch no `Decimal` value whatsoever |
+| SEC-06 JWT parameters | N/A | Consumed via `CurrentUserDep`, not defined here |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case to test (A6) |
+| SEC-08 Ownership filter | Required | `get_owned_by_id()` filters by `user_id` directly — reused unchanged from WM-US-01/BM-US-01 |
+| SEC-09 Secrets from .env | N/A | No secret introduced by this story |
+| SEC-10 No enumeration | N/A (reasoning reused) | Same discipline as BM-US-04's own note — VL-06's absent-vs-present collapse (A3) means a non-owner learns nothing from a `404` |
+| SEC-11 Rate limiting | N/A | Scoped by its own text to the invitation and activation endpoints |
+| LA-01 No secrets in logs | N/A | No credential or token handled by this story |
+| LA-02 / LA-04 Audit | N/A (by decision) | Updating a wallet's name/type is not one of LA-04's three named audited events, and no AC/FR asks for one (A7) |
+| PF-01 300 ms p95 | Required | One indexed lookup (`wallets.id` primary key) plus one update, no slow I/O off the request path |
+| PF-02 Indexed lookups | Required | `wallets.user_id` already indexed (WM-US-01); `wallets.id` is the primary key |
+| PF-03 DTO projection | Required | `WalletRead` — six fields, no ORM graph |
+| PF-04 Bounded lists | N/A | No list endpoint in this story |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| DOD-02 Migration | N/A | `name`/`type`/`currency`/`balance` already exist as columns (A8) — no schema change, no Alembic revision |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No wallet-update screen exists this round — the same treatment WM-US-01/02 each gave their own endpoints. `mobile/`'s fixture-driven prototype covers only UM-US-01's invite screen (`CLAUDE.md` §5). |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `WalletUpdate` schema — two optional fields, `name`/`type`, plus an at-least-one-required model validator (A4) | `backend/app/schemas/wallet.py` | Open |
+| T-02 | `wallet_repo.update_wallet(db, *, wallet, name, wallet_type)` — write only the submitted field(s) (A3) | `backend/app/repositories/wallet_repo.py` | Open |
+| T-03 | Add `WalletNotFoundError` (A5) | `backend/app/core/errors.py` | Open |
+| T-04 | `wallet_service.update_wallet(db, *, owner, wallet_id, name, wallet_type)` — ownership lookup via existing `get_owned_by_id()`, then update | `backend/app/services/wallet_service.py` | Open |
+| T-05 | `PATCH /api/v1/wallets/{wallet_id}` router; no new mount (router already exists) (A2, A6) | `backend/app/api/v1/wallets.py` | Open |
+| T-06 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_04_update_wallet.py` | Open |

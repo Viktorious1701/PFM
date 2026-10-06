@@ -2,7 +2,8 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39)*
+> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* ·
+> WM-US-04 *(TC-40…TC-59)*
 
 ---
 
@@ -633,3 +634,333 @@ is 80%). No defect found in the implementation while writing these tests — eve
 the first version of the code. Live-verification walkthrough (step 5) additionally confirmed ownership
 scoping, pagination, and validation against a running server with two real, distinct users — see the
 gate message for the full pasted `curl` transcript.
+
+---
+
+## WM-US-04: Update a Wallet
+
+> **IDs in this section are local to WM-US-04** — except `TC-NN`, which continues this epic file's own
+> numbering: WM-US-02 used `TC-23`…`TC-39`, so this story continues from `TC-40`. **`QF-NN` also
+> continues here** (WM-US-01 used `QF-01`…`QF-04`, WM-US-02 used `QF-05`…`QF-07`; this story continues
+> from `QF-08`). Confirmed by re-reading this file's actual current end before writing this section —
+> not assumed from any prior summary.
+
+### Quality Findings
+
+#### QF-08
+
+**Description.** AC-03/AC-04 require a wallet reference that does not exist at all and one that exists
+but belongs to a different User to produce "the same not-found outcome" — mirrors BM-US-04 QF-16, now
+applied to the wallet's own id instead of a budget's. `plan.md` A3 makes this true by construction, since
+`wallet_repo.get_owned_by_id()` filters by `user_id` in the query itself and returns `None` either way. A
+test that merely checks both cases return *some* `404` would not distinguish "genuinely identical" from
+"two different messages that both happen to carry status 404."
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — for instance, a message that only names "belongs to another account" in the
+ownership-mismatch case, itself a minor information leak about another User's data.
+
+**Recommendation.** `TC-46` compares the full response body of the ownership-mismatch case against
+`TC-45`'s not-found-at-all case and asserts they match exactly — `error_code`, `message`, and `details`
+all identical, not merely the status code.
+
+#### QF-09
+
+**Description.** AC-10's claim that currency and balance are unchanged, and that any unsubmitted field
+keeps its exact prior value, could be satisfied by a test that only reads the `PATCH` response body — a
+service bug that mutated the stored row's `currency`/`balance` (or the unsubmitted one of `name`/`type`)
+while still constructing a response DTO from stale, pre-mutation in-memory values would pass such a test
+undetected. The identical risk BM-US-04 QF-19 already named for Budget's own immutable fields.
+
+**Impact.** A regression that let `update_wallet()` touch more than the submitted field(s) — for
+instance, a careless refactor passing the whole payload into a generic ORM update, or a copy-paste error
+applying `wallet.type = name` — could corrupt a wallet's stored data while every response-body-only test
+kept passing.
+
+**Recommendation.** `TC-55` asserts both the response body's `currency`/`balance` **and** the stored
+`wallets` row's own `currency`/`balance` columns — read independently through the test's own `db`
+session — match the wallet's values from immediately before the update. `TC-40`/`TC-41` additionally
+assert the *unsubmitted* field (`type` when only `name` is sent, and vice versa) is unchanged in the
+response itself.
+
+#### QF-10
+
+**Description.** AC-05/BR-04 require a submission naming neither a new name nor a new type to be
+*refused*, not silently treated as a successful no-op. A test asserting only "the response is some kind
+of error" would not distinguish that from a latent bug where an empty body is accepted and returns `200`
+with the wallet completely unchanged — which would *also* leave "nothing changed" true, just via the
+wrong mechanism (a silently-accepted no-op rather than a validation refusal).
+
+**Impact.** A future refactor that "simplified" `WalletUpdate` by dropping the at-least-one-field
+`model_validator` (plan.md A4) could silently turn this endpoint into an accidental no-op success path,
+and a loosely-written test would not catch it.
+
+**Recommendation.** `TC-48` asserts specifically that the response status is `422` with `error_code`
+`VALIDATION_ERROR` — not `200` — for an empty-body submission, and that the target wallet's stored `name`
+and `type` are unchanged, closing both the "wrong status" and "silently accepted" failure modes in one
+test.
+
+#### QF-11
+
+**Description.** This story's own `spec.md` AC-08 is deliberately worded as "reject an **empty** wallet
+type" rather than WM-US-01 AC-05's "absent, empty, or only whitespace" — because `WalletUpdate.type`
+reuses `WalletCreate.type`'s exact, already-shipped validation shape (`Field(min_length=1,
+max_length=50)` with no trim/whitespace-rejection validator, confirmed directly in
+`backend/app/schemas/wallet.py`), and a single-space `type` value already passes `WalletCreate` uncaught
+today. Writing a test asserting a whitespace-only `type` is rejected on **update** would fail against
+this story's own planned implementation — not because of a defect this story introduces, but because of
+a pre-existing WM-US-01 characteristic this story deliberately does not change (`plan.md` A10).
+
+**Impact.** Without this note, a future reviewer could read a missing whitespace-only-`type` test case as
+a coverage gap in this story, rather than as a deliberate mirror of an already-shipped, out-of-scope
+characteristic.
+
+**Recommendation.** No test case asserts that a whitespace-only `type` is rejected. `TC-51` covers only
+the empty-string (`""`) case for `type`, matching exactly what WM-US-01's own `TC-08` already exercises
+at creation — the same evidence boundary, not a narrower one invented for this story.
+
+### Acceptance Criteria Classification
+
+No wallet-update screen exists in `mobile/` this round, and no SRS UXR names one — the same basis every
+prior Wallet Management story used for its own all-`[API]` classification.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully update a wallet's name, type, or both | **[API]** | No UI surface exists or is named by any UXR this round |
+| AC-02 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-03 | Reject an update to a wallet that does not exist | **[API]** | Persistence/ownership contract; bounded by QF-08 |
+| AC-04 | Reject an update to a wallet owned by a different User | **[API]** | Persistence/ownership contract; bounded by QF-08 |
+| AC-05 | Reject a submission naming neither a new name nor a new type | **[API]** | Payload-contract/no-op risk; bounded by QF-10 |
+| AC-06 | Reject a blank or whitespace-only wallet name, when submitted | **[API]** | Payload validation |
+| AC-07 | Reject a wallet name exceeding the maximum length, when submitted | **[API]** | Payload validation |
+| AC-08 | Reject an empty wallet type, when submitted | **[API]** | Payload validation; scope bounded by QF-11 |
+| AC-09 | Reject a wallet type exceeding the maximum length, when submitted | **[API]** | Payload validation |
+| AC-10 | A successful update changes only the submitted field(s) | **[API]** | Response/persistence contract; bounded by QF-09 |
+| AC-11 | Return exactly the documented wallet fields | **[API]** | Response-payload contract |
+| EC-01 | Wallet name with surrounding whitespace, when submitted | **[API]** | Persistence-shape (trimming) |
+| EC-02 | A wallet type outside either document's own examples, when submitted | **[API]** | Backend rule (no closed vocabulary) |
+| EC-03 | A wallet reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
+| EC-04 | Only a new name is submitted | **[API]** | Partial-update contract |
+| EC-05 | Only a new type is submitted | **[API]** | Partial-update contract |
+| EC-06 | Both a new name and a new type are submitted together | **[API]** | Partial-update contract |
+| EC-07 | A currency or initial-balance value submitted alongside name/type | **[API]** | Structural-ignore contract |
+| EC-08 | A caller who owns a different wallet attempts to update another User's wallet | **[API]** | Persistence/ownership contract; bounded by QF-08 |
+| EC-09 | More than one validation failure in a single submission | **[API]** | Backend validation-grouping contract |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-40, TC-41, TC-42, TC-43 | — |
+| AC-02 | [API] | TC-44 | — |
+| AC-03 | [API] | TC-45 | — |
+| AC-04 | [API] | TC-46 | — |
+| AC-05 | [API] | TC-48 | — |
+| AC-06 | [API] | TC-49 | — |
+| AC-07 | [API] | TC-50 | — |
+| AC-08 | [API] | TC-51 | — |
+| AC-09 | [API] | TC-52 | — |
+| AC-10 | [API] | TC-55 | — |
+| AC-11 | [API] | TC-57 | — |
+| EC-01 | [API] | TC-54 | — |
+| EC-02 | [API] | TC-53 | — |
+| EC-03 | [API] | TC-47 | — |
+| EC-04 | [API] | TC-40 | — |
+| EC-05 | [API] | TC-41 | — |
+| EC-06 | [API] | TC-42 | — |
+| EC-07 | [API] | TC-56 | — |
+| EC-08 | [API] | TC-59 | — |
+| EC-09 | [API] | TC-58 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no wallet-update
+> screen exists this round, and none is named by any SRS UXR. **Known coverage limits, accepted:**
+> `type`'s own whitespace-only acceptance (a pre-existing WM-US-01 characteristic) is not re-tested as a
+> rejection on update, matching what is actually enforced rather than AC-05's original wording (QF-11).
+
+### Test Implementation Map *(filled at step 4)*
+
+Not yet implemented — this story is at the Quality gate (step 3). `backend/tests/integration/
+test_wm_us_04_update_wallet.py` does not exist yet; pytest node ids and PASS/FAIL results are filled in
+at step 4, the same way WM-US-01/02's own maps above were.
+
+---
+
+### TC-40: An authenticated owner updates only a wallet's name — 200 with the updated wallet, other fields unchanged
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet with `name` `"Main Checking"`, `type` `"BANK"`, `currency` `"USD"`, `balance` `500.00`
+- **When:** `PATCH /api/v1/wallets/{id}` is sent with `name` `"Primary Checking"` only
+- **Then:** The response is `200`; the body carries `id` unchanged, `name` `"Primary Checking"`, and `type`/`currency`/`balance` unchanged (`"BANK"`/`"USD"`/`500.00`)
+- **AC:** AC-01, EC-04, FR-01, FR-05, FR-08, FR-10
+- **Type:** integration
+
+### TC-41: An authenticated owner updates only a wallet's type — 200 with the updated wallet, other fields unchanged
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet with `name` `"Main Checking"`, `type` `"BANK"`, `currency` `"USD"`, `balance` `500.00`
+- **When:** `PATCH /api/v1/wallets/{id}` is sent with `type` `"CREDIT"` only
+- **Then:** The response is `200`; the body carries `type` `"CREDIT"`, and `name`/`currency`/`balance` unchanged (`"Main Checking"`/`"USD"`/`500.00`)
+- **AC:** AC-01, EC-05, FR-01, FR-06, FR-08, FR-10
+- **Type:** integration
+
+### TC-42: An authenticated owner updates both name and type together — 200 with both changed, currency and balance unchanged
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet with `name` `"Main Checking"`, `type` `"BANK"`, `currency` `"USD"`, `balance` `500.00`
+- **When:** `PATCH /api/v1/wallets/{id}` is sent with `name` `"Primary Checking"` and `type` `"CREDIT"` together
+- **Then:** The response is `200`; the body carries `name` `"Primary Checking"`, `type` `"CREDIT"`, and `currency`/`balance` unchanged
+- **AC:** AC-01, EC-06, FR-01, FR-10
+- **Type:** integration
+
+### TC-43: Updating a wallet persists the new value(s) on the same single row
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet
+- **When:** The wallet's name and type are updated successfully
+- **Then:** Direct inspection of the `wallets` row for that id shows the new `name` and `type`; exactly one row still exists for that wallet id
+- **AC:** AC-01, FR-01
+- **Type:** integration
+
+### TC-44: An unauthenticated caller is denied with 401
+
+- **US:** WM-US-04
+- **Given:** A caller presenting no `Authorization` header
+- **When:** A wallet update is submitted with an otherwise valid payload
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`; the target wallet's stored `name`/`type` are unchanged
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-45: A wallet_id matching no wallet at all is rejected with 404 WALLET_NOT_FOUND
+
+- **US:** WM-US-04
+- **Given:** An authenticated User
+- **When:** `PATCH /api/v1/wallets/{id}` is sent with a `wallet_id` that matches no wallet in the system
+- **Then:** The response is `404` with `error_code` `WALLET_NOT_FOUND`; nothing is changed
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-46: A wallet_id belonging to a different User is rejected with the identical outcome as TC-45
+
+- **US:** WM-US-04
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a wallet
+- **When:** `A` submits a `PATCH` against `B`'s `wallet_id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-45's response; `B`'s wallet is unchanged
+- **AC:** AC-04, FR-03 *(assertion technique per QF-08)*
+- **Type:** integration
+
+### TC-47: A malformed wallet reference gets the same 404 as a well-formed but non-existent one
+
+- **US:** WM-US-04
+- **Given:** An authenticated User
+- **When:** `PATCH /api/v1/wallets/not-a-real-id` is sent with a valid payload
+- **Then:** The response is `404` `WALLET_NOT_FOUND`, identical to TC-45's response
+- **AC:** EC-03, FR-03
+- **Type:** integration
+
+### TC-48: A submission naming neither a new name nor a new type is rejected with 422
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet
+- **When:** A `PATCH` is submitted with an empty body (neither `name` nor `type`)
+- **Then:** The response is `422` `VALIDATION_ERROR`, not `200`; the stored `name` and `type` are unchanged
+- **AC:** AC-05, FR-04, BR-04 *(assertion technique per QF-10)*
+- **Type:** integration
+
+### TC-49: A blank or whitespace-only name, when submitted, is rejected with 422
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet
+- **When:** A `PATCH` is submitted with `name` `""` and, separately, `"   "`
+- **Then:** Each response is `422` `VALIDATION_ERROR` identifying the `name` field; the stored `name` is unchanged
+- **AC:** AC-06, FR-05
+- **Type:** integration
+
+### TC-50: A name exceeding 100 characters, when submitted, is rejected, not truncated
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet
+- **When:** A `PATCH` is submitted with a `name` of 101 characters
+- **Then:** The response is `422` `VALIDATION_ERROR`; the name is not truncated and the stored `name` is unchanged
+- **AC:** AC-07, FR-05
+- **Type:** integration
+
+### TC-51: An empty type, when submitted, is rejected with 422
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet
+- **When:** A `PATCH` is submitted with `type` `""`
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying the `type` field; the stored `type` is unchanged
+- **AC:** AC-08, FR-06 *(scope bounded by QF-11 — no whitespace-only case is asserted)*
+- **Type:** integration
+
+### TC-52: A type exceeding 50 characters, when submitted, is rejected, not truncated
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet
+- **When:** A `PATCH` is submitted with a `type` of 51 characters
+- **Then:** The response is `422` `VALIDATION_ERROR`; the type is not truncated and the stored `type` is unchanged
+- **AC:** AC-09, FR-06
+- **Type:** integration
+
+### TC-53: A wallet type outside either reference document's own examples is still accepted on update
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet
+- **When:** A `PATCH` is submitted with `type` `"Piggy Bank"` — neither the Gherkin's `"BANK"` nor SDS §5.3.1's own examples
+- **Then:** The response is `200`; the updated wallet's `type` is `"Piggy Bank"` exactly — demonstrating the bound is length-only, not a closed vocabulary, on update just as on creation (WM-US-01 plan.md A1)
+- **AC:** EC-02, FR-06, BR-03
+- **Type:** integration
+
+### TC-54: A name with surrounding whitespace, when submitted, is stored trimmed
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet
+- **When:** A `PATCH` is submitted with `name` `"  Primary Checking  "`
+- **Then:** The response is `200`; the persisted `name` is `"Primary Checking"` — interior spacing preserved, surrounding whitespace removed
+- **AC:** EC-01, FR-05
+- **Type:** integration
+
+### TC-55: A successful update leaves currency and balance unchanged, verified against the stored row directly
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet with `currency` `"USD"` and `balance` `750.25`
+- **When:** The wallet's `name` is updated successfully
+- **Then:** The response's `currency`/`balance` match their pre-update values; a direct read of the `wallets` row through the test's own `db` session confirms the stored `currency`/`balance` columns are unchanged
+- **AC:** AC-10, FR-07, BR-01 *(assertion technique per QF-09)*
+- **Type:** integration
+
+### TC-56: A currency or balance value submitted alongside name/type is silently ignored
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet with `currency` `"USD"` and `balance` `500.00`
+- **When:** A `PATCH` is submitted with a valid `name` plus the extra keys `currency` (`"EUR"`) and `initial_balance` (`9999.00`)
+- **Then:** The response is `200`; the updated wallet's `currency`/`balance` remain `"USD"`/`500.00` — never the submitted extra values
+- **AC:** EC-07, FR-07
+- **Type:** integration
+
+### TC-57: The response exposes exactly the six documented fields
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet
+- **When:** The wallet's name or type is updated successfully
+- **Then:** The response body's keys are exactly `id`, `user_id`, `name`, `type`, `currency`, `balance` — no more, and in particular no invented field
+- **AC:** AC-11, FR-08
+- **Type:** integration
+
+### TC-58: Multiple validation failures in one submission are reported together
+
+- **US:** WM-US-04
+- **Given:** An authenticated User who owns a wallet
+- **When:** A `PATCH` is submitted with `name` `""` and a `type` of 51 characters in the same request
+- **Then:** The response is a single `422` whose `details` identifies both the `name` and the `type` fields — not just the first one encountered
+- **AC:** EC-09, FR-09
+- **Type:** integration
+
+### TC-59: A caller who owns a different wallet of their own cannot update another User's wallet
+
+- **US:** WM-US-04
+- **Given:** Two authenticated Users, `A` (owns wallet `WA`) and `B` (owns wallet `WB`)
+- **When:** `A` submits a `PATCH` against `WB`'s `wallet_id`
+- **Then:** The response is `404` `WALLET_NOT_FOUND`, identical to TC-45/TC-46's responses; `WB`'s stored `name`/`type` are unchanged, and `A`'s own `WA` is also unaffected
+- **AC:** EC-08, FR-03
+- **Type:** integration

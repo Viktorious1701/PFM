@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(specified)*
+> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(implemented, verified — 302 passed, 99% coverage)* · WM-US-04 *(specified)*
 
 ---
 
@@ -465,3 +465,360 @@ ADMIN-wide sense at all — it is scoped to the caller regardless of role.
 - **Reading a single wallet's full detail, and any transaction history, is out of scope.** This story
   is verified through the list endpoint's own envelope; there is no `GET /wallets/{id}` yet
   (WM-US-03).
+
+---
+
+## WM-US-04: Update a Wallet
+
+> **IDs in this section are local to WM-US-04.** `AC-01` below is not WM-US-01's or WM-US-02's own
+> `AC-01`; each story section numbers its own criteria, per `artifact-templates/spec-templates.md` and
+> this codebase's own WM-US-02/BM-US-04 precedent. Only `TC-NN` (and `QF-NN`) in `test_cases.md` run
+> continuously across the epic (`CLAUDE.md` §1.1 rule 4).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-03 — searched in full; confirmed bare**
+> #### US-03-03: Update a Wallet
+
+The entire SRS entry for this story is that one header line — no "As a/I want/So that" statement, no
+`[MVP]` tag, no Gherkin scenario. This is the identical situation WM-US-02's own Source section already
+documented for `US-03-02` immediately above it in the SRS; this story's own header is equally bare,
+confirming the thinness is a property of both of these two stories, not a transcription accident
+isolated to one.
+
+**SDS §5.3.4 WM-US-04: Update a Wallet (USER)**
+> **Goal:** Rename or update configuration for a wallet.
+
+One sentence — the same thinness WM-US-02's own SDS goal carried, and the same thinness BM-US-02/03/04
+each found in their own corner of Budget Management.
+
+**SDS §2.1 Domain Layer Traceability**
+> | **Wallet** | `wallets` | `WalletModel` | `WalletRead`, `WalletCreate` |
+
+**SDS §6.3 API Index** *(checked directly, not assumed)*
+> Lists exactly `WM-API-01` (`POST /api/v1/wallets`) and `WM-API-02` (`GET /api/v1/wallets`) — no
+> `WM-API-03`/`WM-API-04` row exists at all. The identical "confirmed stale, not a contract to match"
+> situation BM-US-04's own Source section found in its own epic's API index; reconciling the whole
+> table is not this story's job.
+
+**constitution.md API-03, API-05, SEC-08, VL-06**
+> API-03: HTTP status codes: `200` read/update · `201` creation · ... — an update response is `200`, not
+> `201`.
+> API-05: No generic `updateStatus` endpoint. Each business state transition gets its own explicit
+> endpoint (`/users/activate`, not `PATCH /users/{id}` with a status field).
+> SEC-08: Queries for user-owned data filter on the authenticated `user_id` at the repository layer.
+> VL-06: Referenced entities are verified to exist and be active before use — `404` if absent, `409` if
+> present but in the wrong state.
+
+**`specs/005-budget-management/spec.md` BM-US-04 "Acceptance Criteria"** *(this story's own directly-reused
+precedent, cited the same way BM-US-02 cited CM-US-02's)*
+> AC-03/AC-04: "the system changes nothing and returns the same not-found outcome ... the response gives
+> no indication of which of the two happened."
+
+**`specs/005-budget-management/plan.md` BM-US-04 A1** *(this story's own directly-reused scoping
+precedent)*
+> "Only `amount_limit` is updatable ... Accepting a new `wallet_id`/`category_id`/`period` would reopen
+> BM-US-01 BR-05's uniqueness constraint in a materially harder form ... None of that is asked for by any
+> source ... Same 'fewest invented rules' discipline as BM-US-01 A2."
+
+**`backend/app/schemas/transaction.py` `TransactionRead`/`TransactionModel`** *(confirmed directly, not
+assumed)*
+> Exactly seven fields: `id`, `wallet_id`, `category_id`, `amount`, `type`, `timestamp`, `note` — **no
+> currency field of any kind.** Every transaction's amount is interpreted entirely through whichever
+> currency its own `wallet_id` currently resolves to.
+
+**`backend/app/repositories/wallet_repo.py` `get_owned_by_id()`, `decrement_balance()`,
+`increment_balance()`** *(confirmed directly)*
+> `get_owned_by_id` already exists, built for BM-US-01's own referenced-wallet check (SEC-08-scoped,
+> collapsing not-found and not-owned to the identical `None`). `decrement_balance`/`increment_balance`
+> are the **only** two functions in this codebase that ever change a stored wallet's `balance`, and both
+> are called exclusively from Transaction creation/deletion (TM-US-01) — never from any Wallet
+> Management story.
+
+### Out of scope for this story
+
+WM-US-01 (create a wallet) · WM-US-02 (list wallets) · WM-US-03 (view a single wallet — still
+unspecified; this story does not depend on it, see *Assumptions & Dependencies*) · WM-US-05 (delete a
+wallet) · UM-US-04/05, DC-US-01/02 · Features 04–11 · SRS §6 Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: changing a wallet's `currency` or its `balance` (reasoned
+through explicitly below, not merely declined — see *Assumptions & Dependencies*); any transaction moving
+money into or out of a wallet (Feature-06, Transaction Management — this story touches no transaction
+data and reads none); and any mobile/UI screen, for the same reason WM-US-01/02 and every Budget
+Management story gave their own endpoints — no SRS UXR names one this round, and `mobile/` stays a
+fixture-driven prototype scoped to UM-US-01 only (`CLAUDE.md` §5).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to rename one of my own wallets, change its type, or both, so that I
+can keep my wallet labels and organization accurate as my accounts or habits change, without losing the
+wallet's balance or currency in the process.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully update a wallet's name, type, or both**
+**Given** an authenticated User who owns a wallet,
+**When** the User submits a new name, a new type, or both, each within the system's supported bounds,
+**Then** the system updates exactly the submitted field(s), leaves that wallet's currency and balance
+unchanged, and returns a success result carrying the wallet's identifier, owner, name, type, currency,
+and balance.
+
+**AC-02: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to update a wallet,
+**Then** the system denies the request before evaluating anything else, changes nothing, and returns an
+unauthenticated error.
+
+**AC-03: Reject an update to a wallet that does not exist**
+**Given** an authenticated User,
+**When** the submitted wallet reference matches no wallet at all,
+**Then** the system changes nothing and returns a not-found error.
+
+**AC-04: Reject an update to a wallet owned by a different User**
+**Given** an authenticated User,
+**When** the submitted wallet reference matches a wallet owned by a different User,
+**Then** the system changes nothing and returns the same not-found outcome AC-03 describes — the
+response gives no indication of which of the two happened.
+
+**AC-05: Reject a submission naming neither a new name nor a new type**
+**Given** an authenticated User who owns a wallet,
+**When** the submission carries neither a name nor a type to change,
+**Then** the system changes nothing and returns a validation error, rather than treating the request as
+a successful no-op.
+
+**AC-06: Reject a blank or whitespace-only wallet name, when a name is submitted**
+**Given** an authenticated User who owns a wallet,
+**When** the submitted name is present but is empty or only whitespace,
+**Then** the system changes nothing and returns a validation error identifying the name field.
+
+**AC-07: Reject a wallet name exceeding the maximum supported length, when a name is submitted**
+**Given** an authenticated User who owns a wallet,
+**When** the submitted name is present and longer than the system supports,
+**Then** the system changes nothing and returns a validation error rather than truncating the name.
+
+**AC-08: Reject an empty wallet type, when a type is submitted**
+**Given** an authenticated User who owns a wallet,
+**When** the submitted type is present but empty,
+**Then** the system changes nothing and returns a validation error identifying the type field.
+
+**AC-09: Reject a wallet type exceeding the maximum supported length, when a type is submitted**
+**Given** an authenticated User who owns a wallet,
+**When** the submitted type is present and longer than the system supports,
+**Then** the system changes nothing and returns a validation error rather than truncating the type.
+
+**AC-10: A successful update changes only the submitted field(s) — currency and balance never change**
+**Given** an authenticated User who successfully updates one of their own wallets,
+**When** the update completes,
+**Then** that wallet's currency and balance are identical to their values immediately before the request,
+and any field not named in the submission is likewise identical to its value immediately before the
+request.
+
+**AC-11: Return exactly the documented wallet fields**
+**Given** an authenticated User successfully updates a wallet,
+**When** the system returns the success result,
+**Then** the result carries exactly the wallet's identifier, owner identifier, name, type, currency, and
+balance — no other field, and no data belonging to any other User.
+
+### Edge Cases
+
+**EC-01**: **Wallet name with surrounding whitespace, when submitted** — `"  Main Checking  "` is stored
+trimmed, as `"Main Checking"`, the identical rule WM-US-01 EC-04 already established for creation.
+
+**EC-02**: **A wallet type outside the Gherkin's and SDS's own examples, when submitted** — a value such
+as `"Piggy Bank"` or `"CREDIT_CARD"`, meeting only the length bound, is accepted on update exactly as it
+already is on creation (WM-US-01 EC-05, `plan.md` A1); this story introduces no closed vocabulary where
+none existed before.
+
+**EC-03**: **A wallet reference that is not even a well-formed identifier** — a value such as
+`"not-a-real-id"` is refused with the same not-found outcome as a well-formed but non-existent reference
+(AC-03). No separate malformed-identifier error exists; a reference either resolves to a wallet the
+caller owns, or it does not, regardless of its shape.
+
+**EC-04**: **Only a new name is submitted** — the wallet's type, currency, and balance remain exactly
+what they were before the request.
+
+**EC-05**: **Only a new type is submitted** — the wallet's name, currency, and balance remain exactly
+what they were before the request.
+
+**EC-06**: **Both a new name and a new type are submitted in the same request** — both change together;
+currency and balance remain unchanged.
+
+**EC-07**: **A currency or initial-balance-shaped value submitted alongside the name or type** — the
+request body additionally carries a `currency`- or `initial_balance`/`balance`-shaped value; the updated
+wallet's currency and balance remain exactly what they were before the request, and the response carries
+no echo of the submitted value. This story's contract has no field for a caller to populate either (see
+*Assumptions & Dependencies*), so the extra key is silently ignored, never honoured — the identical
+treatment BM-US-04 EC-06 already gave an out-of-contract `wallet_id`/`category_id`/`period` value.
+
+**EC-08**: **A caller who owns one or more wallets of their own, attempting to update a different User's
+wallet** — refused with the identical outcome AC-04 describes; owning some wallet never entitles a caller
+to act on another User's wallet.
+
+**EC-09**: **More than one validation failure in a single submission** — when the submitted name is blank
+and the submitted type is over-long in the same request, both problems are reported together in one
+response, not just the first one encountered (the identical grouping rule WM-US-01 EC-06 already
+established for creation).
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to submit a new name, a new
+  type, or both, identifying the wallet to update by its own identifier, in order to update that wallet
+  (SDS §5.3.4).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before anything else (constitution API-08; mirrors WM-US-01 FR-02).
+- **FR-03**: The system must **require** the submitted wallet reference to resolve to a wallet owned by
+  the authenticated caller, and **refuse** the request with an identical outcome whether no such wallet
+  exists at all or it exists and is owned by a different User (AC-03, AC-04, EC-03, EC-08; constitution
+  SEC-08, VL-06).
+- **FR-04**: The system must **require** at least one of a new name or a new type to be present in the
+  submission, and **reject** — rather than silently accept as a no-op — a submission naming neither
+  (AC-05).
+- **FR-05**: The system must, **when a name is submitted**, require it non-empty after trimming
+  surrounding whitespace, and **reject** — rather than truncate — a name longer than the system supports
+  (AC-06, AC-07, EC-01; the identical bound WM-US-01 FR-03 already established).
+- **FR-06**: The system must, **when a type is submitted**, require it non-empty, and **reject** —
+  rather than truncate — a type longer than the system supports; the system enforces no closed list of
+  valid type values (AC-08, AC-09, EC-02; the identical bound WM-US-01 FR-04 already established,
+  `plan.md` A1).
+- **FR-07**: The system must **leave** the wallet's currency and balance unchanged by this operation, and
+  **ignore** any currency- or balance-shaped value submitted in the request body — this story's contract
+  declares no field capable of changing either (AC-10, EC-07).
+- **FR-08**: The system must **return**, on success, exactly the wallet's identifier, owner identifier,
+  name, type, currency, and balance (AC-11).
+- **FR-09**: The system must **group** every validation failure from one submission into a single
+  response rather than reporting only the first (EC-09; constitution VL-02).
+- **FR-10**: The system must **apply only the submitted field(s)**; a field not named in the submission
+  keeps its existing stored value exactly, with no side effect on any other field (EC-04, EC-05).
+
+#### Business Rules
+
+- **BR-01**: A wallet's name and type are the only fields mutable through this story's contract; its
+  currency and balance are immutable through this operation (FR-07; see *Assumptions & Dependencies* for
+  why both are excluded).
+- **BR-02**: A wallet's ownership for this operation is established the same way WM-US-01 BR-01 already
+  established it at creation — directly by the wallet's own identifier, scoped to the authenticated
+  caller. A wallet reference that does not resolve to a row the caller owns is refused identically
+  whether no such row exists at all or it exists and belongs to a different User (FR-03).
+- **BR-03**: Name and type are validated by the identical rules WM-US-01 BR-04 already established for
+  creation — a length bound for name (trimmed, non-empty, ≤100 characters) and for type (non-empty,
+  ≤50 characters) — and against no closed vocabulary of business-meaningful values for type (FR-05,
+  FR-06).
+- **BR-04**: A submission naming neither a new name nor a new type is refused as invalid; this endpoint
+  never treats the absence of both as a successful, no-op update (FR-04).
+
+#### Key Entities
+
+- **Wallet**: A named store of liquid money a User holds (SRS §1.5). Carries `id`, `user_id`, `name`,
+  `type`, `currency`, and `balance` (SDS §2.2, §4.3.3; WM-US-01). This is the first story to **write** to
+  an existing Wallet row rather than only creating or reading one — and, unlike BM-US-04's analogous
+  first write to an existing Budget, only two of this entity's four non-identifier fields (`name`,
+  `type`) are reachable through this story's contract; `currency` and `balance` stay exactly as WM-US-01
+  set them, or as Transaction activity (Feature-06) has since changed `balance`.
+- **User**: Reused from Feature-01/Feature-02 with no new column. The authenticated caller's own
+  ownership of the wallet being updated is the only scope this story ever checks (constitution SEC-08).
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can update the name, the type, or both, of one of their own wallets in
+  one call, and the response reflects exactly the new value(s).
+- **SC-02**: No wallet can be updated without an authenticated caller.
+- **SC-03**: A wallet can never be updated by a User who does not own it — whether because the reference
+  does not exist at all, or because it belongs to someone else, the request is refused identically either
+  way.
+- **SC-04**: A wallet's currency and balance never change as a result of this operation, no matter what a
+  caller submits alongside the name or type.
+- **SC-05**: A submission naming neither a new name nor a new type is always rejected, never silently
+  accepted as a no-op success.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01) and Create a Wallet (WM-US-01) are already implemented.** Every acceptance criterion
+  here presupposes at least one wallet already on record, owned by the authenticated caller — the
+  identical dependency shape BM-US-04 already declared on BM-US-01.
+
+- **List Wallets (WM-US-02) is also already implemented, but is not a dependency of this story** — it is
+  useful for *observing* the result of an update (and is used that way in this story's own verification),
+  but no acceptance criterion here requires it. **View a Wallet (WM-US-03) remains unspecified** — unlike
+  BM-US-04, which could cite three already-implemented predecessor stories in the same epic, this story's
+  own epic has no single-wallet read endpoint yet. This is not a blocker: this story's own `PATCH`
+  response already returns the updated wallet's full documented shape (AC-11), so nothing here needs a
+  `GET /wallets/{id}` to verify against. Raised here rather than silently assumed, since every other
+  "Update" story so far in this codebase (BM-US-04) could point to a complete chain of prior reads first.
+
+- **Only `name` and `type` are updatable through this story's contract — `currency` and `balance` (the
+  stored column `initial_balance` maps to at creation, WM-US-01 FR-09) are not, reasoned through
+  explicitly rather than assumed, mirroring the discipline BM-US-04 used for its own three excluded
+  fields:**
+
+  - **`balance` is excluded because it is not an independent configuration value at all — it is a derived
+    ledger total.** `backend/app/repositories/wallet_repo.py` confirms the **only** two functions in this
+    codebase that ever change a stored wallet's `balance` are `decrement_balance()` and
+    `increment_balance()`, both called exclusively from Transaction creation/deletion (TM-US-01) — never
+    from any Wallet Management story, including this one's own direct predecessor WM-US-01, which merely
+    *sets* the starting value once. Exposing `balance` as a directly-settable field here would let a
+    caller silently move their own ledger to any value with no corresponding Transaction row — the
+    system's own record of *why* the balance is what it is would then disagree with the balance itself,
+    with nothing in the data model able to explain the discrepancy. SDS §5.3.4's own goal text — "Rename
+    or update **configuration**" — supports this reading directly: a running balance is a *result*, not a
+    piece of configuration, in a way `name` and `type` plainly are.
+
+  - **`currency` is the harder case, and is excluded for a stronger reason than any field BM-US-04 had to
+    exclude.** `backend/app/schemas/transaction.py` confirms `TransactionRead`/`TransactionModel` carry
+    **no currency field of their own at all** — every transaction's `amount` is interpreted entirely
+    through whichever currency its own `wallet_id` currently resolves to, at read time, with nothing
+    anchoring a historical transaction to the currency that was in effect when it was recorded. Changing
+    a wallet's `currency` after transactions already exist against it would not just change a label the
+    way renaming a wallet does — it would silently re-denominate every one of that wallet's past
+    transaction amounts, because there is no second, independent place any past amount's original
+    currency is recorded. BM-US-04's own excluded fields (`wallet_id`, `category_id`, `period`) are
+    foreign-key/identity fields whose exclusion prevents a *re-targeting* problem (which budget a
+    transaction's cap applies to); `currency` here is worse in kind, not just degree — it would silently
+    change the *meaning* of monetary values already persisted and already surfaced in prior responses,
+    which reads as a data-integrity concern adjacent to SRS NFR-05 (Data Integrity & Monetary Precision)
+    even though NFR-05's own text is about storage precision, not unit-of-account stability. Nothing in
+    SRS §6 Feature-03, SDS §5.3.4's one-sentence goal, or SDS §2.2's domain-object description asks for
+    `currency` to be editable, and "rename or update configuration" reads at least as naturally as
+    "`name`/`type` only" as it does "every non-balance field" — so the narrower reading is taken, matching
+    BM-US-04 A1's own "prefer the interpretation that invents the fewest additional rules" discipline.
+    **No `[NEEDS RULING]` follows from this**, because this is a scope decision filling a genuine gap left
+    by a one-sentence goal, not a resolution of a stated disagreement between SRS and SDS, or a change to
+    a published contract or the domain model/ERD — the same basis BM-US-04 A1 itself used to settle an
+    analogous question without escalating. If a future need for currency migration emerges (e.g.
+    correcting a data-entry mistake), it is that future story's own decision to raise, with its own
+    re-conversion or re-anchoring design — not something this story backs into by leaving the field open.
+
+  - **No uniqueness re-validation risk exists for `name`/`type` the way BM-US-04 A1 had to reason through
+    for Budget's triple key.** WM-US-01 BR-05 already established that wallet names carry no uniqueness
+    constraint at all, per-User or system-wide (EC-07, `plan.md` A6) — so, unlike Budget's
+    `(wallet_id, category_id, period)` uniqueness constraint, there is no existing constraint this
+    story's updates could ever collide with. This endpoint's error catalog is `200`/`401`/`404`/`422`
+    only, with no `409` of any kind, for a simpler reason than BM-US-04's own "structurally unreachable"
+    `409` story: there was never a uniqueness rule here to reopen in the first place.
+
+- **Partial-update semantics: both `name` and `type` are optional on the request, and either, or both, may
+  be submitted — the first multi-field optional update in this codebase.** BM-US-04's own `BudgetUpdate`
+  had exactly one field, so "is the field optional" and "is at least one field required" were the
+  identical question there; here they are not. Both fields are modelled as optional (`None` means "leave
+  this field's stored value unchanged," whether the key was omitted from the JSON body entirely or
+  submitted explicitly as `null` — no distinct "clear the field" meaning exists for either, since both are
+  non-nullable business fields with a mandatory non-empty value at the model layer, and inventing a
+  clear-to-null behaviour neither field can actually hold would itself be a new rule no source asks for).
+  A submission naming neither is still refused (AC-05, BR-04) — generalising BM-US-04 A6's own "a
+  zero-field update is not a no-op `200`" stance from its one required field to this story's two optional
+  ones, rather than silently allowing an empty `{}` body to return `200` with nothing changed.
+
+- **`type`'s validation on update intentionally mirrors `WalletCreate.type`'s exact, already-shipped
+  shape — length bound only, no trim/whitespace-rejection — rather than this story's own AC-08 inventing
+  a stricter rule.** `backend/app/schemas/wallet.py` shows `WalletCreate.name` trims and rejects an
+  empty-after-trim value via an explicit `field_validator`, but `WalletCreate.type` carries only
+  `Field(min_length=1, max_length=50)`, with no equivalent whitespace check — so a single-space `type`
+  value already passes validation uncaught at creation time, even though WM-US-01 spec.md's own AC-05
+  wording says type must be rejected when "absent, empty, or only whitespace." That gap belongs to
+  WM-US-01, which is already implemented and verified and out of this story's scope to correct; inventing
+  stricter, asymmetric validation for `type` on update alone — rejecting on this endpoint what creation
+  itself still accepts — would be a new, undiscussed inconsistency, not a fix. This story's own AC-08 is
+  therefore worded to match what is actually enforced ("empty," not "blank or only whitespace"), unlike
+  AC-06's name wording, which can honestly claim whitespace-only rejection because `name`'s existing
+  validator already guarantees it. Recorded in full in `plan.md` A10 and `test_cases.md` QF-11.

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(specified)*
+> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(implemented, verified — 391 passed)* · CM-US-04 *(specified)*
 
 ---
 
@@ -445,3 +445,442 @@ ADMIN-wide sense at all — it is scoped to the caller regardless of role.
 
 - **Reading a single category's full detail is out of scope.** This story is verified through the list
   endpoint's own envelope; there is no `GET /categories/{id}` yet (CM-US-03).
+
+---
+
+## CM-US-04: Update a Category
+
+> **IDs in this section are local to CM-US-04.** `AC-01` below is not CM-US-01's or CM-US-02's own
+> `AC-01`; each story section numbers its own criteria, per `artifact-templates/spec-templates.md` and
+> this codebase's own CM-US-02/WM-US-02/TM-US-02/BM-US-02/BM-US-03/BM-US-04 precedent. Only `TC-NN` (and
+> `QF-NN`) in `test_cases.md` run continuously across the epic (`CLAUDE.md` §1.1 rule 4) — this story
+> continues from `TC-35`/`QF-09`, confirmed by direct re-count of `test_cases.md`'s own current end
+> before writing anything here (that file's own header note records a correction to a wrong number this
+> dispatch was originally briefed with for the `QF` series).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-04 — searched in full; confirmed, no entry for this story exists**
+> The same situation CM-US-02 was already in (its own Source section above documents this precedent):
+> `### Feature-04: Category Management` contains exactly one story, `#### US-04-01: Create a Category
+> [MVP]` (quoted in full in this file's CM-US-01 section), immediately followed by `### Feature-05:
+> Budget Management`. There is no `US-04-02`, `US-04-03`, or `US-04-04` header of any kind. This story is
+> grounded the same way CM-US-02 was: in SRS §1.5's conceptual domain model and SRS §2 FR-04's text
+> directly, and in SDS §5.4.4 — not in a bare story header that does not exist.
+
+**SRS §1.5 Conceptual Domain Model**
+> **Category** — A label a User defines to classify money movement as one kind of income or expense,
+> e.g. "Groceries" or "Salary" (FR-04).
+
+**SRS §2 FR-04 — Category Management**
+> The System shall support user-defined Categories classified as either `INCOME` or `EXPENSE` (e.g.,
+> Groceries, Rent, Salary, Utilities).
+
+**SDS §5.4.4 CM-US-04: Update a Category (USER)**
+> * **Goal:** Modify category name, type, or icon.
+
+Confirmed directly from `SDS.md` itself, not assumed from any briefing summary: unlike a vaguer
+"rename or update configuration"-style goal line (a different epic's own Update story, not read into
+this one under the scope rule), this goal names three concrete fields directly — `name`, `type`, `icon`.
+The disjunctive phrasing ("name, type, **or** icon") is read literally in *Assumptions & Dependencies*
+below: it is the textual basis for treating all three fields as independently optional on this
+operation, not a requirement that every update touch all three.
+
+**SDS §2.2 Domain Object** *(Category row, as aligned by CM-US-01 G1 — SDS §1.6 v1.4.0)*
+> **Category:** Classification for monetary activities (`id`, `user_id`, `name`, `type`, `icon`).
+
+**SDS §4.3.3 Data Design — `CATEGORIES` ERD** *(as aligned by CM-US-01 G1)*
+> ```
+> CATEGORIES {
+>     uuid id PK
+>     uuid user_id FK
+>     string name
+>     string type
+>     string icon
+> }
+> ```
+
+**`specs/004-category-management/plan.md` CM-US-01 A4** *(this story's own inherited open decision)*
+> `icon` is not created or populated by this story [CM-US-01] ... Adding it is CM-US-04's own decision to
+> make, since CM-US-04 (`SDS §5.4.4`) is the story whose goal actually names icon-editing.
+
+**`backend/app/models/category.py` docstring** *(read directly, not assumed)*
+> No `icon` column (plan.md A4) — SDS §4.3.3's ERD was aligned to add a nullable `icon` at the document
+> level (plan.md G1), but no AC in this story's own set asks for it, so the column is deferred to
+> CM-US-04.
+
+**`backend/app/repositories/category_repo.py`** *(read directly)*
+> `get_owned_by_id(db, *, category_id, user_id)` already exists — built for BM-US-01's own creation-time
+> reference check (`budget_service.create_budget`'s category-ownership validation) — and is reused
+> unchanged by this story for its own lookup; see *Assumptions & Dependencies*.
+
+**constitution.md API-03, API-05, SEC-08, VL-02, VL-06**
+> API-03: HTTP status codes: `200` read/update · ... — an update response is `200`, not `201`.
+> API-05: No generic `updateStatus` endpoint. Each business state transition gets its own explicit
+> endpoint.
+> SEC-08: Queries for user-owned data filter on the authenticated `user_id` at the repository layer.
+> VL-02: Validation errors are returned together in one `422`, not one error per field.
+> VL-06: Referenced entities are verified to exist and be active before use — `404` if absent, `409` if
+> present but in the wrong state.
+
+**`specs/005-budget-management/spec.md` BM-US-04 "Acceptance Criteria"** *(this story's own update-
+mechanics precedent, mirrored — not a different epic's requirement leaking in)*
+> AC-04: "the system creates nothing and returns the same not-found outcome [as AC-03] in either case —
+> the response gives no indication of which of the two happened."
+
+### Out of scope for this story
+
+CM-US-01 (create, implemented) · CM-US-02 (list, implemented) · CM-US-03 (view a single category — not
+yet implemented; see *Assumptions & Dependencies* for why this story does not depend on it) · CM-US-05
+(delete a category) · WM-US-*, BM-US-*, TM-US-*, UM-US-04/05, DC-US-01/02 · Features 06–11 · SRS §6
+Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: changing a category's owner (this story's contract has no
+field capable of naming one — ownership is immutable, exactly as it was at creation, CM-US-01 BR-01);
+re-validating, re-deriving, or otherwise touching any existing Transaction or Budget as a side effect of
+a name/type/icon change (reasoned through explicitly below, not merely declined — see the `type`-
+editability discussion in *Assumptions & Dependencies*); introducing an operation to clear an `icon`
+value back to absent once set (reasoned through below — see *Assumptions & Dependencies*); archiving or
+removing a category (CM-US-05); and any mobile/UI screen — no SRS UXR names one this round, and
+`mobile/` stays a fixture-driven prototype scoped to UM-US-01 only (`CLAUDE.md` §5).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to change one or more of a category's name, type, and icon, so that
+I can correct a mistake or reorganize my categories without deleting and recreating them.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully update one or more of a category's name, type, and icon**
+**Given** an authenticated User who owns a category,
+**When** the User submits a new value for at least one of `name`, `type`, or `icon`,
+**Then** the system updates exactly the submitted field(s), leaves every field the User did not submit
+unchanged, and returns a success result carrying the category's identifier, owner, name, type, and icon.
+
+**AC-02: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to update a category,
+**Then** the system denies the request before evaluating anything else, changes nothing, and returns an
+unauthenticated error.
+
+**AC-03: Reject an update to a category that does not exist**
+**Given** an authenticated User,
+**When** the submitted category reference matches no category at all,
+**Then** the system changes nothing and returns a not-found error.
+
+**AC-04: Reject an update to a category owned by a different User**
+**Given** an authenticated User,
+**When** the submitted category reference matches a category owned by a different User,
+**Then** the system changes nothing and returns the same not-found outcome AC-03 describes — the
+response gives no indication of which of the two happened.
+
+**AC-05: Reject a submission naming none of name, type, or icon**
+**Given** an authenticated User who owns a category,
+**When** the submission names none of `name`, `type`, or `icon` at all,
+**Then** the system changes nothing and returns a validation error rather than treating the request as a
+no-op success.
+
+**AC-06: Reject a blank name, when a name is submitted**
+**Given** an authenticated User who owns a category,
+**When** a `name` is submitted that is empty or only whitespace,
+**Then** the system changes nothing and returns a validation error identifying the name field.
+
+**AC-07: Reject a name exceeding the maximum supported length, when a name is submitted**
+**Given** an authenticated User who owns a category,
+**When** the submitted `name` is longer than the system supports,
+**Then** the system changes nothing and returns a validation error rather than truncating the name.
+
+**AC-08: Reject a type value that is not exactly INCOME or EXPENSE, when a type is submitted**
+**Given** an authenticated User who owns a category,
+**When** the submitted `type` is any value other than the literal `INCOME` or the literal `EXPENSE` —
+including a near-miss such as a different word, a case variant, or a value carrying extra whitespace,
+**Then** the system changes nothing and returns a validation error identifying the type field.
+
+**AC-09: Reject a blank icon, when an icon is submitted**
+**Given** an authenticated User who owns a category,
+**When** an `icon` is submitted that is empty or only whitespace,
+**Then** the system changes nothing and returns a validation error identifying the icon field.
+
+**AC-10: Reject an icon exceeding the maximum supported length, when an icon is submitted**
+**Given** an authenticated User who owns a category,
+**When** the submitted `icon` is longer than the system supports,
+**Then** the system changes nothing and returns a validation error rather than truncating the icon.
+
+**AC-11: A successful update changes only the submitted field(s)**
+**Given** an authenticated User who successfully updates one or more fields of one of their own
+categories,
+**When** the update completes,
+**Then** the category's owner is unchanged, and every one of `name`, `type`, and `icon` that was not
+named in the request holds exactly the value it held immediately before the request.
+
+**AC-12: Return exactly the documented category fields**
+**Given** an authenticated User successfully updates a category,
+**When** the system returns the success result,
+**Then** the result carries exactly the category's identifier, owner identifier, name, type, and icon —
+no other field, and no data belonging to any other User's category.
+
+### Edge Cases
+
+**EC-01**: **Type submitted in lowercase or mixed case** — `"expense"` or `"Income"` is rejected under
+AC-08 rather than case-folded and accepted, exactly as CM-US-01 EC-01 already established for creation —
+this story introduces no new normalisation behaviour for `type`.
+
+**EC-02**: **Name with surrounding whitespace** — `"  Utilities  "` is stored trimmed, as `"Utilities"`,
+exactly as CM-US-01 EC-02 already established. Interior spacing is preserved as typed.
+
+**EC-03**: **An updated name matches another of the caller's own categories' names** — the update still
+succeeds; no acceptance criterion or business rule requires category names to be unique, even for one
+User's own categories, exactly as CM-US-01 EC-03 already established for creation.
+
+**EC-04**: **More than one validation failure in a single submission** — when the submitted `name` is
+blank and the submitted `type` is malformed in the same request, both problems are reported together in
+one response, not just the first one encountered, exactly as CM-US-01 EC-04 already established.
+
+**EC-05**: **An unrecognised `user_id` field submitted alongside otherwise valid fields** — the request
+additionally carries a `user_id` key naming a different, real User; the category's owner remains exactly
+the caller, never the named User — the extra key is silently ignored, never honoured, exactly as CM-US-01
+EC-05/`plan.md` A6 already established for creation (there, the ignored field was `icon`, which this
+story now makes real; here it is `user_id`, which remains structurally absent from this story's own DTO
+too).
+
+**EC-06**: **An icon submitted for the first time, and an icon changed a second time** — a category
+created by CM-US-01 has no `icon` value; submitting one for the first time is accepted as an ordinary
+successful update, as is later submitting a different value in place of one already set. Neither case is
+a no-op or a conflict.
+
+**EC-07**: **An icon with surrounding whitespace** — `"  shopping-cart  "` is stored trimmed, as
+`"shopping-cart"`, the same treatment EC-02 already establishes for `name`.
+
+**EC-08**: **A category reference that is not even a well-formed identifier** — a value such as
+`"not-a-real-id"` is refused with the same not-found outcome as a well-formed but non-existent reference
+(AC-03). No separate malformed-identifier error exists; a reference either resolves to a category the
+caller owns, or it does not, regardless of its shape — mirrors BM-US-04 EC-03.
+
+**EC-09**: **Type submitted with surrounding whitespace** — `" EXPENSE"` or `"INCOME "` is rejected under
+AC-08; unlike `name`/`icon` (EC-02, EC-07), `type` receives no trimming, exactly as CM-US-01 EC-06
+already established.
+
+**EC-10**: **A category's type is changed after a Transaction or a Budget already references it** —
+accepted; this story performs no check of, and has no effect on, any existing Transaction's own stored
+`type`, or on the result of any Budget's spend computation for activity already recorded. Reasoned
+through in full in *Assumptions & Dependencies*, because it is the one consequence of this story that is
+not obvious from the CRUD mechanics alone.
+
+**EC-11**: **A caller who owns one or more categories of their own, attempting to update a different
+User's category** — refused with the identical outcome AC-04 describes; owning some category never
+entitles a caller to act on another User's category — mirrors BM-US-04 EC-07.
+
+**EC-12**: **Icon at the maximum supported length** — a value at exactly that bound is accepted; one
+character more is rejected under AC-10. The cap is a ceiling, not a target, mirroring CM-US-02 EC-02's
+own treatment of `page_size`.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to submit a new value for at
+  least one of `name`, `type`, or `icon`, identifying the category to update by its own identifier, in
+  order to update that category (SDS §5.4.4).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before anything else (constitution API-08; mirrors CM-US-01 FR-02, BM-US-04 FR-02).
+- **FR-03**: The system must **require** the submitted category reference to resolve to a category owned
+  by the authenticated caller, and **refuse** the request with an identical outcome whether no such
+  category exists at all or it exists and is owned by a different User (AC-03, AC-04, EC-08, EC-11;
+  constitution SEC-08, VL-06).
+- **FR-04**: The system must **require** at least one of `name`, `type`, or `icon` to be present in the
+  submission, and **reject** — rather than silently accept as a no-op — a submission naming none of the
+  three (AC-05).
+- **FR-05**: The system must, **when `name` is submitted**, require it non-empty after trimming
+  surrounding whitespace and no longer than the system-supported maximum, **rejecting** — rather than
+  truncating — a value that fails either bound; the trimmed value is what gets stored (AC-06, AC-07,
+  EC-02).
+- **FR-06**: The system must, **when `type` is submitted**, require it to match exactly one of the two
+  literals `INCOME` or `EXPENSE`, with no case-folding or trimming applied to any other value (AC-08,
+  EC-01, EC-09).
+- **FR-07**: The system must, **when `icon` is submitted**, require it non-empty after trimming
+  surrounding whitespace and no longer than the system-supported maximum, **rejecting** — rather than
+  truncating — a value that fails either bound; the trimmed value is what gets stored (AC-09, AC-10,
+  EC-07, EC-12).
+- **FR-08**: The system must **leave** every one of `name`, `type`, and `icon` not named in the request
+  unchanged, and must **leave** the category's owner unchanged regardless of anything submitted,
+  including an unrecognised `user_id` key (AC-11, EC-05).
+- **FR-09**: The system must **return**, on success, exactly the category's identifier, owner identifier,
+  name, type, and icon — no other field (AC-12).
+- **FR-10**: The system must **group** every validation failure from one submission into a single
+  response rather than reporting only the first (EC-04; constitution VL-02).
+- **FR-11**: The system must **impose no uniqueness constraint** on an updated category name, including
+  across two categories owned by the same User (EC-03; mirrors CM-US-01 FR-08).
+- **FR-12**: The system must **apply no restriction and no retroactive effect** tied to a category's
+  `type` changing: an existing Transaction's own stored `type` must never change as a result, and the
+  result of any Budget's spend computation over activity already recorded must never change as a result
+  (EC-10; see *Assumptions & Dependencies* for the full reasoning).
+
+#### Business Rules
+
+- **BR-01**: A category's ownership for this operation is established directly from its own `user_id`
+  column — unlike Budget (BM-US-04 BR-02), a category carries its own owner, so no second table is
+  consulted to decide ownership (SRS §1.5 "User defines Category"; constitution SEC-08; FR-03).
+- **BR-02**: `name`, `type`, and `icon` are each independently optional on this operation; at least one
+  must be present, or the request is refused (FR-04).
+- **BR-03**: Category names carry no uniqueness constraint, per-User or system-wide, on update any more
+  than at creation (FR-11; mirrors CM-US-01 BR-03).
+- **BR-04**: A category's `type` carries no standing consistency invariant against any Transaction or
+  Budget that references it. The only place `type` consistency is ever checked is at the moment a new
+  Transaction is created (a different story's own rule, not restated or re-triggered by this one); it is
+  never re-checked against a category's current `type` afterward, and changing a category's `type` does
+  not retroactively revisit that decision for any Transaction already recorded (FR-12).
+- **BR-05**: A category's owner is immutable through this story's contract; no field exists by which a
+  caller could even attempt to change it (FR-08).
+
+#### Key Entities
+
+- **Category**: A label a User defines to classify money movement as one kind of income or expense (SRS
+  §1.5). This is the first story to **write** to an existing Category row rather than only creating or
+  reading one (mirrors BM-US-04's own framing for Budget). Carries `id`, `user_id`, `name`, `type` (SDS
+  §2.2, §4.3.3; CM-US-01), and now, for the first time, a real `icon` value (SDS §2.2, §4.3.3 as aligned
+  by CM-US-01 G1; this story's own build-out, per CM-US-01 A4). `name`, `type`, and `icon` are each
+  independently mutable; the owner is not.
+- **Transaction**: Reused unchanged, read by neither this story's request nor response — referenced only
+  in reasoning about `type`-editability (see *Assumptions & Dependencies*). Carries its own independent
+  `type`, set once at creation and never re-derived from its category afterward (TM-US-01).
+- **Budget**: Reused unchanged, read by neither this story's request nor response — referenced only in
+  reasoning about `type`-editability. Its spend computation keys on `(wallet_id, category_id)` and each
+  Transaction's own stored `type`, never on a category's current `type` (BM-US-02).
+- **User**: Reused from Feature-01/Feature-02 with no new column. The authenticated caller's own
+  ownership of the category being updated is the only scope this story ever checks or changes.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can update at least one of a category's name, type, and icon in one
+  call, and the response reflects exactly the resulting state of all five fields.
+- **SC-02**: No category can be updated without an authenticated caller.
+- **SC-03**: A category can never be updated by a User who does not own it — whether because the
+  reference does not exist at all, or because it belongs to someone else, the request is refused
+  identically either way.
+- **SC-04**: A submission naming none of name, type, or icon is always refused, never silently accepted
+  as a no-op success.
+- **SC-05**: An updated name, type, or icon is always stored at the validated, trimmed value the User
+  specified — never silently rounded, case-folded, truncated, or defaulted — and every field the User did
+  not name keeps exactly its prior value, including the category's owner.
+- **SC-06**: Changing a category's type never alters any already-recorded Transaction's own type, nor the
+  result of any Budget computation over activity already recorded; it governs only how a new Transaction
+  created from this point forward is validated against the category.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01), Create a Category (CM-US-01), and List Categories (CM-US-02) are already
+  implemented.** Every acceptance criterion here presupposes at least one category already on record,
+  owned by the authenticated caller.
+
+- **CM-US-03 (View a Category) is not yet implemented, and this story does not depend on it.**
+  `backend/app/repositories/category_repo.py` already defines `get_owned_by_id(db, *, category_id,
+  user_id)` — confirmed directly by reading the file — built for BM-US-01's own creation-time
+  category-ownership check (`budget_service.create_budget` validates a *referenced* category this way).
+  That function is a repository-level, single-table lookup with no dependency on any public
+  single-resource `GET` endpoint existing; this story reuses it unchanged for its own ownership-scoped
+  fetch (mirrors BM-US-04 A3's own generalisation of `budget_repo.get_owned_by_id()` from a
+  referenced-row check to the row being acted on directly — the identical move, one epic later). The
+  category identifier a caller submits to this endpoint is already available to them from CM-US-01's own
+  create response or CM-US-02's own list response; no "view one category" screen or endpoint is a
+  precondition for "edit one category."
+
+- **All three fields — `name`, `type`, `icon` — are independently optional; at least one must be
+  present.** SDS §5.4.4's own goal text reads "Modify category name, type, **or** icon" — confirmed
+  directly, not assumed — the disjunctive phrasing of three concrete field names, unlike BM-US-04's own
+  single-field contract (BM-US-04 A1/A6), where "required" and "optional" were the same question because
+  `amount_limit` was the DTO's only field. A caller changing just one thing — fixing a typo in the name,
+  reclassifying the type, or picking an icon for the first time — should not be forced to resend the
+  other two unchanged values, and nothing in SRS or SDS suggests an all-or-nothing replacement is
+  intended. A submission naming none of the three is still refused (AC-05) rather than treated as a
+  meaningless no-op success, the same "don't silently accept a request that does nothing" discipline
+  VL-02/EC-04 already apply to grouped validation. This is the first multi-field optional update contract
+  in this codebase — CM-US-01/CM-US-02 only ever read or wrote a category wholesale, and BM-US-04's own
+  Update story had exactly one mutable field, so there is no precedent in this codebase for *which* of
+  several fields a partial update should require. Recorded as `plan.md` A1.
+
+- **Submitting `icon` as `null`, or omitting it, are treated identically — both mean "leave the current
+  icon exactly as it is."** There is consequently no operation in this story's own contract to clear an
+  `icon` back to absent once one has been set; the only observable way to change `icon` is to submit a
+  new, non-blank string in its place. Nothing in SRS or SDS asks for a "remove my icon" capability, and
+  inventing the sentinel-vs-omitted distinction such an operation would need (a caller would have to be
+  able to say "I am deliberately sending null," distinguishable from "I didn't mention icon at all") is
+  exactly the kind of unrequested complexity BM-US-04 A1 already declined for Budget's own re-targeting
+  question, under the identical "fewest invented rules" discipline. If a future story needs to let a User
+  remove an icon entirely, that is a gap to raise then — not a capability silently built into this one
+  now. Recorded as `plan.md` A12.
+
+- **`icon` is bounded at a short length, trimmed, and required non-blank when submitted.** No SRS or SDS
+  source states a length rule for `icon`, the same situation CM-US-01 A1 already found for `name`. Rather
+  than inventing an unrelated number, this follows the same codebase discipline CM-US-01 A1 established —
+  reuse a precedent for the nearest comparable kind of field — but `icon` is not a label like `name`: the
+  test data already used in this epic (`test_cases.md` TC-13: `"icon": "shopping-cart"`) and the ordinary
+  shape of an icon-library key or a short slug are both well under half of `name`'s own bound, so a
+  materially smaller bound is used instead of reusing `name`'s verbatim — generous for a short identifier,
+  still clearly distinct from a label-length field. The exact number carries the same epistemic status
+  CM-US-01 A1 already flagged for its own: reasoned, not dictated by any source. Recorded as `plan.md`
+  A5/A11 (which states the exact figure — a technical bound, not repeated here per the spec/plan split).
+
+- **`icon` carries no format constraint beyond length and non-blankness — it is treated as an opaque
+  string, not a URL, not an enum of known icon names, and not a glyph/emoji-specific rule.** No SRS or SDS
+  source, and no mobile fixture (the prototype scope is limited to UM-US-01's invite screen, `CLAUDE.md`
+  §5), describes what an icon value is supposed to look like or how a client renders it. Inventing a
+  format rule — a URL pattern, a closed vocabulary of recognised icon keys, a MIME-type check for an
+  embedded image — would be answering a question nobody has asked yet, the same restraint CM-US-02 A8
+  already showed in declining an unrequested `type` filter. Recorded as `plan.md` A11.
+
+- **A category's `type` is freely editable after Transactions or Budgets already reference it, with no
+  retroactive consequence anywhere in this codebase — reasoned through directly against the real code,
+  not assumed.** Three facts, confirmed by reading the actual implementation rather than inferring from
+  the spec alone:
+  1. `backend/app/schemas/transaction.py`'s `TransactionRead`/`TransactionModel` carry their **own**
+     independent `type` field (`EXPENSE`/`INCOME`) — it is set once, from the request, at creation
+     (`backend/app/services/transaction_service.py::create_transaction`), and nothing in this codebase
+     ever re-reads it from the transaction's own category afterward.
+  2. `transaction_service.create_transaction`'s category-type-consistency rule (TM-US-01 BR-03,
+     `TransactionCategoryTypeMismatchError`) runs exactly once, at the moment a Transaction is created —
+     comparing the category's `type` *at that moment* to the submitted Transaction `type`. It is not a
+     standing invariant re-checked on any later read, and nothing in this codebase re-validates an
+     existing Transaction against its category's *current* `type`.
+  3. `backend/app/repositories/transaction_repo.py::get_expense_totals_by_wallet_category` — the function
+     BM-US-02's own budget spend-aggregation calls — sums Transactions filtered on `TransactionModel.type
+     == TransactionType.EXPENSE` (the **transaction's own stored type**) and grouped by `(wallet_id,
+     category_id)`; it never joins to `CategoryModel` and never reads `CategoryModel.type` at all. A
+     category's `type` changing therefore cannot change which past Transactions are summed into a
+     Budget's `amount_spent`, because that computation was never keyed on the category's `type` to begin
+     with — only on the pairing and each Transaction's own already-fixed `type`.
+  Together these mean a category's `type` is pure metadata for *future* Transaction creation (TM-US-01
+  BR-03 will compare against whatever `type` the category holds **at that later moment**), never a value
+  anything reaches back through history to re-check. Restricting `type` edits — for instance, refusing to
+  change the `type` of a category already referenced by a Transaction or a Budget — would be inventing a
+  constraint to protect an invariant that, on direct inspection, this codebase does not actually maintain
+  anywhere past creation time. The one real, observable consequence — demonstrated by `test_cases.md`
+  TC-62 — is forward-looking and unsurprising: after a category's `type` changes, a *new* Transaction of
+  the category's *old* `type` submitted against it is refused by TM-US-01's own existing check, exactly as
+  it would be refused against any other category whose `type` disagrees with the submission; this is
+  TM-US-01's own rule correctly reacting to new data, not a new rule this story introduces. Recorded as
+  `plan.md` A13; EC-10; BR-04; FR-12.
+
+- **No new uniqueness constraint on `name`, matching CM-US-01's own creation-time decision (A3).** No AC,
+  EC, or BR requires one for update any more than CM-US-01 required one for creation.
+
+- **No audit event.** Constitution LA-04 names exactly three audited event families (invitations sent,
+  activations completed, logins); category creation and listing were already excluded (CM-US-01 A8,
+  CM-US-02 A5), and updating a category's fields is no closer to any of the three than those were. No AC
+  or FR here asks for one.
+
+- **`PATCH /api/v1/categories/{category_id}`, not a generic `PATCH` with a status field and not a
+  dedicated action endpoint.** Constitution API-05 reserves its concern for a **named business state
+  transition** (its own example: `/users/activate`); `name`/`type`/`icon` are ordinary business fields,
+  and — unlike Budget, which already has a real computed status field this update must not be able to set
+  (BM-US-04 A2) — Category has no status or lifecycle field of any kind at all, so the "is this secretly a
+  state machine" question BM-US-04 had to reason through explicitly does not even arise here. A verb-free
+  `PATCH` on the resource's own id is the default shape constitution NC-03 reserves such endpoints *from*.
+  Mirrors BM-US-04 A2.
+
+- **This story introduces the first multi-field optional update contract in this codebase.** CM-US-01's
+  own `CategoryCreate` and BM-US-04's own `BudgetUpdate` are each single-shape DTOs where every field is
+  simply required; this story's `CategoryUpdate` is the first DTO in this codebase whose fields are each
+  independently optional, with a cross-field "at least one must be present" rule Pydantic cannot express
+  as a single field constraint (the same class of cross-field rule TM-US-02 A7 already needed for its own
+  `date_from`/`date_to` ordering, reused here as precedent for *how* to express a cross-field check, not
+  *what* the check says).
