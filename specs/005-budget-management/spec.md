@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(implemented, verified — 420 total passing)* · BM-US-03 *(specified)* · BM-US-04 *(specified)*
+> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(implemented, verified — 420 total passing)* · BM-US-03 *(specified)* · BM-US-04 *(specified)* · BM-US-05 *(specified)*
 
 ---
 
@@ -1101,3 +1101,258 @@ caller to act on another User's budget.
   instead generalises BM-US-01's `get_owned_by_id()` shape (originally built for validating a
   *referenced* wallet/category at creation time) to look up the budget *being acted on itself*, and
   reuses BM-US-02 A3's single-join-on-`wallets` ownership scoping unchanged.
+
+---
+
+## BM-US-05: Delete a Budget
+
+> **IDs in this section are local to BM-US-05.** `AC-01` below is not BM-US-01/02/03/04's own `AC-01`;
+> each story section numbers its own criteria, per `artifact-templates/spec-templates.md` and this
+> codebase's own CM-US-02/WM-US-02/TM-US-02/BM-US-02/03/04 precedent. Only `TC-NN` (and `QF-NN`) in
+> `test_cases.md` run continuously across the epic (`CLAUDE.md` §1.1 rule 4).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-05 — searched in full; no entry for BM-US-05 exists**
+> The same situation BM-US-02, BM-US-03, and BM-US-04 were each already in (their own Source sections
+> above document this precedent): `### Feature-05: Budget Management` contains exactly one story,
+> `#### US-05-01: Create a Budget for a Wallet [MVP]` (quoted in full in this file's BM-US-01 section),
+> immediately followed by `### Feature-06: Transaction Management`. There is no `US-05-02`, `US-05-03`,
+> `US-05-04`, or `US-05-05` header at all. This story is grounded the same way BM-US-02/03/04 were: in
+> SRS §1.5's conceptual domain model and SRS §2 FR-05's text directly, not in a bare story header that
+> does not exist.
+
+**SRS §1.5 Conceptual Domain Model**
+> **Budget** — A spending limit a User sets for one Category within one Wallet, over a monthly period,
+> that Transactions are measured against (FR-05).
+
+**SRS §2 FR-05 — Budget Tracking & Overspending Alerts**
+> The System shall allow Users to define spending caps (`Budget`) per Category and Wallet for a monthly
+> timeframe. The System shall track spending against this limit and trigger visual warnings when
+> thresholds (75%, 100%) are reached.
+
+**SDS §5.5.5 BM-US-05: Delete a Budget (USER)**
+> **Goal:** Remove an active budget tracker.
+
+One sentence — the same thinness every prior BM-US-0x story's own SDS goal carried before it. The word
+"active" here is the identical word BM-US-04's own SDS §5.5.4 goal used ("Adjust spending caps for an
+**active** budget"), which that story's own design-gate review already settled in the negative — see
+*Assumptions & Dependencies* for why that same settled reading is carried forward rather than
+re-litigated here.
+
+**`specs/005-budget-management/spec.md` BM-US-01 "Acceptance Criteria"** *(this story's own inherited precedent)*
+> AC-04/AC-06: "the system creates nothing and returns the same not-found outcome in either case — the
+> response gives no indication of which of the two happened."
+
+**`specs/005-budget-management/spec.md` BM-US-04 "Assumptions & Dependencies"** *(this story's own inherited, settled ruling)*
+> "No restriction is imposed on which budgets may be updated based on their period... budgets are never
+> deleted or otherwise time-boxed anywhere else in this system — recorded transactions remain permanent
+> regardless of date — and nothing in SRS/SDS or the built system gives a reason a caller should be
+> unable to correct an older budget's cap, such as fixing a typo."
+
+**`specs/005-budget-management/plan.md` BM-US-04 A8** *(this story's own inherited, settled ruling)*
+> "No `409` is reachable through this endpoint at all... An earlier design draft also refused updates to
+> a budget whose period was not the current calendar month, with its own `409 BUDGET_NOT_ACTIVE` conflict
+> — the project owner rejected that restriction at the design-gate review... and that error class has
+> been removed."
+
+**constitution.md VL-06**
+> Referenced entities are verified to exist and be active before use — `404` if absent, `409` if present
+> but in the wrong state.
+
+**constitution.md SEC-08**
+> Queries for user-owned data filter on the authenticated `user_id` at the repository layer (SDS §7.2,
+> SRS NFR-06).
+
+### Out of scope for this story
+
+BM-US-01/02/03/04 (create, list, status, update — all implemented) · soft-delete, archival, or any
+"undo" of a deletion (reasoned through explicitly below, not merely declined) · cascading removal of any
+other entity (no table in this schema references `budgets.id` — see *Assumptions & Dependencies*) ·
+WM-US-*, CM-US-*, UM-US-04/05, DC-US-01/02 · Features 06–11 · SRS §6 Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: retaining a deleted budget's row in any recoverable form —
+this story's contract is a permanent removal, not a status change (see *Assumptions & Dependencies*);
+restricting which budgets may be deleted based on their period — carried forward from BM-US-04's own
+settled "no active-period restriction" reading, not re-opened here (see *Assumptions & Dependencies*);
+and any mobile/UI screen — no SRS UXR names one this round, and `mobile/` stays a fixture-driven
+prototype scoped to UM-US-01 only (`CLAUDE.md` §5).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to permanently remove one of my own budgets, so that I can stop
+tracking a spending cap I no longer need, without that cap continuing to appear or be acted on.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully delete a budget**
+**Given** an authenticated User who owns a budget,
+**When** the User requests that budget be deleted, identifying it by its own identifier,
+**Then** the system permanently removes that budget's record, and the budget never again appears in any
+subsequent listing or lookup the caller performs.
+
+**AC-02: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to delete a budget,
+**Then** the system denies the request before evaluating anything else, deletes nothing, and returns an
+unauthenticated error.
+
+**AC-03: Reject a deletion of a budget that does not exist**
+**Given** an authenticated User,
+**When** the submitted budget reference matches no budget at all,
+**Then** the system deletes nothing and returns a not-found error.
+
+**AC-04: Reject a deletion of a budget owned by a different User**
+**Given** an authenticated User,
+**When** the submitted budget reference matches a budget owned by a different User,
+**Then** the system deletes nothing and returns the same not-found outcome AC-03 describes — the
+response gives no indication of which of the two happened.
+
+**AC-05: A deleted budget's wallet, category, and transaction history are left untouched**
+**Given** an authenticated User successfully deletes one of their own budgets,
+**When** the deletion completes,
+**Then** that budget's wallet, its category, and every transaction ever recorded against either of them
+remain exactly as they were immediately before the request — only the budget's own record is removed.
+
+**AC-06: A budget may be deleted regardless of its period**
+**Given** an authenticated User who owns a budget whose period is an earlier calendar month, not the
+current one,
+**When** the User requests that budget be deleted,
+**Then** the system deletes it the same way it would a budget from the current month — no restriction
+based on period applies.
+
+**AC-07: Deleting a budget a second time is refused as not found**
+**Given** an authenticated User who has already deleted one of their own budgets,
+**When** the User submits another request to delete that same budget reference,
+**Then** the system deletes nothing further — there is nothing left to delete — and returns the
+identical not-found outcome AC-03 describes.
+
+### Edge Cases
+
+**EC-01**: **A budget reference that is not even a well-formed identifier** — a value such as
+`"not-a-real-id"` is refused with the same not-found outcome as a well-formed but non-existent reference
+(AC-03). No separate malformed-identifier error exists; a reference either resolves to a budget the
+caller owns, or it does not, regardless of its shape.
+
+**EC-02**: **A caller who owns one or more budgets of their own, attempting to delete a different User's
+budget** — refused with the identical outcome AC-04 describes; owning some budget never entitles a
+caller to act on another User's budget.
+
+**EC-03**: **A budget whose current status would be classified `EXCEEDED` at the moment of deletion** —
+deleted the same way as any other budget; this story performs no comparison against spending activity,
+and a budget's classification (BM-US-03) is a read-time computation, never a stored precondition that
+could block a deletion.
+
+**EC-04**: **A budget with no transaction recorded against it at all** — deleted the same way as a budget
+with an active spending history; the presence or absence of spending activity has no bearing on whether
+a budget may be deleted.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to submit a budget reference,
+  identifying it by its own identifier, in order to delete that budget (SDS §5.5.5; AC-01).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before anything else (constitution API-08; mirrors BM-US-04 FR-02).
+- **FR-03**: The system must **require** the submitted budget reference to resolve to a budget owned by
+  the authenticated caller, and **refuse** the request with an identical outcome whether no such budget
+  exists at all or it exists and is owned by a different User (AC-03, AC-04, EC-01, EC-02; constitution
+  SEC-08, VL-06).
+- **FR-04**: The system must **permanently remove**, on success, exactly the targeted budget's own
+  record, leaving its wallet, its category, and every transaction recorded against either of them
+  unaffected (AC-01, AC-05).
+- **FR-05**: The system must **impose no restriction** on which budgets may be deleted based on their
+  period — a budget from any calendar month may be deleted the same way as one from the current month
+  (AC-06).
+- **FR-06**: The system must **treat** a repeated deletion request against an already-deleted budget
+  identically to a deletion request against a budget reference that never existed — there is nothing
+  left to find, so the system refuses it with the same not-found outcome AC-03 describes (AC-07).
+
+#### Business Rules
+
+- **BR-01**: A budget's ownership for this operation is established the same way BM-US-01 BR-01 and
+  BM-US-04 BR-02 already established it — entirely transitive through the budget's own `wallet_id`,
+  since the budget carries no owner column of its own. A budget reference that does not resolve to a row
+  the caller owns is refused identically whether no such row exists at all or it exists and belongs to a
+  different User (FR-03).
+- **BR-02**: Deleting a budget never alters any other entity in the system — its wallet, its category,
+  and every transaction recorded against either of them remain exactly as they were before the request
+  (FR-04).
+- **BR-03**: A budget's deletion is unconditional on its period; budgets are not time-boxed anywhere in
+  this system, the same settled reading BM-US-04 BR-03's own period-neutral update already established
+  for a different write operation (FR-05).
+- **BR-04**: A budget's removal is permanent — once deleted, that budget's record ceases to exist, so any
+  further reference to the same identifier finds nothing to act on (FR-06).
+
+#### Key Entities
+
+- **Budget**: As BM-US-01 defined it and BM-US-02/03/04 extended it, this is the first story in this
+  codebase's Budget Management epic to **remove** a Budget row entirely, rather than create, read, or
+  write to one. No cascade concern attaches to its removal — no table in this schema carries a foreign
+  key to `budgets.id` (see *Assumptions & Dependencies*).
+- **Wallet**: Reused unchanged. Referenced, not owned, by this story — a budget's ownership for the
+  purpose of this deletion is reached through `wallet_id`, the same path every prior Budget Management
+  story already established. Never written by this story.
+- **Category**: Reused unchanged. Not read by this story at all — the ownership check reaches the
+  caller entirely through the budget's own `wallet_id`, the same shape BM-US-04 already established for
+  its own update operation. Never written by this story.
+- **Transaction**: Reused unchanged. Never read or written by this story — a budget's `amount_spent`,
+  `progress_percentage`, and `status` were always computed at read time by BM-US-02/03 from Transaction
+  data never stored on the Budget row itself; deleting the Budget simply means a later `GET
+  /api/v1/budgets` call has one fewer row to compute those figures for.
+- **User**: Reused unchanged — the authenticated caller's own ownership of the referenced Wallet, and
+  transitively the Budget, is the only scope this story ever deletes within.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can permanently delete one of their own budgets in one call.
+- **SC-02**: No budget can be deleted without an authenticated caller.
+- **SC-03**: A budget can never be deleted by a User who does not own it — whether because the reference
+  does not exist at all, or because it belongs to someone else, the request is refused identically either
+  way.
+- **SC-04**: Deleting a budget never changes any other record in the system — not its wallet, its
+  category, nor any transaction recorded against either of them.
+- **SC-05**: A budget may be deleted regardless of which calendar month its period names.
+- **SC-06**: Once deleted, a budget is gone — a repeated deletion request against the same reference
+  finds nothing left to delete and is refused the same way as a reference that never existed.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01), Create a Budget (BM-US-01), List Budgets (BM-US-02), View Budget Status
+  (BM-US-03), and Update a Budget (BM-US-04) are already implemented.** Every acceptance criterion here
+  presupposes at least one budget already on record, owned by the authenticated caller.
+- **No restriction is imposed on which budgets may be deleted based on their period — the identical
+  reading BM-US-04 already settled for its own update operation, carried forward rather than
+  re-litigated.** SDS §5.5.5's own goal text uses the word "active" ("Remove an **active** budget
+  tracker"), the same word BM-US-04's own SDS §5.5.4 goal used and whose design-gate review the project
+  owner already settled: budgets are never deleted or otherwise time-boxed anywhere else in this system
+  — recorded transactions remain permanent regardless of date — and nothing in SRS/SDS or the built
+  system gives a reason a caller should be able to correct an older budget's cap (BM-US-04) but be unable
+  to remove that same old budget entirely. If a caller may edit an old budget's cap, there is no
+  coherent reason they could edit it but not delete the same row. This story therefore places no
+  restriction on a budget's period: a caller may delete any budget they own, regardless of which
+  calendar month it covers. Not escalated as `[NEEDS RULING]` — this is the same settled reading applied
+  a second time to the same word in the same SDS section, not a fresh disagreement to adjudicate.
+  Recorded as `plan.md` A1.
+- **Deletion is a hard delete — the budget's own row is permanently removed, with no soft-delete,
+  `is_deleted`, or archival column anywhere in this schema.** Confirmed directly against every model
+  file in `backend/app/models/`: no table in this codebase uses a soft-delete pattern — not `users`
+  (which uses a `DEACTIVATED` status value, a distinct, pre-existing lifecycle state, not a deletion
+  mechanism), not `invitations`, not `wallets`, not `categories`, not `transactions`. Introducing a
+  soft-delete column on `budgets` alone would be a brand-new pattern this story has no mandate to invent
+  — nothing in `SRS.md`/`SDS.md` asks for a deleted budget's data to remain recoverable, and SDS
+  §5.5.5's own goal text ("**Remove** an active budget tracker") reads as literal removal, not archival.
+  Recorded as `plan.md` A2.
+- **Deleting a budget has no cascade effect on any other entity.** Confirmed directly against every
+  model file in this schema: no table carries a foreign key to `budgets.id` — a budget has no children
+  of its own. A budget's wallet, its category, and every transaction recorded against either of them are
+  therefore structurally incapable of being affected by this story's own deletion, independent of any
+  application-level care taken to leave them alone. Recorded as `plan.md` A3.
+- **A second deletion request against an already-deleted budget is treated as an ordinary not-found
+  case, not a distinct "already deleted" outcome.** Once a budget's row has been permanently removed
+  (the hard-delete decision above), the ownership-scoped lookup this story reuses from BM-US-04 finds
+  nothing — structurally identical to a reference that never existed at all. Inventing a separate,
+  distinguishable response for "this one used to exist" would mean the system remembering something
+  that, by this story's own hard-delete decision, no longer exists anywhere to remember. Recorded as
+  `plan.md` A8.

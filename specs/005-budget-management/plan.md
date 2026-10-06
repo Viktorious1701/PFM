@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(implemented, verified — 420 total passing)* · BM-US-03 *(planned)* · BM-US-04 *(planned)*
+> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(implemented, verified — 420 total passing)* · BM-US-03 *(planned)* · BM-US-04 *(planned)* · BM-US-05 *(planned)*
 
 ---
 
@@ -1315,3 +1315,258 @@ table — it is structurally unreachable through this endpoint (A8).
 | T-05 | `budget_service.update_budget(db, *, owner, budget_id, amount_limit)` — ownership lookup, then update; no active-period branch (FR-03) | `backend/app/services/budget_service.py` | Done |
 | T-06 | `PATCH /api/v1/budgets/{budget_id}` router; no new mount (router already exists) | `backend/app/api/v1/budgets.py` | Done |
 | T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_04_update_budget.py` | Done |
+
+---
+
+## BM-US-05: Delete a Budget
+
+> **IDs in this section are local to BM-US-05** (`A*`/`T-NN`), continuing the demonstrated convention:
+> every second-or-later story in this file restarts `A*`/`T-NN` locally, while `test_cases.md`'s `TC-NN`
+> and `QF-NN` run continuously across the epic file. `test_cases.md`'s `TC-NN` below continues from
+> `TC-85` and `QF-NN` from `QF-20`, matching BM-US-04's own `TC-64`/`QF-16` start.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Domain / Scope | **No restriction is imposed on which budgets may be deleted based on their period — the identical reading BM-US-04 already settled for its own update operation, carried forward rather than re-opened.** SDS §5.5.5's own goal text uses the word "active" ("Remove an **active** budget tracker"), the same word BM-US-04's own SDS §5.5.4 goal used before its design-gate review settled it in the negative: budgets are never deleted or otherwise time-boxed anywhere else in this system, and nothing gives a reason a caller could edit an old budget's cap (BM-US-04) but be unable to delete that same old row. This story applies that same settled reading a second time to the same word in the same SDS section — not a fresh disagreement, so not escalated as `[NEEDS RULING]`. Full reasoning in `spec.md` Assumptions. | ✅ Resolved |
+| A2 | Domain / Data | **Hard delete — an actual row removal from `budgets`, no `is_deleted`/soft-delete/archival column.** Confirmed directly against every model file in `backend/app/models/`: no table in this schema uses a soft-delete pattern (`users.status` carries `DEACTIVATED` as a distinct, pre-existing lifecycle state, not a deletion mechanism — the only precedent anywhere close, and it is not a soft-delete column). Consistent with every other model this codebase has built; adding a soft-delete column on `budgets` alone would be a brand-new pattern with no requirement driving it, and SDS §5.5.5's own goal text ("**Remove** an active budget tracker") reads as literal removal. | ✅ Resolved |
+| A3 | Architecture | **No cascade handling of any kind — confirmed directly against every model file that no table carries a foreign key to `budgets.id`.** A budget has no children of its own, so this story's delete is self-contained: one row removed from `budgets`, nothing else touched, by construction rather than by any cascade rule this story would otherwise have to design. | ✅ Resolved |
+| A4 | API | **`DELETE /api/v1/budgets/{budget_id}` — a verb-free path on the resource's own id**, the identical shape BM-US-04 A2 already established for `PATCH /budgets/{budget_id}`. Constitution NC-03 reserves verb-named paths for explicit state transitions (API-05); deleting a resource by its own id is the default HTTP verb/path pairing for exactly this operation, not a state transition needing its own named route. | ✅ Resolved |
+| A5 | API | **Success response is `204 No Content`, with no response body — not `200` with a minimal body.** Constitution API-03 lists no status code for a delete at all (`200`/`201`/`400`/`401`/`403`/`404`/`409`/`422`, no `204`) — this is the first story in this codebase, in any epic, to need one, since no `DELETE` endpoint has existed before this story. Decided in favor of `204` over `200` for four reasons: (1) `204 No Content` is the standard HTTP/REST pairing for a delete that leaves nothing further to say — the resource is gone, and the status code itself communicates that without a body; (2) a `200` response would need a body, and the only candidates are either the just-deleted budget's own last-known fields (describing a row that, by A2's own hard-delete decision, no longer exists — actively misleading) or a new, single-purpose acknowledgement DTO (e.g. `{"deleted": true}`) invented solely to satisfy a status-code choice, serving no AC this story's own `spec.md` asks for; (3) no AC in this story's spec requires any response content — AC-01 asks only that the removal happen and be observable through a later list/lookup, never that the response itself carry data; (4) `204`'s own HTTP semantics ("successful, nothing further to communicate") is the literal, exact description of this operation's outcome. **Aside, not a blocking disagreement:** this is the first time constitution API-03's status-code catalog has needed extending in this codebase — `204` does not contradict anything API-03 already enumerates, it simply fills a gap the catalog never had occasion to cover before any `DELETE` endpoint existed. Worth a one-line note here rather than silently assumed; the user may wish to fold "`204` for a delete, no body" into `constitution.md`'s own API-03 text the next time it is edited, alongside whichever other epics' own future Delete stories land. | ✅ Resolved |
+| A6 | Architecture | **New `budget_repo.delete_budget(db, *, budget)` — the first write-after-creation function in this codebase's Budget Management epic to remove a row rather than insert or mutate one.** Takes the already-fetched, already-ownership-verified `BudgetModel` instance from BM-US-04's own `get_owned_by_id()` (reused unchanged — no new repository *read* function needed, only a new *write* one) and calls `db.delete(budget)`. Flushed, not committed (AR-06) — the router owns the transaction boundary, the same shape every other write function in this codebase already follows. | ✅ Resolved |
+| A7 | Security / API | **No new error class — this story reuses `BudgetNotFoundError` (404, `BUDGET_NOT_FOUND`) unchanged from BM-US-04.** BM-US-04 already established this exact error for "no such budget, or a budget that exists but is not this caller's" — the identical collapsed semantics this story's own AC-03/AC-04 need, against the identical resource (a budget looked up by its own id). Inventing a second, differently-named not-found error for the identical concept (a budget id that fails to resolve to a row this caller owns) would duplicate `BUDGET_NOT_FOUND`'s own catalogued meaning (constitution API-04) for no reason any source gives — this dispatch's own brief is explicit that the same not-found error should be reused, not re-invented, for this concept. | ✅ Resolved |
+| A8 | Domain | **A second deletion request against an already-deleted budget is `404 BUDGET_NOT_FOUND` — the same outcome as a reference that never existed — not a distinct "already deleted" error or a `204` no-op success.** Once removed (A2's hard delete), the row genuinely no longer exists; `get_owned_by_id()` finds nothing, structurally identical to a budget that was never created, the same "absent vs. not-owned, collapsed by construction" idiom BM-US-01/04 already use, extended one further step to "absent because it once existed and was removed." No source asks for a distinguishable idempotent-success response, and inventing one would require the service to remember that a row once existed after A2 already decided nothing should be left to remember it by. | ✅ Resolved |
+| A9 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.5.5 tags this story "(USER)", identical to every other Budget Management story's own tag. Mirrors BM-US-01 A9, BM-US-02 A8, BM-US-03 A7, BM-US-04 A9. | ✅ Resolved |
+| A10 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families; none of creation (BM-US-01 A10), listing (BM-US-02 A9), status classification (BM-US-03 A8), or update (BM-US-04 A10) qualified, and deleting a budget is no closer to any of the three than those were. No AC or FR here asks for one. | ✅ Resolved |
+| A11 | Architecture | **No new Alembic migration.** This story performs a DML row removal against the existing `budgets` table — no column is added, removed, or renamed, and no new index is needed (the ownership-scoped lookup reuses BM-US-04's own indexed join on `wallets.user_id`, unchanged). The first write-shaped Budget Management story besides BM-US-04 with no migration of its own. | ✅ Resolved |
+| A12 | Architecture | **The router issues exactly one `db.commit()`, after the service call succeeds** — identical to BM-US-01/04's own routers (AR-06). `budget_service.delete_budget()` itself only flushes (via A6's `delete_budget()` repository function), never commits. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only — no new top-level module, no migration, no new DTO; the first story
+in this epic whose success response carries no body at all).
+
+```text
+backend/app/
+├── repositories/
+│   └── budget_repo.py                # update: add delete_budget() (A6)
+├── services/
+│   └── budget_service.py             # update: add delete_budget() (A1, A6, A7, A8)
+└── api/v1/
+    └── budgets.py                    # update: add DELETE /budgets/{budget_id} (A4, A5, A9)
+
+backend/tests/
+└── integration/test_bm_us_05_delete_budget.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No change to `models/budget.py` (A2, A3, A11), no new Alembic revision, no change to `schemas/budget.py`
+(A5's "no body" decision means no new request or response DTO), no change to `core/errors.py` (A7
+reuses `BudgetNotFoundError` unchanged), no change to `core/deps.py` — `CurrentUserDep` is reused exactly
+as every prior Budget Management story already established (A9).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `BudgetModel` | `budgets` | *(row removed)* | The only operation this story performs against `budgets` — no column is written; the row itself ceases to exist (A2). No schema change (A11). |
+
+**Repository addition** (`app/repositories/budget_repo.py`)
+
+```python
+def delete_budget(db: Session, *, budget: BudgetModel) -> None:
+    """spec AC-01, FR-04 (plan.md A2, A6). Hard-deletes an already-fetched,
+    already-ownership-verified row -- no soft-delete column exists on this
+    table or any other in this codebase (A2). Flushed, not committed
+    (AR-06) -- the router owns the transaction boundary.
+    """
+    db.delete(budget)
+    db.flush()
+```
+
+No new repository *read* function — `get_owned_by_id()` (BM-US-04 A3) is reused unchanged for the
+ownership-scoped lookup this story also needs.
+
+**Service** (`app/services/budget_service.py`, addition)
+
+```python
+def delete_budget(db: Session, *, owner: UserModel, budget_id: str) -> None:
+    """spec AC-01, FR-03 (plan.md A1, A6, A7, A8). Looks up the budget
+    scoped to the caller -- reusing budget_repo.get_owned_by_id() unchanged
+    from BM-US-04 -- then deletes it. No precondition beyond ownership: no
+    active-period restriction (A1), the same settled reading BM-US-04
+    already carries for its own update operation. A second delete of the
+    same id finds nothing (A8) and raises the identical BudgetNotFoundError
+    a delete against a never-existed id would raise. No audit call (A10).
+    """
+    budget = budget_repo.get_owned_by_id(db, budget_id=budget_id, user_id=owner.id)
+    if budget is None:
+        raise BudgetNotFoundError()
+
+    budget_repo.delete_budget(db, budget=budget)
+```
+
+**Router** (`app/api/v1/budgets.py`, addition)
+
+```python
+@router.delete(
+    "/{budget_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Delete a budget",
+    description=(
+        "Permanently deletes one of the authenticated caller's own "
+        "budgets, identified by its own id. The budget's wallet, category, "
+        "and every transaction recorded against either of them are left "
+        "unaffected."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "BUDGET_NOT_FOUND"},
+    },
+)
+def delete_budget(
+    budget_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> None:
+    """BM-US-05 (plan.md A4, A5, A9, A12). One commit, after the service
+    call succeeds -- the service only flushes (AR-06). No body is
+    returned -- response_model=None alongside 204 (A5).
+    """
+    budget_service.delete_budget(db, owner=current_user, budget_id=budget_id)
+    db.commit()
+```
+
+**New errors**
+
+None. This story reuses `BudgetNotFoundError` (404, `BUDGET_NOT_FOUND`) unchanged from BM-US-04 (A7).
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Authenticated User of any role may delete their own budget | AC-01, FR-01, A9 | `DELETE /api/v1/budgets/{budget_id}` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before anything else is evaluated | AC-02, FR-02 | `CurrentUserDep` resolves before the path is handled |
+| `budget_id` must resolve to the caller's own budget; not-found and not-owned collapsed | AC-03, AC-04, EC-01, EC-02, FR-03, A7 | `budget_repo.get_owned_by_id()` (reused from BM-US-04) returns `None` for both cases by construction; service raises `BudgetNotFoundError` |
+| Deletion permanently removes the budget's own row; no other entity is touched | AC-05, FR-04, A2, A3 | `budget_repo.delete_budget()` — `db.delete(budget)`; no cascade exists to configure (A3) |
+| No restriction based on period | AC-06, FR-05, A1 | `delete_budget()`'s service function performs no period check at all |
+| A repeated deletion is refused identically to a never-existed reference | AC-07, FR-06, A8 | The second call's `get_owned_by_id()` finds nothing — the same `BudgetNotFoundError` path as a first-ever unknown id |
+| No audit event | A10 | `budget_service.delete_budget()` calls no `audit.record()` |
+
+**Sequence diagram — Delete a Budget**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request into
+`API` answered back to `UI` with a status code, one workflow.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as BudgetService
+    participant Store as Store
+
+    UI->>API: DELETE /budgets/:id
+    API->>Svc: delete(input)
+    Svc->>Store: find budget owned by the caller
+    Store-->>Svc: budget, or none
+
+    alt Budget not found, or found but not owned by the caller (AC-03/AC-04, collapsed outcome)
+        API-->>UI: 404 BUDGET_NOT_FOUND
+    else Budget owned by the caller
+        Svc->>Store: delete the budget
+        Store-->>Svc: budget removed
+        Svc-->>API: deleted
+        API-->>UI: 204 no content
+    end
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-02)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+```
+
+Only one workflow is drawn (DG-07). The `alt`/`else` block is the one flow's own branching — not a
+second flow — mirroring how every prior Budget Management diagram folded its own refusal paths into a
+single picture. No `opt` for payload validation this story — the request carries no body at all, so
+there is no malformed-payload branch to draw (unlike BM-US-01/BM-US-04, whose `PATCH`/`POST` bodies each
+needed one).
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-02) | 401 | `NOT_AUTHENTICATED` |
+| Budget not found, or found but not owned by the caller (AC-03, AC-04) | 404 | `BUDGET_NOT_FOUND` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02) for
+every *failure* response — the success response itself carries no body at all (A5). No `403` (A9: no
+role restriction), no `409` of any kind (deletion has no uniqueness or state conflict to guard against),
+and no `422` (there is no request payload for this endpoint to validate at all — the only input is the
+path parameter, which either resolves to an owned budget or does not).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `budget_service.delete_budget()` is the only place that decides what a failed lookup means |
+| AR-02 Thin router | Required | Router binds the path param, resolves `CurrentUserDep`, calls the service, commits, returns no body — no branching on business state |
+| AR-03 Repository isolation | Required | `budget_repo.get_owned_by_id()` (reused) and the new `delete_budget()` are queries and persistence only (A6) |
+| AR-04 DTO ↔ model mapping outside routers/repos | N/A | No DTO exists for this endpoint's response at all (A5) — nothing to map |
+| AR-05 No framework objects in services | Required | `delete_budget()` takes plain values (`owner`, `budget_id`); no `Request`/`Response` |
+| AR-06 One transaction per request | Required | Service flushes at most once (after the ownership lookup succeeds); the router commits once (A12) |
+| AR-07 Router → service → repository | Required | The router never calls `budget_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only to existing modules |
+| API-01 Versioned plural path | Required | `DELETE /api/v1/budgets/{budget_id}` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged — governs the failure responses; the success response has no body to envelope (A5) |
+| API-03 Status codes | Required (extended) | `204` delete (not in API-03's literal list — the first story to need it, A5) · `401` · `404` |
+| API-04 Prefixed error codes | Required | `BUDGET_NOT_FOUND` — reused, not duplicated (A7) |
+| API-05 No generic status endpoint | Required | `DELETE /budgets/{budget_id}` is a plain resource-deletion route, not a state-machine setter |
+| API-06 Pagination | N/A | Single-resource deletion; no list in this story |
+| API-07 Explicit response_model | Required | `response_model=None`, `status_code=204` — declared explicitly so the generated OpenAPI schema correctly shows no response body (A5) |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `budget_repo.py`/`budget_service.py`/`budgets.py` |
+| NC-02 Naming | N/A | No new DTO (A5) |
+| NC-03 No verbs except state transitions | Required | `/budgets/{budget_id}` — no verb in the path (A4) |
+| NC-04 Column naming | N/A | No column added, removed, or renamed (A2, A11) |
+| NC-05 Enum serialisation | N/A | No enum touched by this story |
+| NC-06 Concise service methods | Required | `budget_service.delete_budget`, matching `create_budget`/`list_budgets`/`update_budget`'s own naming |
+| VL-01 Pydantic is the source of truth | N/A | No request body for this endpoint at all |
+| VL-02 Errors grouped | N/A | No validation scenario this story can produce — there is no payload to validate |
+| VL-05 Two-level uniqueness | N/A | No uniqueness constraint touched by a deletion |
+| VL-06 Referenced entities verified before use | Required (404 only) | `404` if the budget is absent/not owned (reused from BM-US-04 A3). No "wrong state" / `409` branch applies — no active-period restriction (A1), the same carried-forward reading as BM-US-04 |
+| VL-07 Decimal money | N/A | No monetary value is read or written by this story |
+| SEC-06 JWT parameters | N/A | Consumed via `CurrentUserDep`, not defined here |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case to test (A9) |
+| SEC-08 Ownership filter | Required | `get_owned_by_id()` filters by `user_id` via the join to `wallets`, reused unchanged from BM-US-04 |
+| SEC-09 Secrets from .env | N/A | No secret introduced by this story |
+| SEC-10 No enumeration | N/A (reasoning reused) | Same discipline as BM-US-01/04's own note — VL-06's absent-vs-present collapse (A7) means a non-owner learns nothing from a `404` |
+| SEC-11 Rate limiting | N/A | Scoped by its own text to the invitation and activation endpoints |
+| LA-01 No secrets in logs | N/A | No credential or token handled by this story |
+| LA-02 / LA-04 Audit | N/A (by decision) | Deleting a budget is not one of LA-04's three named audited events, and no AC/FR asks for one (A10) |
+| PF-01 300 ms p95 | Required | One indexed lookup (join on `wallets.user_id`, already indexed) plus one row delete, no slow I/O off the request path |
+| PF-02 Indexed lookups | Required | `budgets.id` is the primary key; `wallets.user_id` already indexed (WM-US-02); `budgets.wallet_id` already indexed (BM-US-01) |
+| PF-03 DTO projection | N/A | No response body to project at all — the first endpoint in this codebase with none (A5) |
+| PF-04 Bounded lists | N/A | No list endpoint in this story |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| DOD-02 Migration | N/A | No schema change — a DML row removal against the existing table, no Alembic revision (A11) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No budget-delete screen exists this round — the same treatment every prior Budget Management story gave its own endpoint. `mobile/`'s fixture-driven prototype covers only UM-US-01's invite screen (`CLAUDE.md` §5). |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `budget_repo.delete_budget(db, *, budget)` (A2, A6) | `backend/app/repositories/budget_repo.py` | Open |
+| T-02 | `budget_service.delete_budget(db, *, owner, budget_id)` — ownership lookup reused from BM-US-04, then delete; no active-period branch (A1, A7, A8) | `backend/app/services/budget_service.py` | Open |
+| T-03 | `DELETE /api/v1/budgets/{budget_id}` router — `204`, `response_model=None` (A4, A5, A9) | `backend/app/api/v1/budgets.py` | Open |
+| T-04 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_05_delete_budget.py` | Open |

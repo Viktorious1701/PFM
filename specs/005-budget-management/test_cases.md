@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** BM-US-01 *(TC-01…TC-26, implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(TC-27…TC-51, implemented, verified — 420 total passing)* · BM-US-03 *(TC-52…TC-63, specified)* · BM-US-04 *(TC-64…TC-83, specified)*
+> **Stories in this file:** BM-US-01 *(TC-01…TC-26, implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(TC-27…TC-51, implemented, verified — 420 total passing)* · BM-US-03 *(TC-52…TC-63, specified)* · BM-US-04 *(TC-64…TC-84, implemented, verified)* · BM-US-05 *(TC-85…TC-96, specified)*
 
 ---
 
@@ -1401,4 +1401,252 @@ No failures to root-cause. In the first red run, before the route existed, 19 te
 - **When:** A `PATCH` is submitted against that budget with `amount_limit` `500.00`
 - **Then:** The response is `200` with `amount_limit` `500.00` and the original `period` unchanged; the stored row shows the same
 - **AC:** AC-01, FR-01, FR-03 *(budgets are not time-boxed — `spec.md` Assumptions & Dependencies; `plan.md` A8)*
+- **Type:** integration
+
+---
+
+## BM-US-05: Delete a Budget
+
+> **IDs in this section are local to BM-US-05** — except `TC-NN`, which continues this epic file's own
+> numbering: BM-US-04 used `TC-64`…`TC-84`, so this story continues from `TC-85`. **`QF-NN` also
+> continues here** (BM-US-04 used `QF-16`…`QF-19`; this story continues from `QF-20`).
+
+### Quality Findings
+
+#### QF-20
+
+**Description.** AC-03/AC-04 require a budget reference that does not exist at all and one that exists
+but belongs to a different User to produce "the same not-found outcome" — mirrors BM-US-01 QF-01 and
+BM-US-04 QF-16, now applied to a deletion. `plan.md` A7 reuses `budget_repo.get_owned_by_id()`
+unchanged, so this is true by construction. A test that merely checks both cases return *some* `404`
+would not distinguish "genuinely identical" from "two different messages that both happen to carry
+status 404."
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — for instance, a message that only names "belongs to another account" in the
+ownership-mismatch case, itself a minor information leak about another User's data.
+
+**Recommendation.** `TC-89` compares the full response body of the ownership-mismatch case against
+`TC-88`'s not-found-at-all case and asserts they match exactly — `error_code`, `message`, and `details`
+all identical, not merely the status code.
+
+#### QF-21
+
+**Description.** AC-01/FR-04 require a successful deletion to permanently remove the budget's own
+record. Because the success response carries no body at all (`plan.md` A5), a test that only checks the
+HTTP status code `204` could pass even if the service never actually removed anything from storage — a
+router wired to return `204` unconditionally, without ever calling the delete, would fool a
+status-only assertion. This risk is sharper here than in any prior Budget Management story: every
+earlier success response carried the created or updated row for a test to compare against, so a
+response-body check alone could already catch a no-op bug; this endpoint's response has nothing in it
+to check at all.
+
+**Impact.** Returning `204` is cheap to fake; only a test that inspects storage directly proves anything
+was actually removed.
+
+**Recommendation.** `TC-85`/`TC-86` query the `budgets` table directly through the test's own `db`
+session after a `204` response and assert the row with that id no longer exists.
+
+#### QF-22
+
+**Description.** `spec.md` BR-02 requires a budget's deletion to leave its wallet, category, and every
+transaction recorded against either of them completely unaffected. `plan.md` A3 records this as
+structurally guaranteed (no table carries a foreign key to `budgets.id`), but a test asserting only "the
+budget is gone" would not catch an accidental cascade introduced elsewhere — for instance, a careless
+ORM relationship configuration that also removed rows from `wallets`, `categories`, or `transactions`
+when their `BudgetModel` row is deleted.
+
+**Impact.** A regression adding an unintended cascade could silently delete a caller's wallet, category,
+or every transaction tied to the deleted budget's wallet/category, undetected by a test that never
+re-reads those other tables after the deletion.
+
+**Recommendation.** `TC-91` records the wallet, category, and a transaction tied to a budget before
+deleting it, then re-reads all three directly from storage after deletion and asserts every one is still
+present, unchanged.
+
+#### QF-23
+
+**Description.** `spec.md` AC-07/FR-06 require a repeated deletion of an already-deleted budget to
+produce the identical not-found outcome as a reference that never existed (`plan.md` A8) — not a
+distinct "already deleted" error. A test asserting only "the second attempt fails" would not distinguish
+a genuinely identical `404 BUDGET_NOT_FOUND` from a different error code that also happens to carry 404.
+
+**Impact.** A future change introducing a separate "already deleted" error/semantic could pass a weak
+test while contradicting the hard-delete decision (`plan.md` A2) that there is nothing left to
+distinguish.
+
+**Recommendation.** `TC-95` deletes a budget successfully, then submits a second delete against the same
+id, and asserts the second response's `error_code`/`message`/`details` match the response a never-
+existed id produces (`TC-88`) exactly — not merely the same status code.
+
+### Acceptance Criteria Classification
+
+No budget-delete screen exists in `mobile/` this round, and no SRS UXR names one — the same basis every
+prior Budget Management story used for its own all-`[API]` classification.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully delete a budget | **[API]** | No UI surface exists or is named by any UXR this round; bounded by QF-21 |
+| AC-02 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-03 | Reject a deletion of a budget that does not exist | **[API]** | Persistence/ownership contract; bounded by QF-20 |
+| AC-04 | Reject a deletion of a budget owned by a different User | **[API]** | Persistence/ownership contract; bounded by QF-20 |
+| AC-05 | A deleted budget's wallet, category, and transaction history are left untouched | **[API]** | Cross-entity integrity contract; bounded by QF-22 |
+| AC-06 | A budget may be deleted regardless of its period | **[API]** | Backend rule — carried forward from BM-US-04 |
+| AC-07 | Deleting a budget a second time is refused as not found | **[API]** | Idempotency contract; bounded by QF-23 |
+| EC-01 | A budget reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
+| EC-02 | A caller who owns a different budget attempts to delete another User's budget | **[API]** | Persistence/ownership contract; bounded by QF-20 |
+| EC-03 | A budget whose current status would be EXCEEDED at the moment of deletion | **[API]** | Backend rule — status is read-time only, never a stored precondition |
+| EC-04 | A budget with no transaction recorded against it at all | **[API]** | Backend rule |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-85, TC-86 | — |
+| AC-02 | [API] | TC-87 | — |
+| AC-03 | [API] | TC-88 | — |
+| AC-04 | [API] | TC-89 | — |
+| AC-05 | [API] | TC-91 | — |
+| AC-06 | [API] | TC-92 | — |
+| AC-07 | [API] | TC-95 | — |
+| EC-01 | [API] | TC-90 | — |
+| EC-02 | [API] | TC-96 | — |
+| EC-03 | [API] | TC-93 | — |
+| EC-04 | [API] | TC-94 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no budget-delete
+> screen exists this round, and none is named by any SRS UXR. **Known coverage limits, accepted:** none
+> this story — unlike BM-US-02's single-join ownership design or BM-US-03's unreachable `DRAFT`/
+> `ARCHIVED` states, every scenario this story's own AC/EC set describes is directly constructable
+> through the public API with no structural gap.
+
+### Test Implementation Map *(filled at step 4)*
+
+Not yet implemented — this story is at the Quality gate (artifacts phase, steps 1–3 only, this
+dispatch). TC node ids and PASS/FAIL/BLOCKED results are filled in when step 4 (Implement) runs, per
+`CLAUDE.md`'s own "Filled at step 3 (TC ids) and extended at step 4 (pytest node ids)" rule.
+
+---
+
+### TC-85: An authenticated User deletes a budget they own — 204 No Content
+
+- **US:** BM-US-05
+- **Given:** An authenticated User who owns a budget
+- **When:** `DELETE /api/v1/budgets/{id}` is sent for that budget
+- **Then:** The response is `204`, with an empty body
+- **AC:** AC-01, FR-01, FR-04
+- **Type:** integration
+
+### TC-86: Deleting a budget permanently removes its row from storage
+
+- **US:** BM-US-05
+- **Given:** An authenticated User who owns a budget
+- **When:** The budget is deleted successfully
+- **Then:** A direct read of the `budgets` table for that id, through the test's own `db` session, finds
+  no row at all — not a row carrying a deleted flag, no row of any kind
+- **AC:** AC-01, FR-04 *(assertion technique per QF-21)*
+- **Type:** integration
+
+### TC-87: An unauthenticated caller is denied with 401
+
+- **US:** BM-US-05
+- **Given:** A caller presenting no `Authorization` header, and an authenticated User's existing budget
+- **When:** `DELETE /api/v1/budgets/{id}` is sent for that budget without credentials
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`; the budget's row is unchanged in
+  storage
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-88: A budget_id matching no budget at all is rejected with 404 BUDGET_NOT_FOUND
+
+- **US:** BM-US-05
+- **Given:** An authenticated User
+- **When:** `DELETE /api/v1/budgets/{id}` is sent with a `budget_id` that matches no budget in the system
+- **Then:** The response is `404` with `error_code` `BUDGET_NOT_FOUND`; nothing is deleted
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-89: A budget_id belonging to a different User is rejected with the identical outcome as TC-88
+
+- **US:** BM-US-05
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a budget
+- **When:** `A` submits `DELETE /api/v1/budgets/{id}` against `B`'s budget
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-88's
+  response; `B`'s budget is unchanged in storage
+- **AC:** AC-04, FR-03 *(assertion technique per QF-20)*
+- **Type:** integration
+
+### TC-90: A budget reference that is not a well-formed identifier is rejected with the same outcome as a well-formed but non-existent one
+
+- **US:** BM-US-05
+- **Given:** An authenticated User
+- **When:** `DELETE /api/v1/budgets/not-a-real-id` is sent
+- **Then:** The response is `404` `BUDGET_NOT_FOUND`, identical to TC-88's response
+- **AC:** EC-01, FR-03
+- **Type:** integration
+
+### TC-91: Deleting a budget leaves its wallet, category, and transaction history completely unaffected
+
+- **US:** BM-US-05
+- **Given:** An authenticated User with an active budget for wallet `W1`/category `C1`, and an expense
+  transaction recorded against `W1`/`C1`
+- **When:** The budget is deleted successfully
+- **Then:** A direct read of `W1`'s wallet row, `C1`'s category row, and the transaction row, each
+  through the test's own `db` session, shows every one of them unchanged from immediately before the
+  deletion
+- **AC:** AC-05, BR-02 *(assertion technique per QF-22)*
+- **Type:** integration
+
+### TC-92: A budget whose period is an earlier calendar month is deleted the same way as a current-month budget
+
+- **US:** BM-US-05
+- **Given:** An authenticated User who owns a budget whose period is an earlier calendar month
+- **When:** That budget is deleted
+- **Then:** The response is `204`; a direct read of the `budgets` table confirms the row no longer
+  exists
+- **AC:** AC-06, FR-05, BR-03 *(budgets are not time-boxed — `spec.md` Assumptions & Dependencies;
+  `plan.md` A1, carried forward from BM-US-04's own settled reading)*
+- **Type:** integration
+
+### TC-93: A budget currently classified EXCEEDED is deleted the same way as any other budget
+
+- **US:** BM-US-05
+- **Given:** An authenticated User with an active budget whose recorded spending already exceeds its
+  amount limit (confirmed `status` `"EXCEEDED"` via `GET /api/v1/budgets` before deletion)
+- **When:** That budget is deleted
+- **Then:** The response is `204`; a direct read of the `budgets` table confirms the row no longer
+  exists
+- **AC:** EC-03
+- **Type:** integration
+
+### TC-94: A budget with no transaction recorded against it at all is deleted normally
+
+- **US:** BM-US-05
+- **Given:** An authenticated User with an active budget against which no transaction of any kind has
+  ever been recorded
+- **When:** That budget is deleted
+- **Then:** The response is `204`; a direct read of the `budgets` table confirms the row no longer
+  exists
+- **AC:** EC-04
+- **Type:** integration
+
+### TC-95: Deleting a budget a second time is rejected with the identical not-found outcome as a never-existed reference
+
+- **US:** BM-US-05
+- **Given:** An authenticated User who has already deleted one of their own budgets (confirmed `204` on
+  the first attempt)
+- **When:** The User submits another `DELETE /api/v1/budgets/{id}` request against that same id
+- **Then:** The second response is `404`; its `error_code`, `message`, and `details` are identical to
+  TC-88's never-existed-id response
+- **AC:** AC-07, FR-06 *(assertion technique per QF-23)*
+- **Type:** integration
+
+### TC-96: A caller who owns a different budget of their own cannot delete another User's budget
+
+- **US:** BM-US-05
+- **Given:** Two authenticated Users, `A` (owns budget `BA`) and `B` (owns budget `BB`)
+- **When:** `A` submits `DELETE /api/v1/budgets/{id}` against `BB`'s id
+- **Then:** The response is `404` `BUDGET_NOT_FOUND`, identical to TC-88/TC-89's responses; `BB`'s row is
+  unchanged in storage, and `A`'s own `BA` is also unaffected
+- **AC:** EC-02, FR-03
 - **Type:** integration
