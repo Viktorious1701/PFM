@@ -19,6 +19,7 @@ from app.core import clock
 from app.core.errors import (
     BudgetAlreadyExistsError,
     BudgetCategoryNotFoundError,
+    BudgetNotFoundError,
     BudgetWalletNotFoundError,
 )
 from app.models.user import UserModel
@@ -139,3 +140,28 @@ def list_budgets(db: Session, *, owner: UserModel, page: int, page_size: int) ->
         for budget in items
     ]
     return BudgetListRead(items=results, total=total, page=page, page_size=page_size)
+
+
+def update_budget(
+    db: Session, *, owner: UserModel, budget_id: str, amount_limit: Decimal
+) -> BudgetRead:
+    """BM-US-04 spec AC-01, FR-03 (plan.md A1, A3, A4, A5). Looks up the
+    budget scoped to the caller, then updates its amount limit directly — no
+    further precondition check follows ownership. An earlier design draft
+    also required the budget's period to equal the current calendar month;
+    that restriction was removed after the project owner's design-gate
+    review (spec.md Assumptions & Dependencies, plan.md A8) — budgets are
+    not time-boxed anywhere else in this system. No audit call (A10).
+    """
+    budget = budget_repo.get_owned_by_id(db, budget_id=budget_id, user_id=owner.id)
+    if budget is None:
+        raise BudgetNotFoundError()
+
+    budget = budget_repo.update_amount_limit(db, budget=budget, amount_limit=amount_limit)
+    return BudgetRead(
+        id=budget.id,
+        wallet_id=budget.wallet_id,
+        category_id=budget.category_id,
+        amount_limit=budget.amount_limit,
+        period=budget.period,
+    )

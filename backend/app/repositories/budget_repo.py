@@ -91,3 +91,34 @@ def list_owned(
         .limit(page_size)
     ).all()
     return items, total
+
+
+def get_owned_by_id(db: Session, *, budget_id: str, user_id: str) -> BudgetModel | None:
+    """BM-US-04 spec FR-03, BR-02, constitution SEC-08 (plan.md A3). The first
+    "fetch one budget by its own id, scoped to the caller" lookup in this
+    codebase — generalises BM-US-01's wallet_repo/category_repo
+    get_owned_by_id() shape (built there for a *referenced* row) to the
+    budget being acted on directly. Reuses BM-US-02 A3's single-join-on-
+    wallets ownership scoping unchanged: every stored budget's category_id
+    already belongs to the same owner as its wallet_id by construction
+    (BM-US-01 FR-13/BR-02), so one join suffices. "No such budget" and
+    "exists, owned by someone else" collapse to the identical None by
+    construction, not a check that could be forgotten.
+    """
+    return db.scalar(
+        select(BudgetModel)
+        .join(WalletModel, BudgetModel.wallet_id == WalletModel.id)
+        .where(BudgetModel.id == budget_id, WalletModel.user_id == user_id)
+    )
+
+
+def update_amount_limit(db: Session, *, budget: BudgetModel, amount_limit: Decimal) -> BudgetModel:
+    """BM-US-04 spec AC-01, FR-04, FR-06, BR-01, BR-03 (plan.md A4). Mutates
+    only amount_limit on an already-fetched, already-ownership-verified row —
+    wallet_id, category_id, and period are never touched. Flushed, not
+    committed (AR-06) — the router owns the transaction boundary.
+    """
+    budget.amount_limit = amount_limit
+    db.add(budget)
+    db.flush()
+    return budget

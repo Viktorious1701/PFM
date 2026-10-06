@@ -1109,46 +1109,22 @@ ownership-mismatch case, itself a minor information leak about another User's da
 `TC-67`'s not-found-at-all case and asserts they match exactly — `error_code`, `message`, and `details`
 all identical, not merely the status code.
 
-#### QF-17
+#### QF-17 — Withdrawn
 
-**Description.** AC-08/BR-02 is a business rule this story introduces for the first time — no earlier
-Budget Management story ever restricted an *operation* to only active (current-month) budgets; BM-US-02's
-own "active" filtering only ever affected what appears in a *list*, never what could be acted on. Every
-fixture across this file so far creates budgets only in the current month, so a test suite that never
-constructs a deliberately past-period budget could pass even if this story's own active-period check were
-missing entirely.
+**Withdrawn.** This finding described the "period must be the current calendar month" rule, which the
+product owner removed at the design-gate review (`spec.md` *Assumptions & Dependencies*; `plan.md` A7,
+A8). There is no active-period check left to regress. Its only test case, `TC-76`, is withdrawn with it.
+`TC-84` now covers updating a past-period budget.
 
-**Impact.** A regression dropping the active-period check would silently allow updating historical
-budgets, corrupting the "the cap in force during that month" meaning BR-02 exists to protect — and no
-existing test in this file would catch it, since none of them ever update a past-period budget.
+#### QF-18 — Withdrawn
 
-**Recommendation.** `TC-76` monkeypatches the clock to a fixed instant, creates a budget (landing it in
-that month), advances the clock by a full calendar month, then attempts the update — the same clock-seam
-technique BM-US-02 TC-40 already used for a different purpose (constitution TST-06) — and asserts `409`
-`BUDGET_NOT_ACTIVE` with the stored `amount_limit` unchanged.
-
-#### QF-18
-
-**Description.** FR-09's fixed check order (ownership before the active-period check) cannot be directly
-exercised by a single request that fails both at once, the way BM-US-01 TC-26 did for wallet-before-
-category — a budget that does not exist, or belongs to someone else, cannot simultaneously be "the
-caller's own past-period budget," so no request can trigger "wrong owner" and "wrong period" together
-from the caller's own perspective. This ordering is also structurally forced, not merely conventional:
-the active-period check reads `budget.period`, which requires the budget to already have been fetched.
-
-**Impact.** No test can distinguish "genuinely fixed order" from "coincidentally only one order is even
-executable," so the strongest available test instead proves the *consequence* that matters: a non-owner
-never learns a budget's active-or-inactive state.
-
-**Recommendation.** Accept the structural proof over a constructed counter-example, the same resolution
-BM-US-02 QF-08 and BM-US-03 QF-14 already used in this file for a similarly unconstructable ordering case.
-`TC-83` has a non-owner attempt to update another User's deliberately past-period budget, and asserts the
-response is `404` — never `409` — confirming the ownership refusal is what the caller actually observes,
-regardless of that budget's own period.
+**Withdrawn.** This finding covered the check order between ownership and the active-period check. The
+active-period check was removed at the design-gate review (`plan.md` A8), so ownership is now the
+service's only precondition and there is no order to prove. `TC-83` is kept as a plain non-owner case.
 
 #### QF-19
 
-**Description.** AC-09's claim that wallet, category, and period are unchanged could be satisfied by a
+**Description.** AC-08's claim that wallet, category, and period are unchanged could be satisfied by a
 test that only reads the `PATCH` response body — a service bug that mutated the stored row's
 `wallet_id`/`category_id`/`period` while still constructing a response DTO from the old, pre-mutation
 in-memory values would pass such a test undetected.
@@ -1175,50 +1151,69 @@ prior Budget Management story used for its own all-`[API]` classification.
 | AC-05 | Reject a missing amount limit | **[API]** | Payload validation |
 | AC-06 | Reject an amount limit that is zero or negative | **[API]** | Payload validation |
 | AC-07 | Reject an amount limit carrying more than two decimal places | **[API]** | Payload validation |
-| AC-08 | Reject an update to a budget whose period is not the current calendar month | **[API]** | Backend conflict rule; bounded by QF-17 |
-| AC-09 | A successful update changes only the amount limit | **[API]** | Response/persistence contract; bounded by QF-19 |
-| AC-10 | Return exactly the documented budget fields | **[API]** | Response-payload contract |
+| AC-08 | A successful update changes only the amount limit | **[API]** | Response/persistence contract; bounded by QF-19 |
+| AC-09 | Return exactly the documented budget fields | **[API]** | Response-payload contract |
 | EC-01 | Amount limit at the smallest positive value | **[API]** | Boundary value |
 | EC-02 | Amount limit exceeding the `DECIMAL(15,2)` total digit width | **[API]** | Payload validation, distinct from AC-07's decimal-places check |
 | EC-03 | A budget reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
 | EC-04 | An amount limit set below the budget's current amount spent | **[API]** | Cross-story composition with BM-US-02/BM-US-03 |
 | EC-05 | An amount limit equal to the value the budget already holds | **[API]** | Backend rule — not a special-cased no-op |
 | EC-06 | A wallet, category, or period value submitted alongside the amount limit | **[API]** | Structural-ignore contract |
-| EC-07 | A caller who owns a different budget attempts to update another User's budget | **[API]** | Persistence/ownership contract; bounded by QF-16, QF-18 |
+| EC-07 | A caller who owns a different budget attempts to update another User's budget | **[API]** | Persistence/ownership contract; bounded by QF-16 |
 
 ### Coverage Matrix
 
-| AC/EC | Label | Integration TC(s) | E2E TC(s) |
-|---|---|---|---|
-| AC-01 | [API] | TC-64, TC-65 | — |
-| AC-02 | [API] | TC-66 | — |
-| AC-03 | [API] | TC-67 | — |
-| AC-04 | [API] | TC-68 | — |
-| AC-05 | [API] | TC-70 | — |
-| AC-06 | [API] | TC-71, TC-72 | — |
-| AC-07 | [API] | TC-74 | — |
-| AC-08 | [API] | TC-76 | — |
-| AC-09 | [API] | TC-77 | — |
-| AC-10 | [API] | TC-79 | — |
-| EC-01 | [API] | TC-73 | — |
-| EC-02 | [API] | TC-75 | — |
-| EC-03 | [API] | TC-69 | — |
-| EC-04 | [API] | TC-80 | — |
-| EC-05 | [API] | TC-81 | — |
-| EC-06 | [API] | TC-78 | — |
-| EC-07 | [API] | TC-82, TC-83 | — |
+| AC/EC | Label | Integration TC(s) | E2E TC(s) | Status |
+|---|---|---|---|---|
+| AC-01 | [API] | TC-64, TC-65, TC-84 | — | PASS |
+| AC-02 | [API] | TC-66 | — | PASS |
+| AC-03 | [API] | TC-67 | — | PASS |
+| AC-04 | [API] | TC-68 | — | PASS |
+| AC-05 | [API] | TC-70 | — | PASS |
+| AC-06 | [API] | TC-71, TC-72 | — | PASS |
+| AC-07 | [API] | TC-74 | — | PASS |
+| AC-08 | [API] | TC-77 | — | PASS |
+| AC-09 | [API] | TC-79 | — | PASS |
+| EC-01 | [API] | TC-73 | — | PASS |
+| EC-02 | [API] | TC-75 | — | PASS |
+| EC-03 | [API] | TC-69 | — | PASS |
+| EC-04 | [API] | TC-80 | — | PASS |
+| EC-05 | [API] | TC-81 | — | PASS |
+| EC-06 | [API] | TC-78 | — | PASS |
+| EC-07 | [API] | TC-82, TC-83 | — | PASS |
 
 > Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no budget-update
-> screen exists this round, and none is named by any SRS UXR. **Known coverage limits, accepted:** FR-09's
-> fixed check order (ownership before active-period) cannot be directly exercised by a dual-failure
-> request, because the two failure modes cannot co-occur from the caller's own perspective (QF-18) — the
-> same kind of structural limitation BM-US-02 QF-08 and BM-US-03 QF-14 already accepted in this file. The
-> closest available witness (`TC-83`) proves the consequence that matters — a budget's active state is
-> never disclosed to a non-owner — rather than the literal check order.
+> screen exists this round, and none is named by any SRS UXR. `TC-76` is withdrawn and maps to no AC or
+> EC (see its own entry). The period rule it tested was removed at the design-gate review (`plan.md` A8).
+> The opposite behaviour, that a past-period budget can be updated, is covered by `TC-84` under AC-01.
 
-### Test Implementation Map
+### Test Implementation Map *(filled at step 4)*
 
-*(filled at step 4 — this story has not yet been implemented)*
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-64 | `tests/integration/test_bm_us_04_update_budget.py::test_owner_updates_a_budgets_amount_limit_and_receives_the_updated_budget` | PASS |
+| TC-65 | `tests/integration/test_bm_us_04_update_budget.py::test_updating_a_budget_persists_the_new_amount_limit_on_the_same_single_row` | PASS |
+| TC-66 | `tests/integration/test_bm_us_04_update_budget.py::test_an_unauthenticated_or_expired_caller_is_denied_and_nothing_changes` | PASS |
+| TC-67 | `tests/integration/test_bm_us_04_update_budget.py::test_a_budget_id_matching_no_budget_is_rejected_with_404_budget_not_found` | PASS |
+| TC-68 | `tests/integration/test_bm_us_04_update_budget.py::test_another_users_budget_is_refused_with_a_body_identical_to_not_found` | PASS |
+| TC-69 | `tests/integration/test_bm_us_04_update_budget.py::test_a_malformed_budget_id_gets_the_same_404_as_a_well_formed_unknown_one` | PASS |
+| TC-70 | `tests/integration/test_bm_us_04_update_budget.py::test_a_missing_amount_limit_is_rejected_with_422` | PASS |
+| TC-71 | `tests/integration/test_bm_us_04_update_budget.py::test_an_amount_limit_of_exactly_zero_is_rejected_with_422` | PASS |
+| TC-72 | `tests/integration/test_bm_us_04_update_budget.py::test_a_negative_amount_limit_is_rejected_with_422` | PASS |
+| TC-73 | `tests/integration/test_bm_us_04_update_budget.py::test_the_smallest_positive_amount_limit_is_accepted` | PASS |
+| TC-74 | `tests/integration/test_bm_us_04_update_budget.py::test_an_amount_limit_with_three_decimal_places_is_rejected_not_rounded` | PASS |
+| TC-75 | `tests/integration/test_bm_us_04_update_budget.py::test_an_amount_limit_wider_than_fifteen_digits_is_rejected` | PASS |
+| TC-76 | — (withdrawn, no pytest) | N/A (withdrawn) |
+| TC-77 | `tests/integration/test_bm_us_04_update_budget.py::test_a_successful_update_leaves_wallet_category_and_period_unchanged_in_storage` | PASS |
+| TC-78 | `tests/integration/test_bm_us_04_update_budget.py::test_wallet_category_and_period_submitted_alongside_the_amount_limit_are_ignored` | PASS |
+| TC-79 | `tests/integration/test_bm_us_04_update_budget.py::test_the_update_response_exposes_exactly_the_five_documented_fields` | PASS |
+| TC-80 | `tests/integration/test_bm_us_04_update_budget.py::test_lowering_the_limit_below_spending_is_accepted_and_the_next_list_shows_exceeded` | PASS |
+| TC-81 | `tests/integration/test_bm_us_04_update_budget.py::test_updating_to_the_value_already_held_is_an_ordinary_successful_update` | PASS |
+| TC-82 | `tests/integration/test_bm_us_04_update_budget.py::test_owning_a_budget_does_not_let_a_caller_update_another_users_budget` | PASS |
+| TC-83 | `tests/integration/test_bm_us_04_update_budget.py::test_a_non_owner_updating_another_users_past_period_budget_gets_404` | PASS |
+| TC-84 | `tests/integration/test_bm_us_04_update_budget.py::test_an_owner_can_update_a_budget_whose_period_is_an_earlier_month` | PASS |
+
+No failures to root-cause. In the first red run, before the route existed, 19 tests failed and 1 passed. TC-68 passed because it only compared two framework-default 404 bodies with each other, so it was tightened to also assert `error_code == "BUDGET_NOT_FOUND"`. The second red run was 20 failed. All 20 passed on the first green run, and the live `curl` walkthrough matched every status code above.
 
 ---
 
@@ -1228,7 +1223,7 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **Given:** An authenticated User who owns a budget whose period is the current calendar month, with `amount_limit` `200.00`
 - **When:** `PATCH /api/v1/budgets/{id}` is sent with `amount_limit` `350.00`
 - **Then:** The response is `200`; the body carries `id` unchanged, `wallet_id`/`category_id`/`period` unchanged, and `amount_limit` `350.00`
-- **AC:** AC-01, FR-01, FR-05, FR-08
+- **AC:** AC-01, FR-01, FR-07
 - **Type:** integration
 
 ### TC-65: Updating a budget persists the new amount limit in storage
@@ -1282,7 +1277,7 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **Given:** An authenticated User who owns a budget
 - **When:** A `PATCH` is submitted with an empty body (no `amount_limit`)
 - **Then:** The response is `422` `VALIDATION_ERROR` identifying the `amount_limit` field; the stored value is unchanged
-- **AC:** AC-05, FR-05
+- **AC:** AC-05, FR-04
 - **Type:** integration
 
 ### TC-71: An amount limit of exactly zero is rejected with 422
@@ -1291,7 +1286,7 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **Given:** An authenticated User who owns a budget
 - **When:** A `PATCH` is submitted with `amount_limit` `0.00`
 - **Then:** The response is `422` `VALIDATION_ERROR` identifying the `amount_limit` field; the stored value is unchanged
-- **AC:** AC-06, FR-06, BR-01
+- **AC:** AC-06, FR-05, BR-01
 - **Type:** integration
 
 ### TC-72: A negative amount limit is rejected with 422
@@ -1300,7 +1295,7 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **Given:** An authenticated User who owns a budget
 - **When:** A `PATCH` is submitted with `amount_limit` `-50.00`
 - **Then:** The response is `422` `VALIDATION_ERROR` identifying the `amount_limit` field; the stored value is unchanged
-- **AC:** AC-06, FR-06, BR-01
+- **AC:** AC-06, FR-05, BR-01
 - **Type:** integration
 
 ### TC-73: An amount limit of exactly 0.01 is accepted
@@ -1309,7 +1304,7 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **Given:** An authenticated User who owns a budget
 - **When:** A `PATCH` is submitted with `amount_limit` `0.01`
 - **Then:** The response is `200`; the updated budget's `amount_limit` is `0.01`
-- **AC:** EC-01, FR-06
+- **AC:** EC-01, FR-05
 - **Type:** integration
 
 ### TC-74: An amount limit with three decimal places is rejected, not rounded
@@ -1318,7 +1313,7 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **Given:** An authenticated User who owns a budget with `amount_limit` `200.00`
 - **When:** A `PATCH` is submitted with `amount_limit` `100.005`
 - **Then:** The response is `422` `VALIDATION_ERROR` whose `details` names `amount_limit`; the stored `amount_limit` remains `200.00` — no rounded `100.01` or truncated `100.00` value
-- **AC:** AC-07, BR-01, FR-05
+- **AC:** AC-07, BR-01, FR-04
 - **Type:** integration
 
 ### TC-75: An amount limit exceeding 15 total digits is rejected
@@ -1327,17 +1322,14 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **Given:** An authenticated User who owns a budget
 - **When:** A `PATCH` is submitted with an `amount_limit` of 14 integer digits and 2 decimal places (16 significant digits total)
 - **Then:** The response is `422` `VALIDATION_ERROR`; the stored value is unchanged
-- **AC:** EC-02, BR-01, FR-05
+- **AC:** EC-02, BR-01, FR-04
 - **Type:** integration
 
-### TC-76: An update against a budget whose period is an earlier calendar month is rejected with 409 BUDGET_NOT_ACTIVE
+### TC-76: An update against a budget whose period is an earlier calendar month is rejected with 409 BUDGET_NOT_ACTIVE — Withdrawn
 
 - **US:** BM-US-04
-- **Given:** An authenticated User, with the system clock frozen to a known instant, who creates a budget (landing it in that month) with `amount_limit` `200.00`; the clock is then advanced by one full calendar month
-- **When:** A `PATCH` is submitted against that now-past-period budget with `amount_limit` `500.00`
-- **Then:** The response is `409` with `error_code` `BUDGET_NOT_ACTIVE`; the stored `amount_limit` remains `200.00`
-- **AC:** AC-08, BR-02, FR-04 *(assertion technique per QF-17)*
-- **Type:** integration
+- **Withdrawn.** The rule this case tested, "only a current-month budget may be updated", was removed by the product owner at the design-gate review (`spec.md` *Assumptions & Dependencies*; `plan.md` A7, A8). `TC-84` supersedes it. No pytest is written for it.
+- **Result:** N/A (withdrawn)
 
 ### TC-77: A successful update leaves wallet, category, and period unchanged, verified against the stored row directly
 
@@ -1345,7 +1337,7 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **Given:** An authenticated User with an active budget for wallet `W1`/category `C1`
 - **When:** The budget's `amount_limit` is updated successfully
 - **Then:** The response's `wallet_id`/`category_id`/`period` match their pre-update values; a direct read of the `budgets` row through the test's own `db` session confirms the stored `wallet_id`/`category_id`/`period` columns are unchanged
-- **AC:** AC-09, BR-04 *(assertion technique per QF-19)*
+- **AC:** AC-08, FR-06, BR-03 *(assertion technique per QF-19)*
 - **Type:** integration
 
 ### TC-78: A wallet, category, or period value submitted alongside the amount limit is silently ignored
@@ -1354,7 +1346,7 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **Given:** An authenticated User with an active budget for wallet `W1`/category `C1`
 - **When:** A `PATCH` is submitted with a valid `amount_limit` plus the extra keys `wallet_id` (a different, real wallet the User owns), `category_id` (a different, real category), and `period` (`"2020-01-01"`)
 - **Then:** The response is `200`; the updated budget's `wallet_id`/`category_id`/`period` remain `W1`/`C1`/the original period — never the submitted extra values
-- **AC:** EC-06, FR-07
+- **AC:** EC-06, FR-06
 - **Type:** integration
 
 ### TC-79: The response exposes exactly the five documented fields
@@ -1363,7 +1355,7 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **Given:** An authenticated User with an active budget
 - **When:** The amount limit is updated successfully
 - **Then:** The response body's keys are exactly `id`, `wallet_id`, `category_id`, `amount_limit`, `period` — no more, and in particular no `amount_spent`, `progress_percentage`, or `status`
-- **AC:** AC-10, FR-08
+- **AC:** AC-09, FR-07
 - **Type:** integration
 
 ### TC-80: Lowering the amount limit below the current amount spent is accepted, and the next list request reflects EXCEEDED
@@ -1393,11 +1385,20 @@ prior Budget Management story used for its own all-`[API]` classification.
 - **AC:** EC-07, FR-03
 - **Type:** integration
 
-### TC-83: A non-owner attempting to update another User's past-period budget still receives 404, never 409 — a budget's active state is never disclosed to a non-owner
+### TC-83: A non-owner attempting to update another User's past-period budget receives 404 BUDGET_NOT_FOUND
 
 - **US:** BM-US-04
-- **Given:** Two authenticated Users `A` and `B`; `B` owns a budget whose period is an earlier calendar month (the system clock advanced past it)
-- **When:** `A` submits a `PATCH` against `B`'s past-period `budget_id` with a valid `amount_limit`
-- **Then:** The response is `404` `BUDGET_NOT_FOUND` — never `409` `BUDGET_NOT_ACTIVE`; `B`'s budget is unchanged
-- **AC:** EC-07, FR-03, FR-09 *(assertion technique per QF-18)*
+- **Given:** Two authenticated Users `A` and `B`; `B` owns a budget whose period is an earlier calendar month, with `amount_limit` `200.00`
+- **When:** `A` submits a `PATCH` against `B`'s `budget_id` with a valid `amount_limit`
+- **Then:** The response is `404` `BUDGET_NOT_FOUND`; `B`'s stored budget is unchanged
+- **AC:** EC-07, FR-03, BR-02
+- **Type:** integration
+
+### TC-84: An update to a budget whose period is an earlier calendar month is accepted
+
+- **US:** BM-US-04
+- **Given:** An authenticated User who owns a budget whose period is an earlier calendar month, with `amount_limit` `200.00`
+- **When:** A `PATCH` is submitted against that budget with `amount_limit` `500.00`
+- **Then:** The response is `200` with `amount_limit` `500.00` and the original `period` unchanged; the stored row shows the same
+- **AC:** AC-01, FR-01, FR-03 *(budgets are not time-boxed — `spec.md` Assumptions & Dependencies; `plan.md` A8)*
 - **Type:** integration

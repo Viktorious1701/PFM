@@ -28,6 +28,21 @@ class BudgetCreate(BaseModel):
     amount_limit: Decimal = Field(max_digits=15, decimal_places=2, gt=0)
 
 
+class BudgetUpdate(BaseModel):
+    """Request DTO for PATCH /budgets/{budget_id} (BM-US-04). The budget's
+    only mutable field (plan.md A1) — wallet_id/category_id/period are
+    immutable post-creation (spec BR-03) and have no corresponding field
+    here, so a caller cannot even name them meaningfully; any such key
+    submitted anyway is silently ignored by Pydantic's default BaseModel
+    behaviour (spec EC-06).
+
+    Validation identical to BudgetCreate.amount_limit (BM-US-01 A4), reused
+    unchanged — Decimal(15,2), reject-don't-round, strictly positive (A6).
+    """
+
+    amount_limit: Decimal = Field(max_digits=15, decimal_places=2, gt=0)
+
+
 class BudgetRead(BaseModel):
     """SDS §2.2. Exactly five fields (spec AC-12, FR-11, constitution
     PF-03) — no owner field of any kind (A7), no status (A8).

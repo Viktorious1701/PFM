@@ -1308,10 +1308,10 @@ table — it is structurally unreachable through this endpoint (A8).
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `BudgetUpdate` schema — one required field, `amount_limit` (A5, A6) | `backend/app/schemas/budget.py` | Open |
-| T-02 | `budget_repo.get_owned_by_id(db, *, budget_id, user_id)` — single join on `wallets` (A3) | `backend/app/repositories/budget_repo.py` | Open |
-| T-03 | `budget_repo.update_amount_limit(db, *, budget, amount_limit)` (A4) | `backend/app/repositories/budget_repo.py` | Open |
-| T-04 | Add `BudgetNotFoundError` (A7) | `backend/app/core/errors.py` | Open |
-| T-05 | `budget_service.update_budget(db, *, owner, budget_id, amount_limit)` — ownership lookup, then update; no active-period branch (FR-03) | `backend/app/services/budget_service.py` | Open |
-| T-06 | `PATCH /api/v1/budgets/{budget_id}` router; no new mount (router already exists) | `backend/app/api/v1/budgets.py` | Open |
-| T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_04_update_budget.py` | Open |
+| T-01 | `BudgetUpdate` schema — one required field, `amount_limit` (A5, A6) | `backend/app/schemas/budget.py` | Done |
+| T-02 | `budget_repo.get_owned_by_id(db, *, budget_id, user_id)` — single join on `wallets` (A3) | `backend/app/repositories/budget_repo.py` | Done |
+| T-03 | `budget_repo.update_amount_limit(db, *, budget, amount_limit)` (A4) | `backend/app/repositories/budget_repo.py` | Done |
+| T-04 | Add `BudgetNotFoundError` (A7) | `backend/app/core/errors.py` | Done |
+| T-05 | `budget_service.update_budget(db, *, owner, budget_id, amount_limit)` — ownership lookup, then update; no active-period branch (FR-03) | `backend/app/services/budget_service.py` | Done |
+| T-06 | `PATCH /api/v1/budgets/{budget_id}` router; no new mount (router already exists) | `backend/app/api/v1/budgets.py` | Done |
+| T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_04_update_budget.py` | Done |

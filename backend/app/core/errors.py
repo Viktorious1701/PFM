@@ -153,6 +153,21 @@ class BudgetAlreadyExistsError(AppError):
     default_message = "A budget already exists for this wallet, category, and period."
 
 
+# --- BM-US-04: Update a Budget ---------------------------------------------
+
+
+class BudgetNotFoundError(AppError):
+    """spec AC-03 / AC-04 / FR-03. Identical for "no such budget" and "not
+    this caller's budget" (constitution VL-06's `404 if absent` branch) —
+    the first time this codebase looks a budget up by its own id rather
+    than validating a *referenced* wallet/category (plan.md A7).
+    """
+
+    status_code = 404
+    error_code = "BUDGET_NOT_FOUND"
+    default_message = "The referenced budget was not found."
+
+
 # --- TM-US-01: Create a Transaction -----------------------------------------
 
 
