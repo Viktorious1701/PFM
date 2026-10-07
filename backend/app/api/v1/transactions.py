@@ -157,3 +157,32 @@ def update_transaction(
     )
     db.commit()
     return result
+
+
+@router.delete(
+    "/{transaction_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Delete a transaction",
+    description=(
+        "Permanently deletes one of the authenticated caller's own "
+        "transactions, identified by its own id, reversing its effect on "
+        "its wallet's balance. The transaction's category and every other "
+        "transaction are left unaffected."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "TRANSACTION_NOT_FOUND"},
+    },
+)
+def delete_transaction(
+    transaction_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> None:
+    """TM-US-05 (plan.md A4, A5, A9, A12). One commit, after the service
+    call succeeds -- the service only flushes (AR-06). No body is
+    returned -- response_model=None alongside 204 (A5).
+    """
+    transaction_service.delete_transaction(db, owner=current_user, transaction_id=transaction_id)
+    db.commit()

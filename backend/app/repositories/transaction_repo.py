@@ -133,6 +133,21 @@ def list_owned(
     return items, total
 
 
+def delete_transaction(db: Session, *, transaction: TransactionModel) -> None:
+    """Hard-delete an already-fetched, already-ownership-verified,
+    already-reversed row (spec TM-US-05 AC-01, AC-02, FR-05; plan.md A2,
+    A6).
+
+    No soft-delete column exists on this table or any other in this
+    codebase (A2). Performs no reversal itself -- by the time this is
+    called, the wallet's balance has already been corrected by the service
+    (A6). Flushed, not committed (AR-06) -- the router owns the transaction
+    boundary.
+    """
+    db.delete(transaction)
+    db.flush()
+
+
 def get_owned_by_id(db: Session, *, transaction_id: str, user_id: str) -> TransactionModel | None:
     """One transaction scoped to its owner, by its own id (spec TM-US-03
     FR-03, BR-01; constitution SEC-08; plan.md A1).

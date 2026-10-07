@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** TM-US-01 *(TC-01…TC-36, implemented, verified — 36/36 PASS)* · TM-US-02 *(TC-37…TC-72, implemented, verified — 36/36 PASS)* · TM-US-03 *(TC-73…TC-82, implemented, verified — 10/10 PASS)* · TM-US-04 *(TC-83…TC-112, implemented, verified — 30/30 PASS)* · TM-US-05 *(TC-113…TC-126, spec/design/quality drafted — not yet implemented)*
+> **Stories in this file:** TM-US-01 *(TC-01…TC-36, implemented, verified — 36/36 PASS)* · TM-US-02 *(TC-37…TC-72, implemented, verified — 36/36 PASS)* · TM-US-03 *(TC-73…TC-82, implemented, verified — 10/10 PASS)* · TM-US-04 *(TC-83…TC-112, implemented, verified — 30/30 PASS)* · TM-US-05 *(TC-113…TC-126, implemented, verified — 14/14 PASS)*
 
 ---
 
@@ -1991,11 +1991,40 @@ screen either.
 
 ### Test Implementation Map *(filled at step 4)*
 
-Not yet populated — this dispatch covers steps 1–3 (Spec, Design, Quality) only; no test code exists
-yet for TM-US-05. `backend/tests/integration/test_tm_us_05_delete_transaction.py` will be written at
-the Implement dispatch (steps 4–6) from the test cases below, one test per `TC-NN`, each carrying its
-`TC-NN` id in its docstring, following this file's own Test Implementation Map precedent for every
-prior story.
+Populated at the Implement dispatch (steps 4–6), the same way every prior story's own map above was.
+All 14 test cases are implemented in `backend/tests/integration/test_tm_us_05_delete_transaction.py`,
+one test per `TC-NN`, each carrying its `TC-NN` id in its docstring. Tests were written first and
+confirmed failing with `405 Method Not Allowed` against the pre-implementation code (the `DELETE`
+route did not exist yet — same red state WM-US-02/TM-US-02's own dispatches found), confirmed by
+`git stash push --keep-index` on only the three implementation files (`transaction_repo.py`,
+`transaction_service.py`, `transactions.py`), re-running the new suite to see all 14 fail, then
+`git stash pop` to restore the implementation before re-running to green. Full suite run:
+`570 passed, 1 deselected` (556 pre-existing + 14 of them this story's), `ruff check`/
+`ruff format --check` clean, `mypy app` clean, coverage 100% on every file this story touched
+(`app/repositories/transaction_repo.py`, `app/services/transaction_service.py`,
+`app/api/v1/transactions.py`), 99% overall. Live `curl` walkthrough against a running server (restarted
+to pick up the new route, confirmed live first via `/openapi.json`) executed per CLAUDE.md §2 Step 5
+with two distinct real users — see the Implement dispatch's gate report for the full request/response
+transcript, including the lower-than-reversal-amount INCOME deletion case (wallet at 300.00, INCOME
+reversal of 500.00 accepted unconditionally, landing at exactly −200.00). No failures were found at
+Verification; nothing here required root-causing.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-113 | `tests/integration/test_tm_us_05_delete_transaction.py::test_deleting_an_expense_transaction_succeeds_and_increases_wallet_balance_by_exact_amount` | PASS |
+| TC-114 | `tests/integration/test_tm_us_05_delete_transaction.py::test_deleting_an_expense_transaction_permanently_removes_its_row_from_storage` | PASS |
+| TC-115 | `tests/integration/test_tm_us_05_delete_transaction.py::test_deleting_an_income_transaction_succeeds_and_decreases_wallet_balance_by_exact_amount` | PASS |
+| TC-116 | `tests/integration/test_tm_us_05_delete_transaction.py::test_deleting_an_income_transaction_permanently_removes_its_row_from_storage` | PASS |
+| TC-117 | `tests/integration/test_tm_us_05_delete_transaction.py::test_an_unauthenticated_caller_is_denied_and_nothing_is_deleted` | PASS |
+| TC-118 | `tests/integration/test_tm_us_05_delete_transaction.py::test_a_transaction_id_matching_no_transaction_at_all_is_rejected_with_404` | PASS |
+| TC-119 | `tests/integration/test_tm_us_05_delete_transaction.py::test_a_transaction_belonging_to_a_different_user_is_rejected_identically_to_never_existed` | PASS |
+| TC-120 | `tests/integration/test_tm_us_05_delete_transaction.py::test_a_malformed_transaction_id_gets_the_same_404_as_a_well_formed_unknown_one` | PASS |
+| TC-121 | `tests/integration/test_tm_us_05_delete_transaction.py::test_deleting_a_transaction_leaves_its_category_a_sibling_and_another_wallets_txn_unaffected` | PASS |
+| TC-122 | `tests/integration/test_tm_us_05_delete_transaction.py::test_a_deleted_transaction_never_again_appears_in_a_list_or_a_direct_lookup` | PASS |
+| TC-123 | `tests/integration/test_tm_us_05_delete_transaction.py::test_deleting_a_transaction_a_second_time_is_rejected_identically_to_never_existed` | PASS |
+| TC-124 | `tests/integration/test_tm_us_05_delete_transaction.py::test_a_caller_who_owns_a_transaction_cannot_delete_another_users_transaction` | PASS |
+| TC-125 | `tests/integration/test_tm_us_05_delete_transaction.py::test_deleting_an_expense_transaction_reverses_only_its_own_amount_despite_other_activity_since` | PASS |
+| TC-126 | `tests/integration/test_tm_us_05_delete_transaction.py::test_deleting_an_income_transaction_is_accepted_unconditionally_even_driving_balance_negative` | PASS |
 
 ---
 

@@ -188,6 +188,41 @@ def update_transaction(
     )
 
 
+def delete_transaction(db: Session, *, owner: UserModel, transaction_id: str) -> None:
+    """Permanently remove one of `owner`'s own transactions, reversing its
+    stored effect on its wallet first (spec TM-US-05 AC-01..AC-07, FR-04,
+    FR-05; plan.md A1, A6, A7, A8).
+
+    Looks up the transaction scoped to the caller -- reusing
+    transaction_repo.get_owned_by_id() unchanged from TM-US-03 -- then
+    reverses its stored effect on its wallet exactly as update_transaction's
+    own reversal step does (BR-02): reuses wallet_repo.increment_balance()
+    (undoing a stored EXPENSE) / wallet_repo.decrement_balance_unconditional()
+    (undoing a stored INCOME) unchanged, never wallet_repo.decrement_balance()
+    -- there is no new effect to reapply, only the old one to undo, and a
+    reversal must never be refused (A6). Deletes the row once the reversal
+    has flushed. A second delete of the same id finds nothing (A8) and
+    raises the identical TransactionNotFoundError a delete against a
+    never-existed id would raise. No audit call (A10).
+    """
+    transaction = transaction_repo.get_owned_by_id(
+        db, transaction_id=transaction_id, user_id=owner.id
+    )
+    if transaction is None:
+        raise TransactionNotFoundError()
+
+    if transaction.type is TransactionType.EXPENSE:
+        wallet_repo.increment_balance(
+            db, wallet_id=transaction.wallet_id, amount=transaction.amount
+        )
+    else:
+        wallet_repo.decrement_balance_unconditional(
+            db, wallet_id=transaction.wallet_id, amount=transaction.amount
+        )
+
+    transaction_repo.delete_transaction(db, transaction=transaction)
+
+
 def list_transactions(
     db: Session,
     *,

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)* · TM-US-04 *(implemented, verified — 30/30 TC PASS)* · TM-US-05 *(spec/design/quality drafted — not yet implemented)*
+> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)* · TM-US-04 *(implemented, verified — 30/30 TC PASS)* · TM-US-05 *(implemented, verified — 14/14 TC PASS)*
 
 ---
 
@@ -1964,10 +1964,10 @@ or does not).
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `transaction_repo.delete_transaction(db, *, transaction)` — pure row removal, no reversal logic (A2, A6) | `backend/app/repositories/transaction_repo.py` | Open |
-| T-02 | `transaction_service.delete_transaction(db, *, owner, transaction_id)` — ownership lookup reused from TM-US-03, then reversal (reusing `wallet_repo.increment_balance()`/`decrement_balance_unconditional()` unchanged), then delete; no type/amount/age restriction (A1, A6, A7, A8) | `backend/app/services/transaction_service.py` | Open |
-| T-03 | `DELETE /api/v1/transactions/{transaction_id}` router — `204`, `response_model=None` (A4, A5, A9) | `backend/app/api/v1/transactions.py` | Open |
-| T-04 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_05_delete_transaction.py` | Open |
+| T-01 | `transaction_repo.delete_transaction(db, *, transaction)` — pure row removal, no reversal logic (A2, A6) | `backend/app/repositories/transaction_repo.py` | Done |
+| T-02 | `transaction_service.delete_transaction(db, *, owner, transaction_id)` — ownership lookup reused from TM-US-03, then reversal (reusing `wallet_repo.increment_balance()`/`decrement_balance_unconditional()` unchanged), then delete; no type/amount/age restriction (A1, A6, A7, A8) | `backend/app/services/transaction_service.py` | Done |
+| T-03 | `DELETE /api/v1/transactions/{transaction_id}` router — `204`, `response_model=None` (A4, A5, A9) | `backend/app/api/v1/transactions.py` | Done |
+| T-04 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_05_delete_transaction.py` | Done |
 
 **Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
 was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`, scratch install already
