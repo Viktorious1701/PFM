@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)* · TM-US-04 *(spec/design/quality drafted — not yet implemented)*
+> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)* · TM-US-04 *(implemented, verified — 30/30 TC PASS)*
 
 ---
 
@@ -1651,12 +1651,12 @@ reused unchanged from `main.py`. No `403` (A10: no role restriction). No new err
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `wallet_repo.decrement_balance_unconditional(db, *, wallet_id, amount)` — unconditional subtraction, used only to reverse a stored INCOME (A5) | `backend/app/repositories/wallet_repo.py` | Open |
-| T-02 | `transaction_repo.update_transaction(db, *, transaction, category_id, amount, type, note)` — mutate only submitted fields (A7) | `backend/app/repositories/transaction_repo.py` | Open |
-| T-03 | `TransactionUpdate` DTO — four independently optional fields, at-least-one-field validator (A8) | `backend/app/schemas/transaction.py` | Open |
-| T-04 | `transaction_service.update_transaction(db, *, owner, transaction_id, category_id, amount, type, note)` — ownership lookup, conditional category lookup, conditional type-consistency re-check, reverse, reapply, row update, in that fixed order (A3, A4, A6) | `backend/app/services/transaction_service.py` | Open |
-| T-05 | `PATCH /api/v1/transactions/{transaction_id}` router addition (A2, A10) | `backend/app/api/v1/transactions.py` | Open |
-| T-06 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_04_update_transaction.py` | Open |
+| T-01 | `wallet_repo.decrement_balance_unconditional(db, *, wallet_id, amount)` — unconditional subtraction, used only to reverse a stored INCOME (A5) | `backend/app/repositories/wallet_repo.py` | Done |
+| T-02 | `transaction_repo.update_transaction(db, *, transaction, category_id, amount, type, note)` — mutate only submitted fields (A7) | `backend/app/repositories/transaction_repo.py` | Done |
+| T-03 | `TransactionUpdate` DTO — four independently optional fields, at-least-one-field validator (A8) | `backend/app/schemas/transaction.py` | Done |
+| T-04 | `transaction_service.update_transaction(db, *, owner, transaction_id, category_id, amount, type, note)` — ownership lookup, conditional category lookup, conditional type-consistency re-check, reverse, reapply, row update, in that fixed order (A3, A4, A6) | `backend/app/services/transaction_service.py` | Done |
+| T-05 | `PATCH /api/v1/transactions/{transaction_id}` router addition (A2, A10) | `backend/app/api/v1/transactions.py` | Done |
+| T-06 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_04_update_transaction.py` | Done — 30/30 PASS |
 
 **Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
 was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`, scratch install already

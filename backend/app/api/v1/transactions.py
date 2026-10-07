@@ -6,7 +6,12 @@ from datetime import datetime
 from fastapi import APIRouter, Query, status
 
 from app.core.deps import CurrentUserDep, DbDep
-from app.schemas.transaction import TransactionCreate, TransactionListRead, TransactionRead
+from app.schemas.transaction import (
+    TransactionCreate,
+    TransactionListRead,
+    TransactionRead,
+    TransactionUpdate,
+)
 from app.services import transaction_service
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -112,3 +117,43 @@ def get_transaction(
     return transaction_service.get_transaction(
         db, owner=current_user, transaction_id=transaction_id
     )
+
+
+@router.patch(
+    "/{transaction_id}",
+    response_model=TransactionRead,
+    status_code=status.HTTP_200_OK,
+    summary="Update a transaction",
+    description=(
+        "Updates one or more of the category, amount, type, and note of "
+        "one of the authenticated caller's own transactions, identified by "
+        "its own id, and atomically recalculates its wallet's balance -- "
+        "reversing the transaction's old effect and applying its new one. "
+        "The transaction's wallet is immutable."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "TRANSACTION_NOT_FOUND / TRANSACTION_CATEGORY_NOT_FOUND"},
+        409: {
+            "description": ("TRANSACTION_CATEGORY_TYPE_MISMATCH / TRANSACTION_INSUFFICIENT_BALANCE")
+        },
+        422: {"description": "VALIDATION_ERROR"},
+    },
+)
+def update_transaction(
+    transaction_id: str,
+    payload: TransactionUpdate,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> TransactionRead:
+    result = transaction_service.update_transaction(
+        db,
+        owner=current_user,
+        transaction_id=transaction_id,
+        category_id=payload.category_id,
+        amount=payload.amount,
+        type=payload.type,
+        note=payload.note,
+    )
+    db.commit()
+    return result

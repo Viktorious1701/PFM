@@ -46,6 +46,36 @@ def add_transaction(
     return transaction
 
 
+def update_transaction(
+    db: Session,
+    *,
+    transaction: TransactionModel,
+    category_id: str | None,
+    amount: Decimal | None,
+    type: TransactionType | None,
+    note: str | None,
+) -> TransactionModel:
+    """Mutate only the field(s) actually submitted (spec TM-US-04 AC-01..
+    AC-07, FR-14; plan.md A7) on an already-fetched, already-ownership-
+    verified, already-reversed-and-reapplied row — `wallet_id` and `id` are
+    never touched (BR-01). Identical "if X is not None" convention to
+    `wallet_repo.update_wallet()`/`category_repo.update_category()`.
+    Flushed, not committed (AR-06) — the router owns the transaction
+    boundary.
+    """
+    if category_id is not None:
+        transaction.category_id = category_id
+    if amount is not None:
+        transaction.amount = amount
+    if type is not None:
+        transaction.type = type
+    if note is not None:
+        transaction.note = note
+    db.add(transaction)
+    db.flush()
+    return transaction
+
+
 def list_owned(
     db: Session,
     *,

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** TM-US-01 *(TC-01…TC-36, implemented, verified — 36/36 PASS)* · TM-US-02 *(TC-37…TC-72, implemented, verified — 36/36 PASS)* · TM-US-03 *(TC-73…TC-82, implemented, verified — 10/10 PASS)* · TM-US-04 *(TC-83…TC-112, drafted — not yet implemented)*
+> **Stories in this file:** TM-US-01 *(TC-01…TC-36, implemented, verified — 36/36 PASS)* · TM-US-02 *(TC-37…TC-72, implemented, verified — 36/36 PASS)* · TM-US-03 *(TC-73…TC-82, implemented, verified — 10/10 PASS)* · TM-US-04 *(TC-83…TC-112, implemented, verified — 30/30 PASS)*
 
 ---
 
@@ -1501,15 +1501,69 @@ UXR names one either.
 
 ### Test Implementation Map *(filled at step 4)*
 
-Not yet populated — this dispatch covers steps 1–3 (Spec, Design, Quality) only; no test code exists
-yet for TM-US-04. `backend/tests/integration/test_tm_us_04_update_transaction.py` will be written at
-the Implement dispatch (steps 4–6) from the test cases below, one test per `TC-NN`, each carrying its
-`TC-NN` id in its docstring, following TM-US-01/02/03's own Test Implementation Map precedent in this
-same file.
+Populated at the Implement dispatch (steps 4–6), the same way TM-US-01/02/03's own maps above were.
+All 30 test cases are implemented in `backend/tests/integration/test_tm_us_04_update_transaction.py`,
+one test per `TC-NN`, each carrying its `TC-NN` id in its docstring. The red state was verified
+directly rather than only asserted: with the implementation complete and green, the five files T-01
+through T-05 touch (`app/repositories/wallet_repo.py`, `app/repositories/transaction_repo.py`,
+`app/schemas/transaction.py`, `app/services/transaction_service.py`, `app/api/v1/transactions.py`)
+were reverted to their pre-dispatch `HEAD` state with `git stash`, the suite was re-run and all 30
+tests failed — every one on `405 Method Not Allowed` (the `PATCH` route did not exist yet) — and the
+implementation was then restored and the suite re-run green again. **One correction made at this
+step:**
+`TC-87`'s own `Given`/`Then` numbers in this file are internally inconsistent — its `Then` clause
+computes `500.00 - 400.00 (reversed) - 400.00 (reapplied) = 100.00`, but its `Given` states a starting
+balance of `100.00` (post-INCOME balance `500.00`), which actually yields a *post-reversal* balance of
+`100.00` — below the `400.00` effective amount — so the scenario as literally specified would be
+correctly refused with `409 TRANSACTION_INSUFFICIENT_BALANCE` by this story's own design (plan.md A3's
+own precondition, spec AC-04: reversed balance must be at least the effective amount), not accepted
+with `200` as this row's own `Then` clause claims. The implemented test (`TC-87` below) corrects only
+the `Given` starting balance to `500.00` (post-INCOME balance `900.00`), which makes the scenario
+internally consistent while preserving the row's own stated final balance of `100.00` and its own
+intent (AC-04: a type flip INCOME→EXPENSE that the wallet *can* support). No application code or
+design decision changed because of this — it is a narrative-arithmetic correction to this row's own
+`Given` values, recorded here rather than silently rewritten, per `CLAUDE.md` §6. Full suite run:
+`556 passed, 1 deselected` (the pre-existing suite plus this story's own 30), `ruff check`/
+`ruff format --check` clean, `mypy app` clean, coverage 100% on every file this story added or
+modified (`app/repositories/wallet_repo.py`, `app/repositories/transaction_repo.py`,
+`app/schemas/transaction.py`, `app/services/transaction_service.py`, `app/api/v1/transactions.py`),
+99% overall (unchanged from TM-US-03's own baseline). Live `curl` walkthrough against a running
+server executed per `CLAUDE.md` §2 Step 5 — see the Implement dispatch's gate report for the full
+request/response transcript, including the overdraw-refusal case confirmed unchanged via a follow-up
+`GET`. No other failures were found at Verification; nothing else here required root-causing.
 
 | TC | pytest node id | Result |
 |---|---|---|
-| TC-83…TC-112 | *(not yet written)* | Not run |
+| TC-83 | `tests/integration/test_tm_us_04_update_transaction.py::test_updating_only_the_amount_of_an_expense_recalculates_balance_to_net_effect_up` | PASS |
+| TC-84 | `tests/integration/test_tm_us_04_update_transaction.py::test_updating_only_the_amount_of_an_expense_to_a_smaller_value_frees_the_difference` | PASS |
+| TC-85 | `tests/integration/test_tm_us_04_update_transaction.py::test_updating_only_the_amount_of_an_income_succeeds_regardless_of_balance` | PASS |
+| TC-86 | `tests/integration/test_tm_us_04_update_transaction.py::test_changing_type_from_expense_to_income_always_succeeds` | PASS |
+| TC-87 | `tests/integration/test_tm_us_04_update_transaction.py::test_changing_type_from_income_to_expense_succeeds_when_the_wallet_can_support_it` | PASS *(Given numbers corrected — see note above)* |
+| TC-88 | `tests/integration/test_tm_us_04_update_transaction.py::test_changing_type_from_income_to_expense_refused_for_insufficient_balance` | PASS |
+| TC-89 | `tests/integration/test_tm_us_04_update_transaction.py::test_updating_only_the_category_leaves_amount_type_and_balance_unchanged` | PASS |
+| TC-90 | `tests/integration/test_tm_us_04_update_transaction.py::test_updating_only_the_note_leaves_amount_type_category_and_balance_unchanged` | PASS |
+| TC-91 | `tests/integration/test_tm_us_04_update_transaction.py::test_updating_category_amount_type_and_note_together_recalculates_to_net_effect` | PASS |
+| TC-92 | `tests/integration/test_tm_us_04_update_transaction.py::test_an_unauthenticated_caller_is_denied_with_401` | PASS |
+| TC-93 | `tests/integration/test_tm_us_04_update_transaction.py::test_a_transaction_id_matching_no_transaction_is_rejected_with_404` | PASS |
+| TC-94 | `tests/integration/test_tm_us_04_update_transaction.py::test_another_users_transaction_is_refused_with_a_body_identical_to_not_found` | PASS |
+| TC-95 | `tests/integration/test_tm_us_04_update_transaction.py::test_a_request_naming_no_editable_field_at_all_is_rejected_with_422` | PASS |
+| TC-96 | `tests/integration/test_tm_us_04_update_transaction.py::test_a_submitted_category_reference_that_does_not_resolve_is_rejected_with_404` | PASS |
+| TC-97 | `tests/integration/test_tm_us_04_update_transaction.py::test_a_submitted_amount_of_exactly_zero_is_rejected_with_422` | PASS |
+| TC-98 | `tests/integration/test_tm_us_04_update_transaction.py::test_a_negative_submitted_amount_is_rejected_with_422` | PASS |
+| TC-99 | `tests/integration/test_tm_us_04_update_transaction.py::test_a_submitted_amount_with_three_decimal_places_is_rejected_not_rounded` | PASS |
+| TC-100 | `tests/integration/test_tm_us_04_update_transaction.py::test_a_submitted_type_other_than_income_or_expense_is_rejected_with_422` | PASS |
+| TC-101 | `tests/integration/test_tm_us_04_update_transaction.py::test_a_submitted_note_longer_than_the_supported_length_is_rejected_with_422` | PASS |
+| TC-102 | `tests/integration/test_tm_us_04_update_transaction.py::test_category_only_change_whose_new_category_disagrees_with_unchanged_type_is_rejected` | PASS |
+| TC-103 | `tests/integration/test_tm_us_04_update_transaction.py::test_type_only_change_where_existing_unresubmitted_category_no_longer_matches_is_rejected` | PASS |
+| TC-104 | `tests/integration/test_tm_us_04_update_transaction.py::test_a_submitted_wallet_reference_is_silently_ignored` | PASS |
+| TC-105 | `tests/integration/test_tm_us_04_update_transaction.py::test_resubmitting_the_notes_own_current_value_succeeds_as_an_ordinary_update` | PASS |
+| TC-106 | `tests/integration/test_tm_us_04_update_transaction.py::test_resubmitting_the_amounts_own_current_value_succeeds_and_leaves_balance_unaffected` | PASS |
+| TC-107 | `tests/integration/test_tm_us_04_update_transaction.py::test_expense_amount_updated_to_exactly_the_post_reversal_balance_drives_balance_to_zero` | PASS |
+| TC-108 | `tests/integration/test_tm_us_04_update_transaction.py::test_note_only_update_succeeds_even_when_wallet_balance_has_been_driven_to_zero` | PASS |
+| TC-109 | `tests/integration/test_tm_us_04_update_transaction.py::test_unresolvable_category_outranks_a_separately_insufficient_amount` | PASS |
+| TC-110 | `tests/integration/test_tm_us_04_update_transaction.py::test_category_type_mismatch_outranks_a_separately_insufficient_amount` | PASS |
+| TC-111 | `tests/integration/test_tm_us_04_update_transaction.py::test_a_successful_updates_response_exposes_exactly_the_seven_documented_fields` | PASS |
+| TC-112 | `tests/integration/test_tm_us_04_update_transaction.py::test_reversing_a_stored_income_always_succeeds_even_through_a_negative_intermediate` | PASS |
 
 ### TC-83: Updating only the amount of an EXPENSE transaction recalculates the wallet balance to reflect exactly the new amount, not the sum of old and new
 

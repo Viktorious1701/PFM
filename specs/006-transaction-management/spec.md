@@ -1056,7 +1056,12 @@ wallets,
 **When** the User submits a new, positive amount for that transaction and no other field,
 **Then** the system updates the transaction's amount and the wallet's balance reflects exactly the net
 effect of the change — accepted regardless of what the wallet's balance is at the time, exactly as an
-`INCOME` transaction's amount was never balance-checked at creation.
+`INCOME` transaction's amount was never balance-checked at creation. Unlike at creation time, other
+transactions — including EXPENSEs that correctly passed their own sufficiency check against this
+transaction's *original*, larger amount — may already exist by the time it is edited, so reducing an
+INCOME transaction's amount after the fact can leave the wallet's `balance` negative with nothing to
+catch it; this is not a new invalid state (WM-US-01 EC-02 already establishes a negative wallet
+balance as representable and accepted), just a consequence worth naming explicitly here.
 
 **AC-03: Successfully change a transaction's type from EXPENSE to INCOME**
 **Given** an authenticated User who owns an `EXPENSE` transaction, and a category of their own typed

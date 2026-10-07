@@ -95,6 +95,99 @@ def create_transaction(
     )
 
 
+def update_transaction(
+    db: Session,
+    *,
+    owner: UserModel,
+    transaction_id: str,
+    category_id: str | None,
+    amount: Decimal | None,
+    type: TransactionType | None,
+    note: str | None,
+) -> TransactionRead:
+    """spec TM-US-04 AC-01..AC-18, FR-03, FR-06, FR-07, FR-11, FR-12, FR-13
+    (plan.md A3, A4, A5, A6). Looks up the transaction scoped to the caller,
+    then -- uniformly, regardless of which field(s) were actually submitted
+    -- reverses its current stored effect on its wallet and applies its
+    effective new effect, before writing the submitted field(s) onto the
+    row itself. A failed reapplication (insufficient balance) raises before
+    the row is ever touched; app.db.session.get_db()'s own
+    `except Exception: db.rollback()` discards the already-flushed reversal
+    along with it, so nothing is left partially applied (A6).
+    """
+    transaction = transaction_repo.get_owned_by_id(
+        db, transaction_id=transaction_id, user_id=owner.id
+    )
+    if transaction is None:
+        raise TransactionNotFoundError()
+
+    category = None
+    if category_id is not None:
+        category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
+        if category is None:
+            raise TransactionCategoryNotFoundError()
+
+    effective_type = type if type is not None else transaction.type
+    effective_amount = amount if amount is not None else transaction.amount
+    category_changed = category_id is not None and category_id != transaction.category_id
+    type_changed = type is not None and type != transaction.type
+
+    # spec BR-02, FR-07, plan.md A4: re-validate only when the effective
+    # category or the effective type actually changed -- otherwise the
+    # pairing is already known valid from creation time (TM-US-01 BR-03).
+    if category_changed or type_changed:
+        if category is None:
+            category = category_repo.get_owned_by_id(
+                db, category_id=transaction.category_id, user_id=owner.id
+            )
+            # transaction.category_id was itself validated as owner-owned at
+            # creation time (TM-US-01 BR-01/FR-06) and is never written by
+            # any other operation, so this lookup can never miss.
+            assert category is not None
+        if category.type.value != effective_type.value:
+            raise TransactionCategoryTypeMismatchError()
+
+    # spec BR-03, BR-04, plan.md A3, A5: reverse the stored effect first --
+    # unconditionally either way, since undoing a real, already-applied
+    # effect must never be refused.
+    if transaction.type is TransactionType.EXPENSE:
+        wallet_repo.increment_balance(
+            db, wallet_id=transaction.wallet_id, amount=transaction.amount
+        )
+    else:
+        wallet_repo.decrement_balance_unconditional(
+            db, wallet_id=transaction.wallet_id, amount=transaction.amount
+        )
+
+    # spec BR-05: apply the effective new effect exactly as creation does.
+    if effective_type is TransactionType.EXPENSE:
+        affected = wallet_repo.decrement_balance(
+            db, wallet_id=transaction.wallet_id, amount=effective_amount
+        )
+        if affected == 0:
+            raise TransactionInsufficientBalanceError()
+    else:
+        wallet_repo.increment_balance(db, wallet_id=transaction.wallet_id, amount=effective_amount)
+
+    transaction = transaction_repo.update_transaction(
+        db,
+        transaction=transaction,
+        category_id=category_id,
+        amount=amount,
+        type=type,
+        note=note,
+    )
+    return TransactionRead(
+        id=transaction.id,
+        wallet_id=transaction.wallet_id,
+        category_id=transaction.category_id,
+        amount=transaction.amount,
+        type=transaction.type,
+        timestamp=clock.ensure_aware(transaction.timestamp),
+        note=transaction.note,
+    )
+
+
 def list_transactions(
     db: Session,
     *,

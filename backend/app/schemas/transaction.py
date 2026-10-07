@@ -7,7 +7,7 @@ PF-03 (DTO projection).
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.transaction import TransactionType
 
@@ -36,6 +36,44 @@ class TransactionCreate(BaseModel):
 
     # Optional free text (plan.md A6, spec AC-17); bounded at 500 chars.
     note: str | None = Field(default=None, max_length=500)
+
+
+class TransactionUpdate(BaseModel):
+    """Request DTO for PATCH /transactions/{transaction_id} (TM-US-04).
+    Four independently optional fields -- None means "leave this field's
+    stored value unchanged," whether the key was omitted or submitted
+    explicitly as null (mirrors WalletUpdate/CategoryUpdate's own
+    convention). No wallet_id field at all (plan.md A1, spec BR-01) -- a
+    caller cannot even name it meaningfully; any such key submitted anyway
+    is silently ignored by Pydantic's default BaseModel behaviour (spec
+    EC-01).
+
+    Validation identical to TransactionCreate's own bounds (TM-US-01),
+    reused unchanged. Unlike name/icon (WalletUpdate/CategoryUpdate), note
+    carries no non-blank requirement -- a caller clears an existing note by
+    submitting an empty string, a real value distinct from both "omitted"
+    and "null" under this convention (plan.md A8).
+    """
+
+    category_id: str | None = Field(default=None, min_length=1)
+    amount: Decimal | None = Field(default=None, max_digits=15, decimal_places=2, gt=0)
+    type: TransactionType | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_at_least_one_field(self) -> "TransactionUpdate":
+        """spec AC-11, FR-04 (plan.md A8) -- the one cross-field rule
+        Pydantic cannot express on a single field, the identical shape
+        CategoryUpdate (CM-US-04) already needed.
+        """
+        if (
+            self.category_id is None
+            and self.amount is None
+            and self.type is None
+            and self.note is None
+        ):
+            raise ValueError("At least one field must be provided to update a transaction.")
+        return self
 
 
 class TransactionRead(BaseModel):

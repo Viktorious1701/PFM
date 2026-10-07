@@ -98,6 +98,24 @@ def decrement_balance(db: Session, *, wallet_id: str, amount: Decimal) -> int:
     return int(result.rowcount or 0)
 
 
+def decrement_balance_unconditional(db: Session, *, wallet_id: str, amount: Decimal) -> None:
+    """Unconditionally subtract `amount` from a wallet's balance (spec
+    TM-US-04 BR-04; plan.md A5).
+
+    Used only to reverse a previously applied INCOME transaction's effect.
+    Unlike `decrement_balance()`'s conditional sufficiency check (TM-US-01
+    A9), undoing a credit the wallet already legitimately holds must never
+    be refused, regardless of the wallet's current balance. Flushed, not
+    committed (AR-06).
+    """
+    db.execute(
+        update(WalletModel)
+        .where(WalletModel.id == wallet_id)
+        .values(balance=WalletModel.balance - amount)
+    )
+    db.flush()
+
+
 def list_owned(
     db: Session, *, user_id: str, page: int, page_size: int
 ) -> tuple[Sequence[WalletModel], int]:
