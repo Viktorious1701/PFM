@@ -95,3 +95,28 @@ def update_wallet(
     )
     db.commit()
     return result
+
+
+@router.get(
+    "/{wallet_id}",
+    response_model=WalletRead,
+    status_code=status.HTTP_200_OK,
+    summary="View a wallet",
+    description=(
+        "Returns the full detail -- identifier, owner, name, type, currency, "
+        "and current balance -- of one of the authenticated caller's own "
+        "wallets, identified by its own id. A wallet's transaction history is "
+        "retrieved separately, through GET /api/v1/transactions?wallet_id={id}."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "WALLET_NOT_FOUND"},
+    },
+)
+def get_wallet(
+    wallet_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> WalletRead:
+    """Pure read -- no db.commit() (plan.md A6)."""
+    return wallet_service.get_wallet(db, owner=current_user, wallet_id=wallet_id)

@@ -111,3 +111,25 @@ def update_wallet(
         currency=wallet.currency,
         balance=wallet.balance,
     )
+
+
+def get_wallet(db: Session, *, owner: UserModel, wallet_id: str) -> WalletRead:
+    """spec AC-01, FR-03 (plan.md A2, A3). Looks up the wallet scoped to the
+    caller; no further precondition follows ownership -- a view changes
+    nothing, the same shape transaction_service.get_transaction() (TM-US-03)
+    already established for its own single-resource read, and the same
+    ownership-scoped lookup wallet_service.update_wallet() (WM-US-04) already
+    uses before mutating.
+    """
+    wallet = wallet_repo.get_owned_by_id(db, wallet_id=wallet_id, user_id=owner.id)
+    if wallet is None:
+        raise WalletNotFoundError()
+
+    return WalletRead(
+        id=wallet.id,
+        user_id=wallet.user_id,
+        name=wallet.name,
+        type=wallet.type,
+        currency=wallet.currency,
+        balance=wallet.balance,
+    )

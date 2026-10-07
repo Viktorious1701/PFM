@@ -2,8 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* · WM-US-04 *(TC-40…TC-59, all PASS)* · WM-US-03 *(TC-60…TC-70, spec'd — artifacts phase only, not yet implemented)*
-> WM-US-04 *(TC-40…TC-59)*
+> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* · WM-US-04 *(TC-40…TC-59, all PASS)* · WM-US-03 *(TC-60…TC-70, all PASS)*
 
 ---
 
@@ -1086,25 +1085,26 @@ names one either.
 
 ### Test Implementation Map *(filled at step 4)*
 
-Not yet populated — this dispatch covers steps 1–3 (Spec, Design, Quality) only; no test code exists
-yet for WM-US-03. `backend/tests/integration/test_wm_us_03_view_wallet.py` will be written at the
-Implement dispatch (steps 4–6) from the test cases below, one test per `TC-NN`, each carrying its
-`TC-NN` id in its docstring, following WM-US-01/02/04's own Test Implementation Map precedent in this
-same file.
+Implemented in `backend/tests/integration/test_wm_us_03_view_wallet.py`, one test per `TC-NN`. All 11
+seen failing first (405 `Method Not Allowed` — the route did not exist yet) by `git stash push --keep-index`-ing
+only the two implementation files (`app/services/wallet_service.py`, `app/api/v1/wallets.py`) with the
+new test file left in place, running the suite red, then `git stash pop` to restore the implementation
+and running it green. Full run: `uv run pytest -v tests/integration/test_wm_us_03_view_wallet.py` — 11
+passed. Full existing suite: `uv run pytest -m "not smtp"` — 581 passed, 1 deselected.
 
 | TC | pytest node id | Result |
 |---|---|---|
-| TC-60 | *(not yet implemented)* | — |
-| TC-61 | *(not yet implemented)* | — |
-| TC-62 | *(not yet implemented)* | — |
-| TC-63 | *(not yet implemented)* | — |
-| TC-64 | *(not yet implemented)* | — |
-| TC-65 | *(not yet implemented)* | — |
-| TC-66 | *(not yet implemented)* | — |
-| TC-67 | *(not yet implemented)* | — |
-| TC-68 | *(not yet implemented)* | — |
-| TC-69 | *(not yet implemented)* | — |
-| TC-70 | *(not yet implemented)* | — |
+| TC-60 | `tests/integration/test_wm_us_03_view_wallet.py::test_an_authenticated_user_views_a_wallet_they_own` | PASS |
+| TC-61 | `tests/integration/test_wm_us_03_view_wallet.py::test_viewing_a_wallet_reflects_its_current_transaction_adjusted_balance` | PASS |
+| TC-62 | `tests/integration/test_wm_us_03_view_wallet.py::test_a_wallet_id_matching_no_wallet_at_all_is_rejected_with_404` | PASS |
+| TC-63 | `tests/integration/test_wm_us_03_view_wallet.py::test_another_users_wallet_is_refused_with_a_body_identical_to_not_found` | PASS |
+| TC-64 | `tests/integration/test_wm_us_03_view_wallet.py::test_an_unauthenticated_or_expired_caller_is_denied_with_401` | PASS |
+| TC-65 | `tests/integration/test_wm_us_03_view_wallet.py::test_a_malformed_wallet_id_gets_the_same_404_as_a_well_formed_unknown_one` | PASS |
+| TC-66 | `tests/integration/test_wm_us_03_view_wallet.py::test_an_admin_role_caller_cannot_view_another_users_wallet` | PASS |
+| TC-67 | `tests/integration/test_wm_us_03_view_wallet.py::test_a_wallet_with_no_transactions_logged_still_views_successfully` | PASS |
+| TC-68 | `tests/integration/test_wm_us_03_view_wallet.py::test_the_response_exposes_exactly_the_six_documented_fields` | PASS |
+| TC-69 | `tests/integration/test_wm_us_03_view_wallet.py::test_a_caller_who_owns_a_different_wallet_cannot_view_another_users_wallet` | PASS |
+| TC-70 | `tests/integration/test_wm_us_03_view_wallet.py::test_credentials_are_evaluated_before_the_wallet_reference_is_looked_up` | PASS |
 
 ---
 
