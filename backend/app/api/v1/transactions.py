@@ -1,4 +1,5 @@
-"""Transaction Management endpoints (SDS §5.6.1 TM-US-01, §5.6.2 TM-US-02)."""
+"""Transaction Management endpoints (SDS §5.6.1 TM-US-01, §5.6.2 TM-US-02,
+§5.6.3 TM-US-03)."""
 
 from datetime import datetime
 
@@ -85,4 +86,29 @@ def list_transactions(
         category_id=category_id,
         date_from=date_from,
         date_to=date_to,
+    )
+
+
+@router.get(
+    "/{transaction_id}",
+    response_model=TransactionRead,
+    status_code=status.HTTP_200_OK,
+    summary="View a transaction",
+    description=(
+        "Returns the full detail of one of the authenticated caller's own "
+        "transactions, identified by its own id."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "TRANSACTION_NOT_FOUND"},
+    },
+)
+def get_transaction(
+    transaction_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> TransactionRead:
+    """Pure read — no `db.commit()` (plan.md A7)."""
+    return transaction_service.get_transaction(
+        db, owner=current_user, transaction_id=transaction_id
     )

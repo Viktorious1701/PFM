@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* ·
+> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* · WM-US-04 *(TC-40…TC-59, all PASS)*
 > WM-US-04 *(TC-40…TC-59)*
 
 ---
@@ -779,9 +779,36 @@ prior Wallet Management story used for its own all-`[API]` classification.
 
 ### Test Implementation Map *(filled at step 4)*
 
-Not yet implemented — this story is at the Quality gate (step 3). `backend/tests/integration/
-test_wm_us_04_update_wallet.py` does not exist yet; pytest node ids and PASS/FAIL results are filled in
-at step 4, the same way WM-US-01/02's own maps above were.
+`backend/tests/integration/test_wm_us_04_update_wallet.py` — all 20 PASS.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-40 | `test_wm_us_04_update_wallet.py::test_updating_only_the_name_returns_200_with_other_fields_unchanged` | PASS |
+| TC-41 | `test_wm_us_04_update_wallet.py::test_updating_only_the_type_returns_200_with_other_fields_unchanged` | PASS |
+| TC-42 | `test_wm_us_04_update_wallet.py::test_updating_both_name_and_type_together_changes_both_leaves_currency_and_balance` | PASS |
+| TC-43 | `test_wm_us_04_update_wallet.py::test_updating_a_wallet_persists_the_new_values_on_the_same_single_row` | PASS |
+| TC-44 | `test_wm_us_04_update_wallet.py::test_an_unauthenticated_or_expired_caller_is_denied_and_nothing_changes` | PASS |
+| TC-45 | `test_wm_us_04_update_wallet.py::test_a_wallet_id_matching_no_wallet_is_rejected_with_404_wallet_not_found` | PASS |
+| TC-46 | `test_wm_us_04_update_wallet.py::test_another_users_wallet_is_refused_with_a_body_identical_to_not_found` | PASS |
+| TC-47 | `test_wm_us_04_update_wallet.py::test_a_malformed_wallet_id_gets_the_same_404_as_a_well_formed_unknown_one` | PASS |
+| TC-48 | `test_wm_us_04_update_wallet.py::test_a_submission_naming_neither_name_nor_type_is_rejected_with_422` | PASS |
+| TC-49 | `test_wm_us_04_update_wallet.py::test_a_blank_or_whitespace_only_name_when_submitted_is_rejected_with_422` | PASS |
+| TC-50 | `test_wm_us_04_update_wallet.py::test_a_name_exceeding_100_characters_is_rejected_not_truncated` | PASS |
+| TC-51 | `test_wm_us_04_update_wallet.py::test_an_empty_type_when_submitted_is_rejected_with_422` | PASS |
+| TC-52 | `test_wm_us_04_update_wallet.py::test_a_type_exceeding_50_characters_is_rejected_not_truncated` | PASS |
+| TC-53 | `test_wm_us_04_update_wallet.py::test_a_wallet_type_outside_either_reference_documents_examples_is_accepted_on_update` | PASS |
+| TC-54 | `test_wm_us_04_update_wallet.py::test_a_name_with_surrounding_whitespace_is_stored_trimmed` | PASS |
+| TC-55 | `test_wm_us_04_update_wallet.py::test_a_successful_update_leaves_currency_and_balance_unchanged_verified_against_storage` | PASS |
+| TC-56 | `test_wm_us_04_update_wallet.py::test_a_currency_or_balance_value_submitted_alongside_name_or_type_is_silently_ignored` | PASS |
+| TC-57 | `test_wm_us_04_update_wallet.py::test_the_response_exposes_exactly_the_six_documented_fields` | PASS |
+| TC-58 | `test_wm_us_04_update_wallet.py::test_multiple_validation_failures_in_one_submission_are_reported_together` | PASS |
+| TC-59 | `test_wm_us_04_update_wallet.py::test_a_caller_who_owns_a_different_wallet_cannot_update_another_users_wallet` | PASS |
+
+Verified by: `uv run pytest tests/integration/test_wm_us_04_update_wallet.py -v` — 20 passed. Also
+verified live via a real curl walkthrough against `uv run uvicorn` (step 5/6 evidence in this story's
+gate message): name-only, type-only, and both-together updates; an empty-body `422`; a different
+owner's wallet and a nonexistent id both `404` with byte-identical bodies; `currency`/`balance`
+unchanged throughout.
 
 ---
 

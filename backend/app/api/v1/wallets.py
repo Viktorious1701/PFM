@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Query, status
 
 from app.core.deps import CurrentUserDep, DbDep
-from app.schemas.wallet import WalletCreate, WalletListRead, WalletRead
+from app.schemas.wallet import WalletCreate, WalletListRead, WalletRead, WalletUpdate
 from app.services import wallet_service
 
 router = APIRouter(prefix="/wallets", tags=["wallets"])
@@ -62,3 +62,36 @@ def list_wallets(
 ) -> WalletListRead:
     """Pure read — no `db.commit()` (plan.md A4)."""
     return wallet_service.list_wallets(db, owner=current_user, page=page, page_size=page_size)
+
+
+@router.patch(
+    "/{wallet_id}",
+    response_model=WalletRead,
+    status_code=status.HTTP_200_OK,
+    summary="Update a wallet",
+    description=(
+        "Updates the name, the type, or both, of one of the authenticated "
+        "caller's own wallets, identified by its own id. The wallet's "
+        "currency and balance are immutable through this endpoint."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "WALLET_NOT_FOUND"},
+        422: {"description": "VALIDATION_ERROR"},
+    },
+)
+def update_wallet(
+    wallet_id: str,
+    payload: WalletUpdate,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> WalletRead:
+    result = wallet_service.update_wallet(
+        db,
+        owner=current_user,
+        wallet_id=wallet_id,
+        name=payload.name,
+        wallet_type=payload.type,
+    )
+    db.commit()
+    return result

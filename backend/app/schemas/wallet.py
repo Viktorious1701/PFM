@@ -6,7 +6,7 @@ PF-03 (DTO projection).
 
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class WalletCreate(BaseModel):
@@ -56,6 +56,46 @@ class WalletRead(BaseModel):
     type: str
     currency: str
     balance: Decimal
+
+
+class WalletUpdate(BaseModel):
+    """Request DTO for PATCH /wallets/{wallet_id} (WM-US-04). Both fields are
+    optional -- None means "leave this field's stored value unchanged,"
+    whether the key was omitted or submitted explicitly as null (plan.md
+    A11). `currency`/`balance` have no corresponding field at all (plan.md
+    A1) -- a caller cannot even name them meaningfully; any such key
+    submitted anyway is silently ignored by Pydantic's default BaseModel
+    behaviour (spec EC-07).
+
+    Validation identical to WalletCreate's own name/type bounds (WM-US-01),
+    reused unchanged -- including type's own lack of a trim/whitespace
+    validator (plan.md A10).
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    type: str | None = Field(default=None, min_length=1, max_length=50)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        """Mirrors WalletCreate.validate_name exactly, applied only when a
+        value is actually submitted (spec AC-06, EC-01)."""
+        if v is None:
+            return None
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("Wallet name cannot be empty or whitespace only")
+        return trimmed
+
+    @model_validator(mode="after")
+    def check_at_least_one_field(self) -> "WalletUpdate":
+        """spec AC-05, BR-04 (plan.md A4) -- the first model-level (as
+        opposed to field-level) validator in this codebase. A submission
+        naming neither name nor type has nothing for this endpoint to do,
+        and is refused rather than silently treated as a no-op 200."""
+        if self.name is None and self.type is None:
+            raise ValueError("At least one of name or type must be provided")
+        return self
 
 
 class WalletListRead(BaseModel):

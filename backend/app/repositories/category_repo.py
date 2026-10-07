@@ -46,6 +46,30 @@ def add_category(
     return category
 
 
+def update_category(
+    db: Session,
+    *,
+    category: CategoryModel,
+    name: str | None,
+    category_type: CategoryType | None,
+    icon: str | None,
+) -> CategoryModel:
+    """spec CM-US-04 AC-01, FR-05..FR-08, BR-02, BR-05 (plan.md A1, A4).
+    Mutates only the attributes actually submitted on an already-fetched,
+    already-ownership-verified row -- user_id is never touched. Flushed, not
+    committed (AR-06) -- the router owns the transaction boundary.
+    """
+    if name is not None:
+        category.name = name
+    if category_type is not None:
+        category.type = category_type
+    if icon is not None:
+        category.icon = icon
+    db.add(category)
+    db.flush()
+    return category
+
+
 def list_owned(
     db: Session, *, user_id: str, page: int, page_size: int
 ) -> tuple[Sequence[CategoryModel], int]:

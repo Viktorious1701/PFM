@@ -99,3 +99,32 @@ def update_budget(
     )
     db.commit()
     return result
+
+
+@router.delete(
+    "/{budget_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Delete a budget",
+    description=(
+        "Permanently deletes one of the authenticated caller's own "
+        "budgets, identified by its own id. The budget's wallet, category, "
+        "and every transaction recorded against either of them are left "
+        "unaffected."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "BUDGET_NOT_FOUND"},
+    },
+)
+def delete_budget(
+    budget_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> None:
+    """BM-US-05 (plan.md A4, A5, A9, A12). One commit, after the service
+    call succeeds -- the service only flushes (AR-06). No body is
+    returned -- response_model=None alongside 204 (A5).
+    """
+    budget_service.delete_budget(db, owner=current_user, budget_id=budget_id)
+    db.commit()

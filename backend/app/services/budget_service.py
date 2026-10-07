@@ -165,3 +165,20 @@ def update_budget(
         amount_limit=budget.amount_limit,
         period=budget.period,
     )
+
+
+def delete_budget(db: Session, *, owner: UserModel, budget_id: str) -> None:
+    """BM-US-05 spec AC-01, FR-03 (plan.md A1, A6, A7, A8). Looks up the
+    budget scoped to the caller -- reusing budget_repo.get_owned_by_id()
+    unchanged from BM-US-04 -- then deletes it. No precondition beyond
+    ownership: no active-period restriction (A1), the same settled reading
+    BM-US-04 already carries for its own update operation. A second delete
+    of the same id finds nothing (A8) and raises the identical
+    BudgetNotFoundError a delete against a never-existed id would raise. No
+    audit call (A10).
+    """
+    budget = budget_repo.get_owned_by_id(db, budget_id=budget_id, user_id=owner.id)
+    if budget is None:
+        raise BudgetNotFoundError()
+
+    budget_repo.delete_budget(db, budget=budget)

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** TM-US-01 *(TC-01…TC-36)* · TM-US-02 *(TC-37…TC-72)* · TM-US-03 *(TC-73…TC-82)*
+> **Stories in this file:** TM-US-01 *(TC-01…TC-36, implemented, verified — 36/36 PASS)* · TM-US-02 *(TC-37…TC-72, implemented, verified — 36/36 PASS)* · TM-US-03 *(TC-73…TC-82, implemented, verified — 10/10 PASS)*
 
 ---
 
@@ -1215,16 +1215,16 @@ same file.
 
 | TC | pytest node id | Result |
 |---|---|---|
-| TC-73 | *(not yet implemented)* | — |
-| TC-74 | *(not yet implemented)* | — |
-| TC-75 | *(not yet implemented)* | — |
-| TC-76 | *(not yet implemented)* | — |
-| TC-77 | *(not yet implemented)* | — |
-| TC-78 | *(not yet implemented)* | — |
-| TC-79 | *(not yet implemented)* | — |
-| TC-80 | *(not yet implemented)* | — |
-| TC-81 | *(not yet implemented)* | — |
-| TC-82 | *(not yet implemented)* | — |
+| TC-73 | `test_authenticated_user_views_a_transaction_they_own_with_note_included` | PASS |
+| TC-74 | `test_viewing_a_transaction_created_with_no_note_returns_note_as_exactly_null` | PASS |
+| TC-75 | `test_a_transaction_id_matching_no_transaction_is_rejected_with_404` | PASS |
+| TC-76 | `test_another_users_transaction_is_refused_with_a_body_identical_to_not_found` | PASS |
+| TC-77 | `test_an_unauthenticated_caller_is_denied_with_401` | PASS |
+| TC-78 | `test_a_malformed_transaction_id_gets_the_same_404_as_a_well_formed_unknown_one` | PASS |
+| TC-79 | `test_response_exposes_exactly_the_seven_documented_fields` | PASS |
+| TC-80 | `test_a_caller_who_owns_a_transaction_of_their_own_cannot_view_a_different_users` | PASS |
+| TC-81 | `test_an_admin_role_caller_cannot_view_another_users_transaction` | PASS |
+| TC-82 | `test_credentials_are_evaluated_before_the_transaction_reference_is_looked_up` | PASS |
 
 ---
 

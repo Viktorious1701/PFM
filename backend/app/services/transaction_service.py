@@ -22,6 +22,7 @@ from app.core.errors import (
     TransactionCategoryNotFoundError,
     TransactionCategoryTypeMismatchError,
     TransactionInsufficientBalanceError,
+    TransactionNotFoundError,
     TransactionWalletNotFoundError,
     ValidationError,
 )
@@ -158,4 +159,30 @@ def list_transactions(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+def get_transaction(db: Session, *, owner: UserModel, transaction_id: str) -> TransactionRead:
+    """Fetch one of `owner`'s own transactions by its own id (spec TM-US-03
+    AC-01, FR-03; plan.md A1).
+
+    No further precondition follows ownership — unlike
+    `create_transaction()`'s multi-step check order (TM-US-01 A4), there is
+    nothing else about a transaction's own state to check once it is
+    confirmed to belong to the caller, because a view changes nothing.
+    """
+    transaction = transaction_repo.get_owned_by_id(
+        db, transaction_id=transaction_id, user_id=owner.id
+    )
+    if transaction is None:
+        raise TransactionNotFoundError()
+
+    return TransactionRead(
+        id=transaction.id,
+        wallet_id=transaction.wallet_id,
+        category_id=transaction.category_id,
+        amount=transaction.amount,
+        type=transaction.type,
+        timestamp=clock.ensure_aware(transaction.timestamp),
+        note=transaction.note,
     )

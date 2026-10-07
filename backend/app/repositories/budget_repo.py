@@ -122,3 +122,13 @@ def update_amount_limit(db: Session, *, budget: BudgetModel, amount_limit: Decim
     db.add(budget)
     db.flush()
     return budget
+
+
+def delete_budget(db: Session, *, budget: BudgetModel) -> None:
+    """BM-US-05 spec AC-01, FR-04 (plan.md A2, A6). Hard-deletes an already-
+    fetched, already-ownership-verified row -- no soft-delete column exists
+    on this table or any other in this codebase (A2). Flushed, not committed
+    (AR-06) -- the router owns the transaction boundary.
+    """
+    db.delete(budget)
+    db.flush()

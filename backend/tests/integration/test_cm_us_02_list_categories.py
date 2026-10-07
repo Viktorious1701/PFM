@@ -103,9 +103,12 @@ def test_response_item_exposes_exactly_four_fields_wrapped_in_paginated_envelope
     client: TestClient, user_headers: dict[str, str]
 ) -> None:
     """TC-19: top-level body exposes exactly items, total, page, page_size;
-    each entry in items exposes exactly id, user_id, name, type — no more,
-    and in particular no `icon` and no "system category" marker (plan.md A7,
-    QF-08).
+    each entry in items exposes exactly id, user_id, name, type, icon — no
+    more, and in particular no "system category" marker (plan.md A7, QF-08).
+    `icon` was added by CM-US-04 (plan.md A6) and flows through this
+    envelope unchanged; a category created with no icon reports `None`. This
+    TC's own prose is left unrewritten per CLAUDE.md §1.1 rule 4 — only this
+    test body is updated, as CM-US-04 plan.md A6/T-07 record.
     """
     _create_category(client, user_headers)
 
@@ -115,7 +118,8 @@ def test_response_item_exposes_exactly_four_fields_wrapped_in_paginated_envelope
     body = response.json()
     assert set(body.keys()) == {"items", "total", "page", "page_size"}
     assert len(body["items"]) == 1
-    assert set(body["items"][0].keys()) == {"id", "user_id", "name", "type"}
+    assert set(body["items"][0].keys()) == {"id", "user_id", "name", "type", "icon"}
+    assert body["items"][0]["icon"] is None
 
 
 # --- TC-20: the empty case ---------------------------------------------------

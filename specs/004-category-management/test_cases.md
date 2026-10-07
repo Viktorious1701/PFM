@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** CM-US-01 *(TC-01…TC-17, all PASS)* · CM-US-02 *(TC-18…TC-34, all PASS)* · CM-US-04 *(TC-35…TC-63)*
+> **Stories in this file:** CM-US-01 *(TC-01…TC-17, all PASS)* · CM-US-02 *(TC-18…TC-34, all PASS)* · CM-US-04 *(TC-35…TC-63, all PASS)*
 
 ---
 
@@ -783,7 +783,41 @@ A6/T-07 records. Run one with `uv run pytest -k <fragment>`.
 
 | TC | pytest node id | Result |
 |---|---|---|
-| TC-35 … TC-63 | *(assigned at the Implement step)* | Not yet run |
+| TC-35 | `test_an_authenticated_user_updates_all_three_fields_in_one_request` | PASS |
+| TC-36 | `test_updating_only_name_leaves_type_and_icon_unchanged_verified_in_storage` | PASS |
+| TC-37 | `test_updating_only_type_leaves_name_and_icon_unchanged_verified_in_storage` | PASS |
+| TC-38 | `test_updating_only_icon_first_time_leaves_name_type_unchanged_later_null_does_not_clear` | PASS |
+| TC-39 | `test_changing_an_already_set_icon_to_a_different_value_succeeds_as_an_ordinary_update` | PASS |
+| TC-40 | `test_an_updated_name_matching_another_of_the_callers_own_categories_names_still_succeeds` | PASS |
+| TC-41 | `test_an_unauthenticated_caller_is_denied_with_401` | PASS |
+| TC-42 | `test_credentials_are_evaluated_before_the_payload` | PASS |
+| TC-43 | `test_a_category_id_matching_no_category_at_all_is_rejected_with_404` | PASS |
+| TC-44 | `test_a_category_id_belonging_to_a_different_user_gets_the_identical_outcome_as_not_found` | PASS |
+| TC-45 | `test_a_malformed_category_reference_gets_the_same_404_as_a_well_formed_unknown_one` | PASS |
+| TC-46 | `test_a_caller_who_owns_a_different_category_cannot_update_another_users_category` | PASS |
+| TC-47 | `test_a_submission_naming_none_of_name_type_or_icon_is_rejected_with_422` | PASS |
+| TC-48 | `test_a_blank_or_whitespace_only_name_when_submitted_is_rejected_with_422` | PASS |
+| TC-49 | `test_a_name_exceeding_100_characters_when_submitted_is_rejected_not_truncated` | PASS |
+| TC-50 | `test_a_name_with_surrounding_whitespace_is_stored_trimmed` | PASS |
+| TC-51 | `test_a_type_value_that_is_neither_income_nor_expense_when_submitted_is_rejected_with_422` | PASS |
+| TC-52 | `test_a_lowercase_or_mixed_case_type_value_when_submitted_is_rejected_not_case_folded` | PASS |
+| TC-53 | `test_a_type_value_with_surrounding_whitespace_when_submitted_is_rejected_not_trimmed` | PASS |
+| TC-54 | `test_a_blank_or_whitespace_only_icon_when_submitted_is_rejected_with_422` | PASS |
+| TC-55 | `test_an_icon_exceeding_50_characters_when_submitted_is_rejected_not_truncated` | PASS |
+| TC-56 | `test_an_icon_with_surrounding_whitespace_is_stored_trimmed` | PASS |
+| TC-57 | `test_multiple_validation_failures_in_one_submission_are_reported_together` | PASS |
+| TC-58 | `test_a_successful_update_never_changes_the_categorys_owner` | PASS |
+| TC-59 | `test_the_response_exposes_exactly_the_five_documented_fields` | PASS |
+| TC-60 | `test_changing_a_categorys_type_does_not_alter_an_existing_transactions_own_stored_type` | PASS |
+| TC-61 | `test_changing_a_categorys_type_does_not_alter_a_budgets_already_recorded_spend` | PASS |
+| TC-62 | `test_after_a_type_change_a_new_transaction_of_the_old_type_is_refused` | PASS |
+| TC-63 | `test_an_icon_of_exactly_50_characters_is_accepted` | PASS |
+
+Also re-verified: CM-US-01's `TC-14` (`test_response_exposes_exactly_the_four_documented_fields`) and
+CM-US-02's `TC-19` (`test_response_item_exposes_exactly_four_fields_wrapped_in_paginated_envelope`) were
+updated per `plan.md` A6/T-07 to assert the real five-key shape (`icon` present, `None` for a freshly
+created category) — both PASS, confirmed genuinely re-checking five keys, not a stale four-key assertion
+left trivially passing.
 
 ---
 

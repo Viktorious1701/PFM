@@ -11,6 +11,7 @@ LA-04's three named audited events, and no AC or FR in spec.md asks for one.
 
 from sqlalchemy.orm import Session
 
+from app.core.errors import CategoryNotFoundError
 from app.models.category import CategoryType
 from app.models.user import UserModel
 from app.repositories import category_repo
@@ -42,6 +43,38 @@ def create_category(
         user_id=category.user_id,
         name=category.name,
         type=category.type,
+        icon=category.icon,
+    )
+
+
+def update_category(
+    db: Session,
+    *,
+    owner: UserModel,
+    category_id: str,
+    name: str | None,
+    category_type: CategoryType | None,
+    icon: str | None,
+) -> CategoryRead:
+    """spec CM-US-04 AC-01, FR-03 (plan.md A3, A4, A6). Looks up the category
+    scoped to the caller, then updates exactly the submitted fields -- no
+    further precondition check follows ownership (no uniqueness, no
+    referenced-data check: nothing this story's contract touches is
+    referenced by anything else in a way that requires one, A13).
+    """
+    category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
+    if category is None:
+        raise CategoryNotFoundError()
+
+    category = category_repo.update_category(
+        db, category=category, name=name, category_type=category_type, icon=icon
+    )
+    return CategoryRead(
+        id=category.id,
+        user_id=category.user_id,
+        name=category.name,
+        type=category.type,
+        icon=category.icon,
     )
 
 
@@ -64,6 +97,7 @@ def list_categories(
                 user_id=c.user_id,
                 name=c.name,
                 type=c.type,
+                icon=c.icon,
             )
             for c in items
         ],

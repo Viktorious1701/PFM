@@ -277,8 +277,16 @@ def test_an_unrecognised_icon_field_submitted_with_the_request_is_silently_ignor
 ) -> None:
     """TC-13: an otherwise valid payload additionally includes
     `"icon": "shopping-cart"` -> 201; the category is built from `name` and
-    `type` alone, and the response carries no `icon` key at all (assertion
-    technique per QF-03).
+    `type` alone — `CategoryCreate` still has no `icon` field to bind the
+    submitted value to, unaffected by CM-US-04 (assertion technique per
+    QF-03). The response now carries an `icon` key with value `None`, not
+    the submitted `"shopping-cart"` (CM-US-04 plan.md A6 extended
+    `CategoryRead` to five fields) — proving the submitted value was never
+    read, only the DTO's own shape changed since this TC was written. This
+    one-line consequence of A6 was not among the pytest bodies plan.md's own
+    T-07 named (TC-14, TC-19); found while implementing CM-US-04 and fixed
+    here for the identical reason — this TC's own prose in test_cases.md is
+    left unrewritten per CLAUDE.md §1.1 rule 4.
     """
     payload = _valid_payload()
     payload["icon"] = "shopping-cart"
@@ -287,7 +295,7 @@ def test_an_unrecognised_icon_field_submitted_with_the_request_is_silently_ignor
 
     assert response.status_code == 201
     body = response.json()
-    assert "icon" not in body
+    assert body.get("icon") is None
 
 
 # --- TC-14: exact response shape ----------------------------------------------
@@ -296,14 +304,20 @@ def test_an_unrecognised_icon_field_submitted_with_the_request_is_silently_ignor
 def test_response_exposes_exactly_the_four_documented_fields(
     client: TestClient, user_headers: dict[str, str]
 ) -> None:
-    """TC-14: response body's keys are exactly id, user_id, name, type — no
-    more, and in particular no `icon` (plan.md A4, QF-04).
+    """TC-14: response body's keys are exactly id, user_id, name, type, icon
+    — no more. `icon` was added by CM-US-04 (plan.md A6); a freshly created
+    category has no way to set one through `CategoryCreate`, so its value is
+    always `None`. This TC's own prose (five keys were not yet in its text at
+    CM-US-01 time) is left unrewritten per CLAUDE.md §1.1 rule 4 — only this
+    test body is updated, as CM-US-04 plan.md A6/T-07 record.
     """
     response = client.post(CATEGORIES_URL, json=_valid_payload(), headers=user_headers)
 
     assert response.status_code == 201
-    expected_keys = {"id", "user_id", "name", "type"}
-    assert set(response.json().keys()) == expected_keys
+    body = response.json()
+    expected_keys = {"id", "user_id", "name", "type", "icon"}
+    assert set(body.keys()) == expected_keys
+    assert body["icon"] is None
 
 
 # --- TC-15: no uniqueness constraint on name -----------------------------------

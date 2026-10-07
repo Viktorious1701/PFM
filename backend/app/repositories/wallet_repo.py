@@ -26,6 +26,25 @@ def get_owned_by_id(db: Session, *, wallet_id: str, user_id: str) -> WalletModel
     )
 
 
+def update_wallet(
+    db: Session, *, wallet: WalletModel, name: str | None, wallet_type: str | None
+) -> WalletModel:
+    """spec AC-01, FR-05, FR-06, FR-07, FR-10, BR-01 (plan.md A1, A3). Mutates
+    only the field(s) actually submitted on an already-fetched,
+    already-ownership-verified row -- currency and balance are never
+    touched, and a field left as None keeps its existing stored value
+    exactly. Flushed, not committed (AR-06) -- the router owns the
+    transaction boundary.
+    """
+    if name is not None:
+        wallet.name = name
+    if wallet_type is not None:
+        wallet.type = wallet_type
+    db.add(wallet)
+    db.flush()
+    return wallet
+
+
 def add_wallet(
     db: Session,
     *,

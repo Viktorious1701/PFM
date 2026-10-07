@@ -212,3 +212,54 @@ class TransactionInsufficientBalanceError(AppError):
     status_code = 409
     error_code = "TRANSACTION_INSUFFICIENT_BALANCE"
     default_message = "Insufficient balance."
+
+
+# --- TM-US-03: View a Transaction -------------------------------------------
+
+
+class TransactionNotFoundError(AppError):
+    """spec AC-03 / AC-04 / FR-03. Identical for "no such transaction" and
+    "not this caller's transaction" (constitution VL-06's `404 if absent`
+    branch) -- the first time this codebase looks a transaction up by its
+    own id rather than validating a *referenced* wallet/category. Distinct
+    from TransactionWalletNotFoundError/TransactionCategoryNotFoundError
+    (TM-US-01), which are about a *referenced* wallet or category failing
+    to resolve, not about the transaction being viewed itself -- the same
+    distinction BM-US-04 A7 drew for Budget.
+    """
+
+    status_code = 404
+    error_code = "TRANSACTION_NOT_FOUND"
+    default_message = "The referenced transaction was not found."
+
+
+# --- CM-US-04: Update a Category --------------------------------------------
+
+
+class CategoryNotFoundError(AppError):
+    """spec AC-03 / AC-04 / FR-03. Identical for "no such category" and "not
+    this caller's category" (constitution VL-06's `404 if absent` branch) --
+    the first time this codebase looks a category up by its own id rather
+    than validating a *referenced* category from Budget or Transaction
+    (plan.md A7).
+    """
+
+    status_code = 404
+    error_code = "CATEGORY_NOT_FOUND"
+    default_message = "The referenced category was not found."
+
+
+# --- WM-US-04: Update a Wallet ----------------------------------------------
+
+
+class WalletNotFoundError(AppError):
+    """spec AC-03 / AC-04 / FR-03. Identical for "no such wallet" and "not
+    this caller's wallet" (constitution VL-06's `404 if absent` branch) --
+    distinct from BudgetWalletNotFoundError/TransactionWalletNotFoundError,
+    which cover a *referenced* wallet failing to resolve during another
+    entity's creation, not the wallet being acted on directly (plan.md A5).
+    """
+
+    status_code = 404
+    error_code = "WALLET_NOT_FOUND"
+    default_message = "The referenced wallet was not found."

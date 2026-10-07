@@ -103,6 +103,26 @@ def list_owned(
     return items, total
 
 
+def get_owned_by_id(db: Session, *, transaction_id: str, user_id: str) -> TransactionModel | None:
+    """One transaction scoped to its owner, by its own id (spec TM-US-03
+    FR-03, BR-01; constitution SEC-08; plan.md A1).
+
+    Generalises this module's own `list_owned()` single-join-on-`wallets`
+    ownership scoping (TM-US-02 A2) from a page of matching rows to exactly
+    one. Every stored transaction's `category_id` already belongs to the
+    same owner as its `wallet_id` by construction (TM-US-01 FR-04/FR-06/
+    BR-01), so one join suffices here too — no second join to `categories`
+    is needed. Scoped by `user_id` in the query itself, so "no such
+    transaction" and "exists, owned by someone else" collapse to the
+    identical `None` by construction, not a check that could be forgotten.
+    """
+    return db.scalar(
+        select(TransactionModel)
+        .join(WalletModel, TransactionModel.wallet_id == WalletModel.id)
+        .where(TransactionModel.id == transaction_id, WalletModel.user_id == user_id)
+    )
+
+
 def get_summary_totals(
     db: Session, *, user_id: str, period_start: datetime, period_end: datetime
 ) -> dict[TransactionType, Decimal]:

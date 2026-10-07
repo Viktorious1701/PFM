@@ -6,10 +6,10 @@ expense (SRS §1.5). Unlike `WalletModel.type` (free text, WM-US-01 A1),
 `INCOME` and `EXPENSE` — modelled on the `UserStatus`/`UserRole` pattern in
 `app/models/user.py` (constitution NC-05), not on Wallet's free-text `type`.
 
-No `icon` column (plan.md A4) — SDS §4.3.3's ERD was aligned to add a nullable
-`icon` at the document level (plan.md G1), but no AC in this story's own set
-asks for it, so the column is deferred to CM-US-04. Flagged, not silently
-patched — see spec.md Assumptions.
+`icon` (CM-US-04 plan.md A5) is nullable, `String(50)`, no default — SDS
+§4.3.3's ERD was aligned to add it at the document level back in CM-US-01
+(plan.md G1), and this is the story whose own goal names icon-editing, so the
+column lands here rather than at creation time.
 """
 
 import enum
@@ -48,6 +48,11 @@ class CategoryModel(Base):
     type: Mapped[CategoryType] = mapped_column(
         Enum(CategoryType, native_enum=False, length=10), nullable=False
     )
+
+    # CM-US-04 plan.md A5/A11: nullable, no default -- absent until a caller
+    # sets it through PATCH /categories/{category_id}. Bounded at 50, not
+    # name's own 100 -- an icon is a short identifier/slug, not a label.
+    icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<CategoryModel id={self.id} user_id={self.user_id} name={self.name}>"

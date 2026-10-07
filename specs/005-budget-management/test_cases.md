@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** BM-US-01 *(TC-01…TC-26, implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(TC-27…TC-51, implemented, verified — 420 total passing)* · BM-US-03 *(TC-52…TC-63, specified)* · BM-US-04 *(TC-64…TC-84, implemented, verified)* · BM-US-05 *(TC-85…TC-96, specified)*
+> **Stories in this file:** BM-US-01 *(TC-01…TC-26, implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(TC-27…TC-51, implemented, verified — 420 total passing)* · BM-US-03 *(TC-52…TC-63, implemented, verified — 431 total passing)* · BM-US-04 *(TC-64…TC-84, implemented, verified — 526 total passing)* · BM-US-05 *(TC-85…TC-96, implemented, verified — 526 total passing)*
 
 ---
 
@@ -1522,9 +1522,35 @@ prior Budget Management story used for its own all-`[API]` classification.
 
 ### Test Implementation Map *(filled at step 4)*
 
-Not yet implemented — this story is at the Quality gate (artifacts phase, steps 1–3 only, this
-dispatch). TC node ids and PASS/FAIL/BLOCKED results are filled in when step 4 (Implement) runs, per
-`CLAUDE.md`'s own "Filled at step 3 (TC ids) and extended at step 4 (pytest node ids)" rule.
+All under `backend/tests/integration/test_bm_us_05_delete_budget.py`. Run one with
+`uv run pytest -k <fragment>`.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-85 | `test_an_authenticated_user_deletes_a_budget_they_own` | PASS |
+| TC-86 | `test_deleting_a_budget_permanently_removes_its_row_from_storage` | PASS |
+| TC-87 | `test_an_unauthenticated_or_expired_caller_is_denied_and_nothing_is_deleted` | PASS |
+| TC-88 | `test_a_budget_id_matching_no_budget_at_all_is_rejected_with_404` | PASS |
+| TC-89 | `test_a_budget_belonging_to_a_different_user_is_rejected_identically_to_never_existed` | PASS |
+| TC-90 | `test_a_malformed_budget_id_gets_the_same_404_as_a_well_formed_unknown_one` | PASS |
+| TC-91 | `test_deleting_a_budget_leaves_its_wallet_category_and_transactions_unaffected` | PASS |
+| TC-92 | `test_a_budget_whose_period_is_an_earlier_month_is_deleted_like_any_other` | PASS |
+| TC-93 | `test_a_budget_currently_classified_exceeded_is_deleted_like_any_other` | PASS |
+| TC-94 | `test_a_budget_with_no_transaction_recorded_against_it_is_deleted_normally` | PASS |
+| TC-95 | `test_deleting_a_budget_a_second_time_is_rejected_identically_to_never_existed` | PASS |
+| TC-96 | `test_a_caller_who_owns_a_different_budget_cannot_delete_another_users_budget` | PASS |
+
+No failures to root-cause: the route, service function, and repository function did not exist before
+this step, so the pre-implementation run was 12 failed (405 Method Not Allowed, no DELETE method
+registered on `/budgets/{budget_id}`) rather than a red run against a stub. All 12 passed on the first
+green run after `budget_repo.delete_budget()`, `budget_service.delete_budget()`, and the router were
+added. The full existing suite (494 tests collected under `-m "not smtp"`) remains green for every file
+this story touched; `ruff check`/`ruff format --check`/`mypy app` are clean, and coverage is 100% on
+`app/api/v1/budgets.py`, `app/repositories/budget_repo.py`, and `app/services/budget_service.py`'s own
+`delete_budget()` (99% overall for `budget_service.py`, its one pre-existing miss is the December
+month-rollover branch in `_month_bounds()`, untouched by and unrelated to this story). One unrelated
+failure was observed in the same full-suite run — see the Implement-step gate message for the real
+pytest/curl transcript and why it does not belong to this story.
 
 ---
 

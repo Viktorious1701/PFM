@@ -1,9 +1,10 @@
-"""Category Management endpoints (SDS §5.4.1 CM-US-01, §5.4.2 CM-US-02)."""
+"""Category Management endpoints (SDS §5.4.1 CM-US-01, §5.4.2 CM-US-02,
+§5.4.4 CM-US-04)."""
 
 from fastapi import APIRouter, Query, status
 
 from app.core.deps import CurrentUserDep, DbDep
-from app.schemas.category import CategoryCreate, CategoryListRead, CategoryRead
+from app.schemas.category import CategoryCreate, CategoryListRead, CategoryRead, CategoryUpdate
 from app.services import category_service
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -60,3 +61,38 @@ def list_categories(
 ) -> CategoryListRead:
     """Pure read — no `db.commit()` (plan.md A4)."""
     return category_service.list_categories(db, owner=current_user, page=page, page_size=page_size)
+
+
+@router.patch(
+    "/{category_id}",
+    response_model=CategoryRead,
+    status_code=status.HTTP_200_OK,
+    summary="Update a category",
+    description=(
+        "Updates one or more of the name, type, and icon of one of the "
+        "authenticated caller's own categories, identified by its own id. "
+        "Any field not submitted is left unchanged; the category's owner "
+        "can never be changed."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "CATEGORY_NOT_FOUND"},
+        422: {"description": "VALIDATION_ERROR"},
+    },
+)
+def update_category(
+    category_id: str,
+    payload: CategoryUpdate,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> CategoryRead:
+    result = category_service.update_category(
+        db,
+        owner=current_user,
+        category_id=category_id,
+        name=payload.name,
+        category_type=payload.type,
+        icon=payload.icon,
+    )
+    db.commit()
+    return result

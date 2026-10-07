@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-05 · SDS §5.5 (BM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(implemented, verified — 420 total passing)* · BM-US-03 *(specified)* · BM-US-04 *(specified)* · BM-US-05 *(specified)*
+> **Stories in this file:** BM-US-01 *(implemented, verified — 245 passed, 99% coverage)* · BM-US-02 *(implemented, verified — 420 total passing)* · BM-US-03 *(implemented, verified — 431 total passing)* · BM-US-04 *(implemented, verified — 526 total passing)* · BM-US-05 *(implemented, verified — 526 total passing)*
 
 ---
 

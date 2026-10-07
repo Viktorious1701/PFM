@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.core.errors import WalletNotFoundError
 from app.models.user import UserModel
 from app.repositories import wallet_repo
 from app.schemas.wallet import WalletListRead, WalletRead
@@ -81,4 +82,32 @@ def list_wallets(db: Session, *, owner: UserModel, page: int, page_size: int) ->
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+def update_wallet(
+    db: Session,
+    *,
+    owner: UserModel,
+    wallet_id: str,
+    name: str | None,
+    wallet_type: str | None,
+) -> WalletRead:
+    """spec AC-01, FR-03 (plan.md A1, A3, A4). Looks up the wallet scoped to
+    the caller, then updates whichever of name/type was actually submitted
+    -- no further precondition follows ownership, the same shape BM-US-04's
+    own update_budget() already established.
+    """
+    wallet = wallet_repo.get_owned_by_id(db, wallet_id=wallet_id, user_id=owner.id)
+    if wallet is None:
+        raise WalletNotFoundError()
+
+    wallet = wallet_repo.update_wallet(db, wallet=wallet, name=name, wallet_type=wallet_type)
+    return WalletRead(
+        id=wallet.id,
+        user_id=wallet.user_id,
+        name=wallet.name,
+        type=wallet.type,
+        currency=wallet.currency,
+        balance=wallet.balance,
     )
