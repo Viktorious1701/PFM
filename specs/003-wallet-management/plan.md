@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(implemented, verified — 302 passed, 99% coverage)* · WM-US-04 *(implemented, verified — 526 total passing)*
+> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(implemented, verified — 302 passed, 99% coverage)* · WM-US-04 *(implemented, verified — 526 total passing)* · WM-US-03 *(spec'd — artifacts phase only, not yet implemented)*
 
 ---
 
@@ -825,3 +825,239 @@ to reopen (WM-US-01 BR-05), so this endpoint produces only `200`, `401`, `404`, 
 | T-04 | `wallet_service.update_wallet(db, *, owner, wallet_id, name, wallet_type)` — ownership lookup via existing `get_owned_by_id()`, then update | `backend/app/services/wallet_service.py` | Open |
 | T-05 | `PATCH /api/v1/wallets/{wallet_id}` router; no new mount (router already exists) (A2, A6) | `backend/app/api/v1/wallets.py` | Open |
 | T-06 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_04_update_wallet.py` | Open |
+
+---
+
+## WM-US-03: View a Wallet
+
+> **IDs in this section are local to WM-US-03** (`A*`/`T-NN`), continuing the demonstrated convention:
+> every second-or-later story in this file restarts `A*`/`T-NN` locally, while `test_cases.md`'s `TC-NN`
+> runs continuously across the epic file. `test_cases.md`'s `TC-NN` below continues from `TC-60`,
+> confirmed by direct count against that file's actual current end (`TC-59`, WM-US-04's last) before
+> writing this section, not assumed. **`QF-NN` also continues from `QF-12`** — confirmed the same way:
+> this file's own last `QF` entry is `QF-11` (WM-US-01 used `QF-01`…`QF-04`; WM-US-04 used
+> `QF-05`…`QF-11`). This dispatch's own brief suggested the next `QF` would be `QF-19`; that number
+> belongs to a *different* epic file (`specs/005-budget-management/test_cases.md`'s own BM-US-04
+> `QF-19`, which this file's own `QF-08` already cites as a cross-epic precedent for the ownership-
+> collapse technique) — it was never a number this file has used itself, so it is corrected here rather
+> than carried forward uncounted.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | API | **`GET /api/v1/wallets/{wallet_id}` — a plain resource-read on the collection's own id, not a new verb or a nested path.** Matches API-01 (versioned, plural resource noun) and NC-03 (no verb except an explicit state-transition, not applicable here — this is an ordinary read). Declared on the same router (`wallets.py`) as the existing `POST /wallets`, `GET /wallets` (list), and `PATCH /wallets/{wallet_id}`, with no path collision: a bare `/wallets`, a `/wallets/{wallet_id}` `GET`, and a `/wallets/{wallet_id}` `PATCH` are distinguished by method and by path shape, the identical reasoning TM-US-03 A2 already used for its own router gaining a second path shape — this is this router's **third**. | ✅ Resolved |
+| A2 | API / Domain | **The response reuses `WalletRead` unchanged — no new DTO, no embedded transaction data.** This is the story's central design decision; the full reasoning is in `spec.md` *Assumptions & Dependencies*, reasoned from first principles rather than defaulted to either side, because this story's own SDS goal ("View detailed balance and history") uses a materially more specific word than any prior single-sentence Wallet/Budget/Transaction goal this codebase has already resolved. Summary: "balance" is already one of `WalletRead`'s own six established fields; "history" is already fully satisfied by `GET /api/v1/transactions?wallet_id={id}` (TM-US-02, already implemented, already paginated and filterable, already returning an accurate `total` scoped to the filter) — embedding a transaction list or a bare count here would either re-implement that contract a second time (risking silent drift between the two) or invent an unpaginated shape no source asks for, and would widen `WalletRead` for WM-US-01/02/04's own responses too, not just this one. Matches TM-US-03 A3's own "no enrichment" precedent, applied here against a stronger-worded goal than TM-US-03 itself had to resolve. | ✅ Resolved |
+| A3 | Architecture | **No new repository function at all — `wallet_repo.get_owned_by_id(db, *, wallet_id, user_id)` is reused unchanged.** It already exists (built for BM-US-01's own referenced-wallet check, already reused unchanged by WM-US-04) and already collapses "no such wallet" and "exists, owned by someone else" to the identical `None` by construction (constitution SEC-08) — exactly the lookup this story's own "fetch the wallet being viewed" need requires. This is the first Wallet Management story needing **no** new repository function of any kind, read or write. | ✅ Resolved |
+| A4 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.3.3 tags this story "(USER)", identical to WM-US-01/02/04's own tag. An ADMIN caller who does not own the requested wallet is refused exactly as any other caller would be (spec EC-03) — nothing elevates an ADMIN's visibility here, the same scoping WM-US-04 A6/TM-US-03 A5 already established for their own single-resource operations. | ✅ Resolved |
+| A5 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families; viewing one wallet is no closer to any of them than creating one (WM-US-01 A9), listing them (WM-US-02 A5), or updating one (WM-US-04 A7) already were. No AC or FR here asks for one. | ✅ Resolved |
+| A6 | Architecture | **The router issues no `db.commit()`.** Pure read, nothing to commit — mirrors `GET /wallets` (WM-US-02 A4) and `GET /transactions/{transaction_id}` (TM-US-03 A7). | ✅ Resolved |
+| A7 | Architecture | **No new Alembic migration, and no new error class.** This story adds no column, no index, and no table (the same position WM-US-04 A8 recorded for its own first non-schema-changing story in this epic). It also needs no new error: `WalletNotFoundError` already exists, built by WM-US-04 for exactly "the wallet being acted on directly was not found," and is reused unchanged — unlike TM-US-03, which needed a brand-new `TransactionNotFoundError` because no existing Transaction-prefixed error covered a transaction being viewed directly, this story's own direct-lookup error was already built one story ago, in this same epic. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only — no new top-level module, no migration, no new DTO, no new
+repository function, and no new error class; the first Wallet Management story needing none of the
+four, because its two direct predecessors (WM-US-04's `get_owned_by_id()` reuse, and its own
+`WalletNotFoundError`) already built exactly what this story needs).
+
+```text
+backend/app/
+├── services/
+│   └── wallet_service.py        # update: add get_wallet() (A2, A3)
+└── api/v1/
+    └── wallets.py                # update: add GET /wallets/{wallet_id} (A1, A4)
+
+backend/tests/
+└── integration/test_wm_us_03_view_wallet.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No change to `models/wallet.py` (no schema change), `schemas/wallet.py` (`WalletRead` reused unchanged,
+A2), `wallet_repo.py` (`get_owned_by_id()` reused unchanged, A3), `core/errors.py` (`WalletNotFoundError`
+reused unchanged, A7), `core/deps.py` (`CurrentUserDep` reused exactly as WM-US-01/02/04 already
+established, A4), and `api/v1/router.py` (`wallets.router` is already mounted, WM-US-01).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `WalletModel` | `wallets` | none (read-only) | This story only reads, by `id` (primary key, indexed by construction) scoped by `user_id` (already indexed, WM-US-01). No new column, no new index — the second Wallet Management story needing neither (after WM-US-04). |
+| `WalletRead` (DTO) | — | *(reused, unchanged)* | WM-US-01's own six-field shape, reused for this single-item read too (A2) — the third story to return it unchanged, after WM-US-02's list items and WM-US-04's update response. |
+
+**Service** (`app/services/wallet_service.py`, addition)
+
+```python
+def get_wallet(db: Session, *, owner: UserModel, wallet_id: str) -> WalletRead:
+    """spec AC-01, FR-03 (plan.md A2, A3). Looks up the wallet scoped to the
+    caller; no further precondition follows ownership -- a view changes
+    nothing, the same shape transaction_service.get_transaction() (TM-US-03)
+    already established for its own single-resource read, and the same
+    ownership-scoped lookup wallet_service.update_wallet() (WM-US-04) already
+    uses before mutating.
+    """
+    wallet = wallet_repo.get_owned_by_id(db, wallet_id=wallet_id, user_id=owner.id)
+    if wallet is None:
+        raise WalletNotFoundError()
+
+    return WalletRead(
+        id=wallet.id,
+        user_id=wallet.user_id,
+        name=wallet.name,
+        type=wallet.type,
+        currency=wallet.currency,
+        balance=wallet.balance,
+    )
+```
+
+**Router** (`app/api/v1/wallets.py`, addition)
+
+```python
+@router.get(
+    "/{wallet_id}",
+    response_model=WalletRead,
+    status_code=status.HTTP_200_OK,
+    summary="View a wallet",
+    description=(
+        "Returns the full detail -- identifier, owner, name, type, currency, "
+        "and current balance -- of one of the authenticated caller's own "
+        "wallets, identified by its own id. A wallet's transaction history is "
+        "retrieved separately, through GET /api/v1/transactions?wallet_id={id}."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "WALLET_NOT_FOUND"},
+    },
+)
+def get_wallet(
+    wallet_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> WalletRead:
+    """Pure read -- no db.commit() (plan.md A6)."""
+    return wallet_service.get_wallet(db, owner=current_user, wallet_id=wallet_id)
+```
+
+No new error class (`app/core/errors.py` unchanged) — `WalletNotFoundError` (WM-US-04) is reused
+exactly as `transaction_service.get_transaction()` reuses `TransactionNotFoundError` within its own
+story, except here the error already existed one story earlier (A7).
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Authenticated User of any role may view their own wallet | AC-01, FR-01, A4 | `GET /api/v1/wallets/{wallet_id}` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before anything else is evaluated | AC-02, FR-02 | `CurrentUserDep` resolves before the path parameter is used |
+| `wallet_id` must resolve to a wallet owned by the caller; not-found and not-owned collapsed | AC-03, AC-04, EC-01, EC-02, FR-03, A3 | `wallet_repo.get_owned_by_id()` returns `None` for both cases by construction; service raises `WalletNotFoundError` |
+| No role elevation — ADMIN sees only their own | EC-03, FR-04 | Same `get_owned_by_id()` call, same `user_id` scope, regardless of `current_user.role` |
+| Response exposes exactly six fields, no embedded transaction data | AC-05, FR-05, FR-06, constitution PF-03 | `WalletRead` — no ORM graph, no extra field, no embedded Transaction list/count (A2) |
+| A wallet with no transactions still views successfully | EC-04, FR-06 | `get_wallet()` reads only the `wallets` row; it issues no query against `transactions` at all |
+| No audit event | A5 | `wallet_service.get_wallet()` calls no `audit.record()` |
+
+**Sequence diagram — View a Wallet**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request into
+`API` answered back to `UI` with a status code, one workflow.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as WalletService
+    participant Store as Store
+
+    UI->>API: GET /wallets/:id
+    API->>Svc: get(input)
+    Svc->>Store: find the wallet owned by the caller
+    Store-->>Svc: wallet, or none
+
+    alt Wallet not found, or found but not owned by the caller (AC-03/AC-04, collapsed outcome)
+        API-->>UI: 404 WALLET_NOT_FOUND
+    else Wallet owned by the caller
+        Svc-->>API: wallet
+        API-->>UI: 200 wallet
+    end
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-02)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+```
+
+Only one workflow is drawn (DG-07). Verified with `check.mjs` (`mermaid.parse()`) — see *Verification
+note* below.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-02) | 401 | `NOT_AUTHENTICATED` |
+| Wallet not found, or found but not owned by the caller (AC-03, AC-04) | 404 | `WALLET_NOT_FOUND` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02). No
+`403` (A4: no role restriction), no `422` (the only input is a path parameter with no shape constraint),
+and no `409` (a read has nothing to conflict on, mirrors WM-US-02/TM-US-03).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `wallet_service.get_wallet()` is the only place that decides what a failed lookup means |
+| AR-02 Thin router | Required | Router binds the path parameter, resolves `CurrentUserDep`, calls the service, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `wallet_repo.get_owned_by_id()` is a query only |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | Mapping to `WalletRead` happens in the service |
+| AR-05 No framework objects in services | Required | `get_wallet()` takes plain values (`owner: UserModel`, `wallet_id`); no `Request`/`Response` |
+| AR-06 One transaction per request | N/A | Pure read, nothing to commit (A6) |
+| AR-07 router → service → repository | Required | Router never calls `wallet_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only |
+| API-01 Versioned plural path | Required | `GET /api/v1/wallets/{wallet_id}` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required | `200` read · `401` · `404` |
+| API-04 Prefixed error codes | Required | `WALLET_NOT_FOUND` — already catalogued by WM-US-04, reused |
+| API-05 No generic status endpoint | Required | A plain resource-read, not a state-transition |
+| API-06 Pagination | N/A | Single-resource read; no list in this story |
+| API-07 Explicit response_model | Required | `response_model=WalletRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `wallet_service.py`/`wallets.py` only |
+| NC-02 Naming | Required | `WalletRead` reused unchanged (SDS §2.1); no new DTO (A2) |
+| NC-03 API paths | Required | `/wallets/{wallet_id}` — no verb |
+| NC-04 Column naming | N/A | No column change this story |
+| NC-06 Concise service methods | Required | `wallet_service.get_wallet`, matching `create_wallet`/`list_wallets`/`update_wallet`'s own naming |
+| VL-01 Pydantic is the source of truth | N/A | No request body or query parameter this story validates — the only input is a path parameter with no shape constraint |
+| VL-06 Referenced entities verified before use | Required | `wallet_id` resolved through an ownership-scoped lookup before any response is built (absent → 404) |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case to test (A4: no role restriction) |
+| SEC-08 Ownership filter | Required | The viewed wallet itself, not merely a *referenced* row, is filtered by `user_id` (A3) |
+| SEC-10 No enumeration | N/A (reasoning reused) | An authenticated caller who does not own a real wallet id learns nothing about who does, because the identical `404` covers both cases (A3) |
+| LA-02 / LA-04 Audit | N/A (by decision) | Viewing a wallet is not one of LA-04's three named audited events (A5) |
+| PF-01 300 ms p95 | Required | One indexed lookup, no I/O off the request path |
+| PF-02 Indexed lookups | Required | The lookup is by `wallets.id` (primary key) filtered by `wallets.user_id` (indexed, WM-US-01) — no new index needed |
+| PF-03 DTO projection | Required | `WalletRead` — six fields, no ORM graph, no embedded transaction data (A2) |
+| PF-04 Bounded lists | N/A | Not a list endpoint |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| DOD-02 Migration | N/A | No schema change — the second Wallet Management story with none (mirrors WM-US-04 A8) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No wallet-detail screen exists this round — confirmed directly: `mobile/`'s own source tree has no `wallet`-named screen beyond its API client stub (`src/api/wallets.ts`), and no SRS UXR names one. `mobile/`'s fixture-driven prototype covers only UM-US-01's invite screen (`CLAUDE.md` §5). |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `wallet_service.get_wallet(db, *, owner, wallet_id) -> WalletRead` — ownership lookup via existing `get_owned_by_id()` (A2, A3) | `backend/app/services/wallet_service.py` | Open |
+| T-02 | `GET /api/v1/wallets/{wallet_id}` route (A1, A4, A6) | `backend/app/api/v1/wallets.py` | Open |
+| T-03 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_03_view_wallet.py` | Open |
+
+**Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
+was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`) before this gate was claimed —
+see the gate message for the pasted output. By eye/grep: four lanes only (`UI`, `API`, `Svc`, `Store`),
+no `Repo`/`DB` lane, no `SELECT`/`INSERT`/`UPDATE … WHERE`/`JOIN`/`rowcount`/table-and-column syntax in
+any arrow label, no `;` or `#` in any label (DG-06), and the one `UI→API` request (`GET /wallets/:id`)
+is answered by exactly one of the two terminal branches, each carrying an HTTP status back to `UI`
+(DG-05). One workflow only (DG-07).

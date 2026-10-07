@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* · WM-US-04 *(TC-40…TC-59, all PASS)*
+> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* · WM-US-04 *(TC-40…TC-59, all PASS)* · WM-US-03 *(TC-60…TC-70, spec'd — artifacts phase only, not yet implemented)*
 > WM-US-04 *(TC-40…TC-59)*
 
 ---
@@ -990,4 +990,220 @@ unchanged throughout.
 - **When:** `A` submits a `PATCH` against `WB`'s `wallet_id`
 - **Then:** The response is `404` `WALLET_NOT_FOUND`, identical to TC-45/TC-46's responses; `WB`'s stored `name`/`type` are unchanged, and `A`'s own `WA` is also unaffected
 - **AC:** EC-08, FR-03
+
+---
+
+## WM-US-03: View a Wallet
+
+> **IDs in this section are local to WM-US-03** — except `TC-NN`, which continues this epic file's own
+> numbering: WM-US-04 used `TC-40`…`TC-59`, so this story continues from `TC-60`. **`QF-NN` also
+> continues here, from `QF-12`** — confirmed by direct count of this file's own entries, not assumed:
+> WM-US-01 used `QF-01`…`QF-04` and WM-US-04 used `QF-05`…`QF-11`, so this file's own last `QF` entry is
+> `QF-11`, not `QF-19`. (`QF-19` is BM-US-04's own number in a *different* epic file,
+> `specs/005-budget-management/test_cases.md` — already cited by this file's own `QF-08` as a
+> cross-epic precedent, never a number this file has used itself. Corrected here after re-reading this
+> file directly, per `CLAUDE.md`'s instruction to confirm rather than assume.)
+
+### Quality Findings
+
+#### QF-12
+
+**Description.** AC-03/AC-04 require a wallet reference that does not exist at all and one that
+exists but belongs to a different User to produce "the same not-found outcome" — `plan.md` A3 makes
+this true by construction, since `wallet_repo.get_owned_by_id()` filters by `user_id` in the query
+itself and returns `None` either way. A test that merely checks both cases return *some* `404` would
+not distinguish "genuinely identical" from "two different messages that both happen to carry status
+404" — the same risk WM-US-04 QF-08/TM-US-03 QF-14/BM-US-04 QF-19 each already flagged for their own
+ownership-collapse cases.
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — the same class of minor information leak about another User's data those earlier
+findings already warned against.
+
+**Recommendation.** `TC-63` compares the full response body of the ownership-mismatch case against
+`TC-62`'s not-found-at-all case and asserts they match exactly — `error_code`, `message`, and `details`
+all identical, not merely the status code. `TC-69` extends the same comparison to a caller who owns a
+wallet of their own but names someone else's.
+
+#### QF-13
+
+**Description.** AC-05 requires the response to carry exactly the six fields `WalletRead` already
+fixes for a created (WM-US-01), listed (WM-US-02), or updated (WM-US-04) wallet — no more, no fewer,
+and in particular no embedded transaction list, recent-transaction summary, or transaction count,
+despite this endpoint's own SDS §5.3.3 goal naming "history" specifically — a materially more
+pointed word than TM-US-03's own "detailed information" framing, which this same file's precedent
+(`plan.md` TM-US-03 A3, cited there) already resolved the identical way for a thinner-worded goal. A
+test asserting only that the documented fields are *present* would not prove no others were *also*
+added — exactly the gap this story's own design reasoning (`spec.md` Assumptions & Dependencies)
+depends on being enforced by more than prose.
+
+**Impact.** A future change that accidentally enriched this specific endpoint — the exact temptation
+this story's own `plan.md` A2 reasoned through and declined — would pass a weak test and quietly
+diverge this story's response shape from WM-US-01/02/04's own shared precedent.
+
+**Recommendation.** `TC-68` asserts the response body's keys are exactly `id`, `user_id`, `name`,
+`type`, `currency`, `balance` — no more, and in particular no `transactions`/`transaction_count`/
+`history` key of any kind — the same technique WM-US-04 TC-57/TM-US-03 TC-79 each already used for
+their own easy-to-accidentally-leak or easy-to-accidentally-add fields.
+
+### Acceptance Criteria Classification
+
+No wallet-detail screen exists in `mobile/` this round — confirmed directly: `mobile/`'s own source
+tree carries only an API client stub (`src/api/wallets.ts`) for wallets, no screen of any kind, the
+same basis every prior Wallet Management story used for its own all-`[API]` classification. No SRS UXR
+names one either.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully view the detail of a wallet the caller owns | **[API]** | No UI surface exists or is named by any UXR this round |
+| AC-02 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-03 | Reject a wallet reference that does not exist at all | **[API]** | Persistence/ownership contract; bounded by QF-12 |
+| AC-04 | Reject a wallet reference belonging to a different User | **[API]** | Persistence/ownership contract; bounded by QF-12 |
+| AC-05 | Return exactly the documented wallet fields — no embedded transaction data | **[API]** | Response-payload contract; bounded by QF-13 |
+| EC-01 | A wallet reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
+| EC-02 | A caller who owns a different wallet attempts to view another User's wallet | **[API]** | Persistence/ownership contract; bounded by QF-12 |
+| EC-03 | An ADMIN-role caller attempting to view a wallet they do not own | **[API]** | Ownership contract independent of role |
+| EC-04 | Viewing a wallet with no transactions logged against it yet | **[API]** | Backend rule (this endpoint reads no transaction data at all) |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-60, TC-61 | — |
+| AC-02 | [API] | TC-64, TC-70 | — |
+| AC-03 | [API] | TC-62 | — |
+| AC-04 | [API] | TC-63 | — |
+| AC-05 | [API] | TC-61, TC-68 | — |
+| EC-01 | [API] | TC-65 | — |
+| EC-02 | [API] | TC-69 | — |
+| EC-03 | [API] | TC-66 | — |
+| EC-04 | [API] | TC-67 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no
+> wallet-detail screen exists this round, and none is named by any SRS UXR. This story never issues a
+> query against `transactions` (spec FR-06, EC-04), so no test here exercises `TransactionModel` or
+> `transaction_repo` at all — the deliberate absence that TC-67 proves directly.
+
+### Test Implementation Map *(filled at step 4)*
+
+Not yet populated — this dispatch covers steps 1–3 (Spec, Design, Quality) only; no test code exists
+yet for WM-US-03. `backend/tests/integration/test_wm_us_03_view_wallet.py` will be written at the
+Implement dispatch (steps 4–6) from the test cases below, one test per `TC-NN`, each carrying its
+`TC-NN` id in its docstring, following WM-US-01/02/04's own Test Implementation Map precedent in this
+same file.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-60 | *(not yet implemented)* | — |
+| TC-61 | *(not yet implemented)* | — |
+| TC-62 | *(not yet implemented)* | — |
+| TC-63 | *(not yet implemented)* | — |
+| TC-64 | *(not yet implemented)* | — |
+| TC-65 | *(not yet implemented)* | — |
+| TC-66 | *(not yet implemented)* | — |
+| TC-67 | *(not yet implemented)* | — |
+| TC-68 | *(not yet implemented)* | — |
+| TC-69 | *(not yet implemented)* | — |
+| TC-70 | *(not yet implemented)* | — |
+
+---
+
+### TC-60: An authenticated User views a wallet they own — 200 with the full detail
+
+- **US:** WM-US-03
+- **Given:** An authenticated User who owns a wallet with `name` `"Main Checking"`, `type` `"BANK"`, `currency` `"USD"`, `balance` `750.25`
+- **When:** The User requests that wallet by its own `id`
+- **Then:** The response is `200`; the body carries `id` equal to the wallet's own id, `user_id` equal to the caller's own id, `name` `"Main Checking"`, `type` `"BANK"`, `currency` `"USD"`, and `balance` `750.25`
+- **AC:** AC-01, FR-01, FR-05
+- **Type:** integration
+
+### TC-61: Viewing a wallet reflects its current balance, including after Transaction activity has changed it
+
+- **US:** WM-US-03
+- **Given:** An authenticated User who owns a wallet with `initial_balance` `500.00`, against which one `EXPENSE` transaction of `100.00` has since been recorded (TM-US-01)
+- **When:** The User requests that wallet by its own `id`
+- **Then:** The response is `200`; `balance` is `400.00` — the current, Transaction-adjusted value, not the original `initial_balance` — and the response carries exactly the six documented fields
+- **AC:** AC-01, AC-05, FR-01, FR-05
+- **Type:** integration
+
+### TC-62: A wallet_id matching no wallet at all is rejected with 404 WALLET_NOT_FOUND
+
+- **US:** WM-US-03
+- **Given:** An authenticated User
+- **When:** The User requests a wallet by an `id` that matches no wallet in the system
+- **Then:** The response is `404` with `error_code` `WALLET_NOT_FOUND`
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-63: A wallet belonging to a different User is rejected with the identical outcome as TC-62
+
+- **US:** WM-US-03
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a wallet and `A` owns nothing of the kind
+- **When:** `A` requests `B`'s wallet by its own `id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-62's response
+- **AC:** AC-04, FR-03 *(assertion technique per QF-12)*
+- **Type:** integration
+
+### TC-64: An unauthenticated caller is denied with 401
+
+- **US:** WM-US-03
+- **Given:** A caller presenting no `Authorization` header, and an existing wallet belonging to some other, real User
+- **When:** The caller requests that wallet by its own `id`
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-65: A malformed wallet reference is rejected with the same outcome as a well-formed but non-existent one
+
+- **US:** WM-US-03
+- **Given:** An authenticated User
+- **When:** The User requests a wallet by the `id` value `"not-a-real-id"`
+- **Then:** The response is `404` `WALLET_NOT_FOUND`, identical to TC-62's response
+- **AC:** EC-01, FR-03
+- **Type:** integration
+
+### TC-66: An ADMIN-role caller cannot view another User's wallet through this endpoint
+
+- **US:** WM-US-03
+- **Given:** An authenticated User whose role is `ADMIN`, and a second User (any role) who owns a wallet of their own
+- **When:** The ADMIN requests the other User's wallet by its own `id`
+- **Then:** The response is `404` `WALLET_NOT_FOUND` — the same outcome any non-ADMIN caller would get; no role grants visibility through this endpoint
+- **AC:** EC-03, FR-04
+- **Type:** integration
+
+### TC-67: A wallet with no transactions logged against it yet still views successfully
+
+- **US:** WM-US-03
+- **Given:** An authenticated User who owns a wallet created with `initial_balance` `250.00` and no transaction ever recorded against it
+- **When:** The User requests that wallet by its own `id`
+- **Then:** The response is `200`; `balance` is exactly `250.00` — an empty transaction history is not an error condition, and the endpoint issues no query against `transactions` at all
+- **AC:** EC-04, FR-06
+- **Type:** integration
+
+### TC-68: The response exposes exactly the six documented fields — no embedded transaction data
+
+- **US:** WM-US-03
+- **Given:** An authenticated User who owns a wallet with one or more transactions logged against it
+- **When:** The User requests that wallet by its own `id`
+- **Then:** The response body's keys are exactly `id`, `user_id`, `name`, `type`, `currency`, `balance` — no more, and in particular no `transactions`, `transaction_count`, `history`, or any other embedded or computed field
+- **AC:** AC-05, FR-05, FR-06 *(assertion technique per QF-13)*
+- **Type:** integration
+
+### TC-69: A caller who owns a wallet of their own cannot view a different User's wallet
+
+- **US:** WM-US-03
+- **Given:** Two authenticated Users `A` and `B`, where `A` owns one wallet of their own and `B` owns a separate wallet of their own
+- **When:** `A` requests `B`'s wallet by its own `id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-62's response — owning a wallet of their own gives `A` no access to `B`'s
+- **AC:** EC-02, FR-03 *(assertion technique per QF-12)*
+- **Type:** integration
+
+### TC-70: Credentials are evaluated before the wallet reference is looked up
+
+- **US:** WM-US-03
+- **Given:** A caller presenting no credentials
+- **When:** The caller requests a wallet by an `id` that does not match any wallet in the system
+- **Then:** The response is `401` `NOT_AUTHENTICATED`, not `404` — mirrors TM-US-03 TC-82/TM-US-02 TC-41's own ordering
+- **AC:** AC-02, FR-02
+- **Type:** integration
 - **Type:** integration

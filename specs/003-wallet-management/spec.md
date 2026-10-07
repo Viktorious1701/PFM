@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(implemented, verified — 302 passed, 99% coverage)* · WM-US-04 *(implemented, verified — 526 total passing)*
+> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(implemented, verified — 302 passed, 99% coverage)* · WM-US-04 *(implemented, verified — 526 total passing)* · WM-US-03 *(spec'd — artifacts phase only, not yet implemented)*
 
 ---
 
@@ -822,3 +822,321 @@ established for creation).
   therefore worded to match what is actually enforced ("empty," not "blank or only whitespace"), unlike
   AC-06's name wording, which can honestly claim whitespace-only rejection because `name`'s existing
   validator already guarantees it. Recorded in full in `plan.md` A10 and `test_cases.md` QF-11.
+
+---
+
+## WM-US-03: View a Wallet
+
+> **IDs in this section are local to WM-US-03.** `AC-01` below is not WM-US-01's, WM-US-02's, or
+> WM-US-04's own `AC-01`; each story section numbers its own criteria, per
+> `artifact-templates/spec-templates.md` and this codebase's own precedent. Only `TC-NN` (and `QF-NN`)
+> in `test_cases.md` run continuously across the epic (`CLAUDE.md` §1.1 rule 4) — see that file's own
+> header note for the continuation numbers, confirmed there by direct count rather than assumed.
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-03 — searched in full; no entry at all for this story**
+> #### US-03-01: Create a Wallet [MVP]
+> #### US-03-02: View List of Wallets [MVP]
+> #### US-03-03: Update a Wallet
+
+Those are the entire three entries SRS §6 Feature-03 contains. There is no `US-03-04` or any other
+header naming "View a Wallet," "View a Single Wallet," or anything resembling one — not even a bare
+header the way `US-03-02`/`US-03-03` each received. This is thinner anchoring than either of this
+epic's own prior stories had (WM-US-02's `spec.md` Source section could at least quote a bare
+`US-03-02` header; WM-US-04's could quote a bare `US-03-03`), and thinner than TM-US-03's own SRS
+situation (Transaction Management's SRS section has no per-story headers at all for Feature-06 beyond
+`US-06-01`/`US-06-02`, so TM-US-03 was never promised a header to begin with — this story's situation
+is the more pointed one, since its own two siblings in the same feature both got one and this one did
+not). Per this codebase's own repeated precedent (TM-US-02's `spec.md` Source section named the
+identical thinness for its own SDS goal and drew no `[NEEDS RULING]` from it; WM-US-04's own Source
+section made the same point about its own bare header), an unusually thin or entirely absent SRS entry
+is the expected condition for a bare, undetailed SDS goal sentence in this codebase, not a signal that
+escalation is required by itself — see *Assumptions & Dependencies* for why this one is resolved by
+reasoning rather than escalated.
+
+**SDS §5.3.3 WM-US-03: View a Wallet (USER)**
+> * **Goal:** View detailed balance and history for a specific wallet.
+
+The entire SDS entry for this story is this one sentence — no acceptance-criteria bullet, unlike
+WM-US-01's own §5.3.1 entry. Unlike WM-US-02's goal ("Display all wallets owned by the logged-in
+user") and WM-US-04's goal ("Rename or update configuration for a wallet"), this sentence names two
+things, not one — **balance** and **history** — and "history" is a materially more specific word than
+either of those two prior goals, or than TM-US-03's own goal ("View detailed transaction information")
+used for the closest-shape precedent this codebase has already built. See *Assumptions & Dependencies*
+for the full reasoning this wording requires.
+
+**SDS §2.2 Domain Object**
+> **Wallet:** Financial container holding funds (`id`, `user_id`, `name`, `type`, `balance`, `currency`).
+
+**SDS §6.3 API Index** *(checked directly, not assumed)*
+> Lists exactly `WM-API-01` (`POST /api/v1/wallets`) and `WM-API-02` (`GET /api/v1/wallets`) — no
+> `WM-API-03`/`WM-API-04` row exists at all, the identical "confirmed stale, not a contract to match"
+> situation WM-US-04's own Source section already found in this same table.
+
+**`specs/006-transaction-management/spec.md` TM-US-02 AC-10, and
+`backend/app/api/v1/transactions.py` `list_transactions`** *(this story's own directly-reused
+grounding fact, confirmed directly, not assumed)*
+> TM-US-02 AC-10: "Narrow the list to one wallet ... the system returns only the transactions
+> belonging to that one wallet, and the reported total counts only that wallet's matching
+> transactions."
+
+`backend/app/api/v1/transactions.py`'s `GET /transactions` route already accepts `wallet_id` (together
+with `category_id`, `date_from`, `date_to`, `page`, `page_size`) and is already implemented, verified,
+and mounted — confirmed directly in the route's own query-parameter signature, not inferred from the
+spec alone.
+
+**`specs/006-transaction-management/plan.md` TM-US-03 A3** *(this story's own directly-reused
+precedent for declining enrichment)*
+> "The response reuses `TransactionRead` unchanged — no new DTO. ... this story's own 'detail view'
+> framing does not change that, despite 'detail' inviting more fields than 'list' might."
+
+**`backend/app/repositories/wallet_repo.py` `get_owned_by_id()`, `backend/app/core/errors.py`
+`WalletNotFoundError`** *(confirmed directly, not assumed)*
+> `get_owned_by_id` already exists, built for BM-US-01's own referenced-wallet check and reused
+> unchanged by WM-US-04 — already scoped by `user_id`, already collapsing "no such wallet" and "exists,
+> owned by someone else" to the identical `None`. `WalletNotFoundError` already exists, built by
+> WM-US-04 for exactly "the wallet being acted on directly" case this story needs again.
+
+**constitution.md API-01, API-03, API-07, VL-06, SEC-08, PF-02, PF-03**
+> API-03: HTTP status codes: `200` read/update ... `404` not found.
+> VL-06: Referenced entities are verified to exist and be active before use — `404` if absent.
+> SEC-08: Queries for user-owned data filter on the authenticated `user_id` at the repository layer.
+> PF-03: Responses are built from DTO projections — never a full ORM entity graph.
+
+### Out of scope for this story
+
+WM-US-01 (create a wallet) · WM-US-02 (list wallets) · WM-US-04 (update a wallet, already implemented)
+· WM-US-05 (delete a wallet) · UM-US-04/05, DC-US-01/02 · Features 04–11 · SRS §6 Feature-10/11
+placeholders.
+
+Deliberately excluded even though adjacent: **embedding any transaction data — a list, a recent-N
+summary, or even a bare count — directly in this endpoint's response** (reasoned through explicitly
+below, not merely declined — see *Assumptions & Dependencies*); narrowing, paginating, or filtering a
+wallet's transaction history, which is TM-US-02's own already-implemented job via
+`GET /api/v1/transactions?wallet_id={id}`; renaming, retyping, or changing any field of a wallet
+(WM-US-04, already delivered) or deleting one (WM-US-05); and any mobile/UI screen, for the same reason
+WM-US-01/02/04 each gave their own endpoints — no SRS UXR names one this round, and `mobile/` stays a
+fixture-driven prototype scoped to UM-US-01 only (`CLAUDE.md` §5).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to view the full detail of one of my own wallets, so that I can
+check its current balance and reach its transaction history, without needing to page through every
+wallet's list entry to find the one I care about.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully view the detail of a wallet the caller owns**
+**Given** an authenticated User who owns a wallet,
+**When** the User requests that wallet by its own identifier,
+**Then** the system returns a success result carrying the wallet's identifier, owner identifier, name,
+type, currency, and current balance.
+
+**AC-02: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to view a wallet,
+**Then** the system denies the request before evaluating the wallet reference at all, and returns an
+unauthenticated error.
+
+**AC-03: Reject a wallet reference that does not exist at all**
+**Given** an authenticated User,
+**When** the submitted wallet reference matches no wallet in the system,
+**Then** the system returns a not-found error.
+
+**AC-04: Reject a wallet reference belonging to a different User**
+**Given** an authenticated User,
+**When** the submitted wallet reference matches a wallet owned by a different User,
+**Then** the system returns the same not-found outcome AC-03 describes — the response gives no
+indication of which of the two happened.
+
+**AC-05: Return exactly the documented wallet fields — no embedded transaction data**
+**Given** an authenticated User successfully views one of their own wallets,
+**When** the system returns the success result,
+**Then** the result carries exactly the wallet's identifier, owner identifier, name, type, currency,
+and balance — no other field, no data belonging to any other User, and in particular no embedded
+transaction list, recent-transaction summary, or transaction count.
+
+### Edge Cases
+
+**EC-01**: **A wallet reference that is not even a well-formed identifier** — a value such as
+`"not-a-real-id"` is refused with the same not-found outcome as a well-formed but non-existent
+reference (AC-03), the identical treatment WM-US-04 EC-03 already established for this same kind of
+reference.
+
+**EC-02**: **A caller who owns a different wallet of their own, attempting to view another User's
+wallet** — refused with the identical outcome AC-04 describes; owning some wallet never entitles a
+caller to view another User's wallet, the identical scoping WM-US-04 EC-08 already established for
+updating.
+
+**EC-03**: **An ADMIN-role caller attempting to view a wallet they do not own** — refused exactly as
+any other caller would be; no role elevates visibility through this endpoint, mirroring TM-US-03 EC-03
+for its own single-transaction read.
+
+**EC-04**: **Viewing a wallet with no transactions logged against it yet** — the request still
+succeeds, returning the wallet's balance exactly as recorded at creation (or last changed by Transaction
+activity); an empty transaction history is not an error condition for this endpoint, since this
+endpoint never reads transaction data at all (see *Assumptions & Dependencies*).
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to view the full detail of a
+  wallet they own, identifying it by its own identifier (SDS §5.3.3).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before the wallet reference is examined at all (constitution API-08; mirrors WM-US-01 FR-02, WM-US-04
+  FR-02).
+- **FR-03**: The system must **require** the submitted wallet reference to resolve to a wallet owned by
+  the authenticated caller, and **refuse** the request with an identical outcome whether no such wallet
+  exists at all or it exists and is owned by a different User (AC-03, AC-04, EC-01, EC-02; constitution
+  SEC-08, VL-06).
+- **FR-04**: The system must **apply no role elevation** — an ADMIN caller viewing a wallet they do not
+  own is refused by the identical rule FR-03 states for any other caller (EC-03).
+- **FR-05**: The system must **return**, on success, exactly the wallet's identifier, owner identifier,
+  name, type, currency, and balance — no other field, and in particular no embedded transaction list,
+  recent-transaction summary, or transaction count (AC-05).
+- **FR-06**: The system must **not** compute or expose any transaction-derived data through this
+  endpoint; a wallet's transaction history remains reachable, for every wallet this endpoint can show,
+  through the already-existing, separately paginated and filterable `GET /api/v1/transactions` endpoint
+  narrowed by wallet (SDS §5.3.3's "history" wording; see *Assumptions & Dependencies*).
+
+#### Business Rules
+
+- **BR-01**: A wallet's ownership for this operation is established the same way WM-US-01 BR-01 and
+  WM-US-04 BR-02 already established it — directly by the wallet's own identifier, scoped to the
+  authenticated caller. A wallet reference that does not resolve to a row the caller owns is refused
+  identically whether no such row exists at all or it exists and belongs to a different User (FR-03).
+- **BR-02**: Viewing a wallet is a pure read; it changes no stored data, and in particular never
+  computes, caches, or persists anything derived from that wallet's transactions (FR-06).
+
+#### Key Entities
+
+- **Wallet**: A named store of liquid money a User holds (SRS §1.5). Carries `id`, `user_id`, `name`,
+  `type`, `currency`, and `balance` (SDS §2.2, §4.3.3; WM-US-01). This story only **reads** an existing
+  Wallet row — the third Wallet Management story to do so without writing (after WM-US-02's list), and
+  the first to do so for exactly one wallet at a time.
+- **User**: Reused from Feature-01/Feature-02 with no new column. The authenticated caller's own
+  ownership of the wallet being viewed is the only scope this story ever checks (constitution SEC-08).
+- **Transaction**: Named in SDS §5.3.3's own goal text ("history") but never read by this story —
+  reachable instead through TM-US-02's own already-implemented, already-public contract (see
+  *Assumptions & Dependencies*). No Transaction field or row is touched by this story's own code path.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can view the full detail of one of their own wallets in one call,
+  and the result carries the wallet's current balance.
+- **SC-02**: No wallet can be viewed without an authenticated caller.
+- **SC-03**: A wallet can never be viewed by a User who does not own it — whether because the reference
+  does not exist at all, or because it belongs to someone else, the request is refused identically
+  either way.
+- **SC-04**: The response never exposes another wallet's or another User's data, and never embeds a
+  transaction list, a recent-transaction summary, or a transaction count — fields this story's own
+  contract does not document.
+- **SC-05**: A wallet's full transaction history remains reachable, for every wallet a caller can view
+  through this endpoint, through the already-existing, separately paginated and filterable transaction
+  list endpoint — this endpoint does not re-implement any part of that contract.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01) and Create a Wallet (WM-US-01) are already implemented.** Every acceptance
+  criterion here presupposes at least one wallet already on record, owned by the authenticated caller —
+  the identical dependency shape BM-US-04/WM-US-04 already declared on their own predecessors.
+
+- **List Wallets (WM-US-02) and Update a Wallet (WM-US-04) are also already implemented, but neither is
+  a dependency of this story.** WM-US-02 is useful for *locating* a wallet's own id before viewing it,
+  and WM-US-04 is useful for *observing* this endpoint confirm a prior update, but no acceptance
+  criterion here requires either. This is the first Wallet Management story that **can** cite a
+  complete chain of prior Wallet reads (unlike WM-US-04's own Assumptions, which had to note that no
+  single-wallet read endpoint existed yet at that point).
+
+- **The design question this story turns on: does SDS §5.3.3's "history" wording require this endpoint
+  to embed transaction data, or is it satisfied by a different, already-built answer? Reasoned through
+  in full below, not defaulted to either side.**
+
+  **The goal sentence itself.** SDS §5.3.3 reads, in its entirety: "View detailed balance and history
+  for a specific wallet." This is a single sentence naming two things. "Balance" is already fully
+  settled — `WalletRead.balance` is one of WM-US-01's own six established, already-shipped fields, and
+  nothing about this story changes it. "History" is the genuinely open word, and it is a real,
+  specific choice of wording, not interchangeable with TM-US-03's own thinner goal ("View detailed
+  transaction information") or BM-US-04's own thinner goal ("Modify a budget's spending cap") —
+  dismissing the difference as equivalent phrasing would be reading past a word the SDS actually chose,
+  exactly the trap this dispatch's brief warns against.
+
+  **Two live readings, and a third considered and rejected.**
+
+  1. *This endpoint embeds a transaction list (or a bounded summary of one) directly in its response.*
+     This reading takes "history" literally, as a second payload this endpoint itself must carry.
+
+  2. *This endpoint returns the plain, unchanged `WalletRead` — "history" is satisfied by directing the
+     client to the already-existing `GET /api/v1/transactions?wallet_id={id}`, not by this endpoint
+     embedding anything.*
+
+  3. *A middle option: this endpoint returns `WalletRead`'s six fields plus one additional, cheap field
+     — a transaction count, not a list.* Considered explicitly because it looks like it might satisfy
+     "history" without re-building a second pagination contract.
+
+  **Why option 1 (embedding) is rejected.** `backend/app/api/v1/transactions.py`'s `GET /transactions`
+  route already accepts `wallet_id`, `category_id`, `date_from`, `date_to`, `page`, and `page_size`
+  (confirmed directly in the route's own query-parameter signature, not inferred), already paginates
+  with an accurate `total` scoped to the filter (TM-US-02 AC-10), and is already implemented, tested,
+  and verified. Embedding a transaction list inside this endpoint's own response would force one of two
+  outcomes, and neither is acceptable: (a) re-implementing TM-US-02's own pagination/filtering contract
+  a second time, inside a different endpoint, with the two implementations now able to silently drift
+  from each other over time (different default page sizes, different ordering, a filter dimension added
+  to one and not the other); or (b) inventing a materially different, unpaginated "most recent N"
+  shape that no source asks for, and that cannot stay reconcilable with TM-US-02's own already-public
+  contract — a client that reads an embedded "last 5" here and then pages through the full list via
+  `GET /transactions?wallet_id=` would see two different, not-trivially-reconcilable views of the same
+  underlying data (different ordering guarantees, a different notion of "total"), for no reason the
+  SDS goal sentence actually requires. This is the identical "no second pagination contract" risk
+  TM-US-02 A2 itself declined to take on when it chose not to also expose a `category_id`-only or
+  `wallet_id`-only specialised shape beside its own general list.
+
+  **Why option 3 (a bare count) is also rejected, not merely not chosen.** A transaction count looked,
+  at first, like it might thread the needle — "history" without a list. It does not survive scrutiny:
+  no AC, FR, BR, or Gherkin scenario in either source document names a count of any kind for this
+  story; TM-US-02's own paginated envelope *already* returns `total` whenever its own `wallet_id` filter
+  is applied, so a client that wants "how many transactions does this wallet have" already gets that
+  value for free from the already-existing endpoint, at the cost of exactly one request it would need
+  to make anyway to retrieve the entries themselves — there is no scenario in which a client needs the
+  count *and not* the entries, where this endpoint's own count would save that client anything. Adding
+  it here would also mean widening `WalletRead` itself, not just this endpoint's own response —
+  `WalletRead` is the identical DTO WM-US-01 (create), WM-US-02 (list), and WM-US-04 (update) all
+  already return unchanged, so a new field added "for this story" would appear in three other stories'
+  responses too, none of which asked for it. That is the same "fewest invented rules" discipline WM-US-04
+  A1 already used to exclude `currency`/`balance` from that story's own editable fields, and TM-US-03 A3
+  already used to decline embedding a wallet or category name in its own transaction view — applied here
+  against a field *addition* instead of a field *edit*, but the same discipline either way: a count
+  nobody asked for, computed by a query this story would need to add and keep correct forever, to satisfy
+  a convenience the already-existing endpoint already provides.
+
+  **Why option 2 is correct.** "Balance" is already satisfied by an existing field; "history" is already
+  satisfied by an existing, dedicated, already-paginated, already-filterable endpoint — `GET
+  /api/v1/transactions?wallet_id={id}` — that already does the one thing a reader could reasonably want
+  from "a wallet's history" (every transaction against it, orderable, filterable by category or date,
+  with an accurate total) more completely than anything this endpoint could cheaply embed. This matches
+  the "no enrichment, one entity per endpoint" discipline every prior view/list story in this codebase
+  has used: TM-US-02/TM-US-03's own declined wallet/category-name enrichment (left as a client-side
+  concern, TM-US-02 A8/TM-US-03 A3), and WM-US-04's own refusal to let this story's sibling touch
+  anything beyond `name`/`type`. This endpoint's response is therefore `WalletRead`, unchanged — the
+  identical six fields WM-US-01 established and WM-US-02/WM-US-04 already reuse untouched (FR-05,
+  AC-05).
+
+  **No `[NEEDS RULING]` follows from this.** This is a thin, single-sentence SDS goal needing
+  interpretation — the same shape BM-US-02 through BM-US-05, CM-US-02/04, WM-US-02/04, and TM-US-03 each
+  already resolved by reasoning rather than escalating — not a genuine SRS/SDS disagreement (SRS is
+  silent on this story entirely, not contradictory with the SDS), not a change to a published endpoint
+  contract (this story adds a new endpoint; it leaves `GET /api/v1/transactions`'s and `WalletRead`'s
+  own existing contracts untouched), not a domain-model or ERD change (SRS §1.5's "Wallet contains
+  Transaction" relationship is read, not altered, by citing TM-US-02's own endpoint rather than
+  duplicating it), and not an NFR violation. "A thin SDS goal needing interpretation is not
+  automatically a `[NEEDS RULING]`" — the same standard this dispatch's own brief states explicitly.
+
+- **No new backend machinery beyond the router and one service function is required.**
+  `wallet_repo.get_owned_by_id()` already exists (built for BM-US-01's own referenced-wallet check,
+  already reused unchanged by WM-US-04) and already collapses "no such wallet" and "not this caller's
+  wallet" to the identical `None`, by construction — exactly the lookup this story needs.
+  `WalletNotFoundError` already exists (built by WM-US-04) and is reused unchanged for the identical
+  "the wallet being acted on directly was not found" case. `WalletRead` already exists and is reused
+  unchanged (FR-05). Full detail in `plan.md`.
