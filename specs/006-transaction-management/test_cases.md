@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** TM-US-01 *(TC-01…TC-36, implemented, verified — 36/36 PASS)* · TM-US-02 *(TC-37…TC-72, implemented, verified — 36/36 PASS)* · TM-US-03 *(TC-73…TC-82, implemented, verified — 10/10 PASS)* · TM-US-04 *(TC-83…TC-112, implemented, verified — 30/30 PASS)*
+> **Stories in this file:** TM-US-01 *(TC-01…TC-36, implemented, verified — 36/36 PASS)* · TM-US-02 *(TC-37…TC-72, implemented, verified — 36/36 PASS)* · TM-US-03 *(TC-73…TC-82, implemented, verified — 10/10 PASS)* · TM-US-04 *(TC-83…TC-112, implemented, verified — 30/30 PASS)* · TM-US-05 *(TC-113…TC-126, spec/design/quality drafted — not yet implemented)*
 
 ---
 
@@ -1833,4 +1833,325 @@ request/response transcript, including the overdraw-refusal case confirmed uncha
 - **When:** The User submits only a new `note` for that `INCOME` transaction (its `amount` and `type` both unchanged)
 - **Then:** The response is `200`; the reversal (unconditionally subtracting `500.00`, intermediate balance `-470.00`) and the reapplication (unconditionally adding `500.00` back, an `INCOME` with no sufficiency check) both succeed; the wallet's final balance is exactly `30.00`, unaffected — proving `decrement_balance_unconditional()` (plan.md A5) never refuses a reversal regardless of intermediate negativity (spec BR-04)
 - **AC:** AC-06 *(mechanism proof — BR-04)*
+- **Type:** integration
+
+---
+
+## TM-US-05: Delete a Transaction
+
+> **IDs in this section are local to TM-US-05.** `TC-NN`/`QF-NN` continue across the epic — this
+> story continues from `TC-113`/`QF-21`, confirmed by direct count of this file's own last entries
+> before this dispatch (`TC-112`, `QF-20`).
+
+### Quality Findings
+
+#### QF-21
+
+**Description.** AC-04/AC-05 require a transaction reference that does not exist at all and one that
+exists but belongs to a different User to produce "the same not-found outcome" — `plan.md` A7 reuses
+`transaction_repo.get_owned_by_id()` unchanged (TM-US-03), so this is true by construction. A test
+that merely checks both cases return *some* `404` would not distinguish "genuinely identical" from
+"two different messages that both happen to carry status 404" — the same risk TM-US-01 QF-01/TM-US-03
+QF-14/TM-US-04 QF-18/BM-US-05 QF-20 each already flagged for their own ownership-collapse cases.
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — the same class of minor information leak about another User's data those earlier
+findings already warned against.
+
+**Recommendation.** `TC-119` compares the full response body of the ownership-mismatch case against
+`TC-118`'s not-found-at-all case and asserts they match exactly — `error_code`, `message`, and
+`details` all identical, not merely the status code — the identical technique BM-US-05 QF-20/TC-89
+established for the same delete-shaped concern.
+
+#### QF-22
+
+**Description.** AC-01/AC-02 require a successful deletion to both permanently remove the
+transaction's own row and reverse its effect on its wallet's balance. Because the success response
+carries no body at all (`plan.md` A5), a test that only checks the HTTP status code `204` could pass
+even if the service deleted nothing, reversed nothing, or reversed the wrong amount — a router wired
+to return `204` unconditionally would fool a status-only assertion, the identical risk BM-US-05 QF-21
+already flagged for its own no-body delete response, sharper here still because this story's success
+has *two* effects to fake (a row removal and a balance change) rather than BM-US-05's one.
+
+**Impact.** Returning `204` is cheap to fake; only a test that inspects storage directly proves either
+the row is gone or the balance actually moved.
+
+**Recommendation.** `TC-114`/`TC-116` each query the `transactions` table directly through the test's
+own `db` session after a `204` response and assert the row with that id no longer exists, and
+separately assert the wallet's `balance` row reads exactly the reversed value — not inferred from the
+(empty) response body.
+
+#### QF-23
+
+**Description.** spec BR-03 requires a transaction's deletion to leave its category and every other
+transaction — on the same wallet or any other — completely unaffected. `plan.md` A3 records this as
+structurally guaranteed against cascading row deletion (no table carries a foreign key to
+`transactions.id`), but a test asserting only "the deleted transaction's own row is gone and its own
+wallet's balance moved" would not catch a service-layer bug that accidentally touched an unrelated row
+— for instance, a reversal that targeted the wrong wallet, or a query that updated every transaction
+sharing the same `category_id` instead of only the one being deleted.
+
+**Impact.** A regression here could silently corrupt an unrelated wallet's balance or an unrelated
+transaction's own fields, undetected by a test that never re-reads those other rows after the
+deletion.
+
+**Recommendation.** `TC-121` records a sibling transaction on the same wallet, a transaction on an
+entirely different wallet, and the deleted transaction's own category, before deleting the target
+transaction, then re-reads all three directly from storage afterward and asserts every one is
+unchanged — the same technique BM-US-05 QF-22/TC-91 established, extended here to a sibling
+*transaction* in addition to the wallet/category BM-US-05 itself checked, because Transaction (unlike
+Budget) has peer rows of its own kind on the same wallet to protect.
+
+#### QF-24
+
+**Description.** spec AC-07/FR-08 require a repeated deletion of an already-deleted transaction to
+produce the identical not-found outcome as a reference that never existed (`plan.md` A8) — not a
+distinct "already deleted" error. A test asserting only "the second attempt fails" would not
+distinguish a genuinely identical `404 TRANSACTION_NOT_FOUND` from a different error code that also
+happens to carry 404.
+
+**Impact.** A future change introducing a separate "already deleted" error/semantic could pass a weak
+test while contradicting the hard-delete decision (`plan.md` A2) that there is nothing left to
+distinguish.
+
+**Recommendation.** `TC-123` deletes a transaction successfully, then submits a second delete against
+the same id, and asserts the second response's `error_code`/`message`/`details` match the response a
+never-existed id produces (`TC-118`) exactly — not merely the same status code, the identical
+technique BM-US-05 QF-23/TC-95 established.
+
+#### QF-25
+
+**Description.** spec EC-04 and `plan.md` A6 both rest on `wallet_repo.decrement_balance_unconditional()`
+(built by TM-US-04 A5) never refusing a reversal regardless of the wallet's resulting balance — the
+single most important correctness property this story's design depends on for an `INCOME`
+transaction, since it is the one path where the reversal could plausibly drive a balance negative.
+TM-US-04 QF-19/TC-112 already stress-tested this exact function for an *update*'s reversal step; a
+test suite for this story that only exercised the `EXPENSE` path (where `increment_balance()`'s own
+unconditional nature is less surprising, since it only ever makes a balance larger) would leave the
+sharper `INCOME`-reversal claim resting entirely on the function's prior test coverage from a
+different story, never re-proven for a *deletion*.
+
+**Impact.** Without a dedicated test here, a regression that made `decrement_balance_unconditional()`
+conditional (for instance, accidentally reusing `decrement_balance()` instead) would only be caught by
+TM-US-04's own suite, not this one — leaving this story's own claim of unconditional reversal
+unverified in its own right.
+
+**Recommendation.** `TC-126` deliberately constructs a wallet whose balance, once the `INCOME`
+transaction's amount is subtracted back out, would be zero or negative, deletes that transaction, and
+asserts the deletion still succeeds with `204` and the wallet's balance reads exactly the
+arithmetically correct (possibly negative) result — the identical "drive it negative and prove it
+isn't refused" technique TM-US-04 TC-112 established for an update, now proven again for a deletion.
+
+### Acceptance Criteria Classification
+
+No transaction-delete screen exists in `mobile/` this round — `mobile/`'s fixture-driven prototype
+covers only UM-US-01's invite screen (`CLAUDE.md` §5), and no SRS UXR names a transaction-delete
+screen either.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully delete an EXPENSE transaction | **[API]** | No UI surface exists or is named by any UXR this round; bounded by QF-22 |
+| AC-02 | Successfully delete an INCOME transaction | **[API]** | Same; bounded by QF-22 |
+| AC-03 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-04 | Reject a deletion of a transaction that does not exist | **[API]** | Persistence/ownership contract; bounded by QF-21 |
+| AC-05 | Reject a deletion of a transaction owned by a different User | **[API]** | Persistence/ownership contract; bounded by QF-21 |
+| AC-06 | A deleted transaction's category and every other transaction are left untouched | **[API]** | Cross-entity integrity contract; bounded by QF-23 |
+| AC-07 | Deleting a transaction a second time is refused as not found | **[API]** | Idempotency contract; bounded by QF-24 |
+| EC-01 | A transaction reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
+| EC-02 | A caller who owns a different transaction attempts to delete another User's | **[API]** | Persistence/ownership contract; bounded by QF-21 |
+| EC-03 | Deleting an EXPENSE transaction whose wallet has since had other activity | **[API]** | Backend rule — reversal scoped to its own amount only |
+| EC-04 | Deleting an INCOME transaction whose reversal drives the balance negative | **[API]** | Backend rule — reversal never refused; bounded by QF-25 |
+| EC-05 | A second deletion immediately following a successful first deletion | **[API]** | Idempotency contract; bounded by QF-24 |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-113, TC-114, TC-122 | — |
+| AC-02 | [API] | TC-115, TC-116 | — |
+| AC-03 | [API] | TC-117 | — |
+| AC-04 | [API] | TC-118 | — |
+| AC-05 | [API] | TC-119 | — |
+| AC-06 | [API] | TC-121 | — |
+| AC-07 | [API] | TC-123 | — |
+| EC-01 | [API] | TC-120 | — |
+| EC-02 | [API] | TC-124 | — |
+| EC-03 | [API] | TC-125 | — |
+| EC-04 | [API] | TC-126 | — |
+| EC-05 | [API] | TC-123 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no
+> transaction-delete screen exists this round, and none is named by any SRS UXR. **Known coverage
+> limits, accepted:** none this story — unlike TM-US-01's concurrency-adjacent balance-sufficiency
+> race or TM-US-04's unreachable check-order pairing, every scenario this story's own AC/EC set
+> describes is directly constructable through the public API with no structural gap, the same
+> "nothing left to defer" position BM-US-05's own coverage matrix recorded for its own delete story.
+> This story never touches `budgets` (spec *Out of scope*), so no test here exercises the SDS §2.4.3
+> Budget Monitoring State machine.
+
+### Test Implementation Map *(filled at step 4)*
+
+Not yet populated — this dispatch covers steps 1–3 (Spec, Design, Quality) only; no test code exists
+yet for TM-US-05. `backend/tests/integration/test_tm_us_05_delete_transaction.py` will be written at
+the Implement dispatch (steps 4–6) from the test cases below, one test per `TC-NN`, each carrying its
+`TC-NN` id in its docstring, following this file's own Test Implementation Map precedent for every
+prior story.
+
+---
+
+### TC-113: Deleting an EXPENSE transaction succeeds — 204, wallet balance reversed (increased) by exactly the amount
+
+- **US:** TM-US-05
+- **Given:** An authenticated User who owns a wallet with balance `650.00`, with one `EXPENSE`
+  transaction of amount `150.00` already logged against it (recorded when the wallet's balance was
+  `800.00`)
+- **When:** The User requests deletion of that transaction by its own id
+- **Then:** The response is `204`, with an empty body; the wallet's balance is now exactly `800.00`
+  (`650.00` plus the reversed `150.00`)
+- **AC:** AC-01, FR-04, FR-05
+- **Type:** integration
+
+### TC-114: Deleting an EXPENSE transaction permanently removes its row from storage
+
+- **US:** TM-US-05
+- **Given:** An authenticated User who owns an `EXPENSE` transaction
+- **When:** That transaction is deleted successfully
+- **Then:** A direct read of the `transactions` table for that id, through the test's own `db`
+  session, finds no row at all; a direct read of the wallet's `balance` row shows exactly the reversed
+  (increased) value
+- **AC:** AC-01, FR-04, FR-05 *(assertion technique per QF-22)*
+- **Type:** integration
+
+### TC-115: Deleting an INCOME transaction succeeds — 204, wallet balance reversed (decreased) by exactly the amount
+
+- **US:** TM-US-05
+- **Given:** An authenticated User who owns a wallet with balance `600.00`, with one `INCOME`
+  transaction of amount `500.00` already logged against it (recorded when the wallet's balance was
+  `100.00`)
+- **When:** The User requests deletion of that transaction by its own id
+- **Then:** The response is `204`; the wallet's balance is now exactly `100.00` (`600.00` minus the
+  reversed `500.00`)
+- **AC:** AC-02, FR-04, FR-05
+- **Type:** integration
+
+### TC-116: Deleting an INCOME transaction permanently removes its row from storage
+
+- **US:** TM-US-05
+- **Given:** An authenticated User who owns an `INCOME` transaction
+- **When:** That transaction is deleted successfully
+- **Then:** A direct read of the `transactions` table for that id finds no row at all; a direct read
+  of the wallet's `balance` row shows exactly the reversed (decreased) value
+- **AC:** AC-02, FR-04, FR-05 *(assertion technique per QF-22)*
+- **Type:** integration
+
+### TC-117: An unauthenticated caller is denied with 401
+
+- **US:** TM-US-05
+- **Given:** A caller presenting no `Authorization` header, and an existing transaction belonging to
+  some other, real User
+- **When:** The caller requests deletion of that transaction by its own id
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`; a direct read confirms the
+  transaction's row and its wallet's balance are both unchanged
+- **AC:** AC-03, FR-02
+- **Type:** integration
+
+### TC-118: A transaction_id matching no transaction at all is rejected with 404 TRANSACTION_NOT_FOUND
+
+- **US:** TM-US-05
+- **Given:** An authenticated User
+- **When:** The User requests deletion of a transaction by an id that matches no transaction in the
+  system
+- **Then:** The response is `404` with `error_code` `TRANSACTION_NOT_FOUND`
+- **AC:** AC-04, FR-03
+- **Type:** integration
+
+### TC-119: A transaction belonging to a different User is rejected with the identical outcome as TC-118
+
+- **US:** TM-US-05
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a wallet with one transaction logged
+  against it and `A` owns nothing of the kind
+- **When:** `A` requests deletion of `B`'s transaction by its own id
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to
+  TC-118's response; `B`'s transaction and wallet balance are unchanged
+- **AC:** AC-05, FR-03 *(assertion technique per QF-21)*
+- **Type:** integration
+
+### TC-120: A malformed transaction reference is rejected with the same outcome as a well-formed but non-existent one
+
+- **US:** TM-US-05
+- **Given:** An authenticated User
+- **When:** The User requests deletion of a transaction by the id value `"not-a-real-id"`
+- **Then:** The response is `404` `TRANSACTION_NOT_FOUND`, identical to TC-118's response
+- **AC:** EC-01, FR-03
+- **Type:** integration
+
+### TC-121: Deleting a transaction leaves its category, a sibling transaction on the same wallet, and a transaction on a different wallet entirely unaffected
+
+- **US:** TM-US-05
+- **Given:** An authenticated User with a transaction `T1` logged under category `C1` against wallet
+  `W1`, a second transaction `T2` also logged against `W1` under a different category, and a second
+  wallet `W2` with its own transaction `T3`
+- **When:** `T1` is deleted successfully
+- **Then:** A direct read of `C1`'s category row, `T2`'s own transaction row, `W2`'s wallet row, and
+  `T3`'s own transaction row, each through the test's own `db` session, shows every one of them
+  unchanged from immediately before the deletion
+- **AC:** AC-06, BR-03 *(assertion technique per QF-23)*
+- **Type:** integration
+
+### TC-122: A deleted transaction never again appears in a list or a direct lookup
+
+- **US:** TM-US-05
+- **Given:** An authenticated User who owns a transaction
+- **When:** That transaction is deleted successfully, then the User requests it by its own id and
+  separately requests the list of transactions
+- **Then:** The direct lookup returns `404` `TRANSACTION_NOT_FOUND`, and the list's `items` no longer
+  include that transaction's id
+- **AC:** AC-01, FR-05
+- **Type:** integration
+
+### TC-123: Deleting a transaction a second time is rejected with the identical not-found outcome as a never-existed reference
+
+- **US:** TM-US-05
+- **Given:** An authenticated User who has already deleted one of their own transactions (confirmed
+  `204` on the first attempt)
+- **When:** The User submits another deletion request against that same id
+- **Then:** The second response is `404`; its `error_code`, `message`, and `details` are identical to
+  TC-118's never-existed-id response
+- **AC:** AC-07, EC-05, FR-08 *(assertion technique per QF-24)*
+- **Type:** integration
+
+### TC-124: A caller who owns a transaction of their own cannot delete a different User's transaction
+
+- **US:** TM-US-05
+- **Given:** Two authenticated Users `A` and `B`, where `A` owns a wallet with one transaction of
+  their own and `B` owns a separate wallet with one transaction of their own
+- **When:** `A` requests deletion of `B`'s transaction by its own id
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to
+  TC-118's response; owning a transaction of their own gives `A` no access to `B`'s
+- **AC:** EC-02, FR-03
+- **Type:** integration
+
+### TC-125: Deleting an EXPENSE transaction whose wallet has, since that transaction was recorded, had other transactions recorded against it still reverses correctly, scoped to its own amount only
+
+- **US:** TM-US-05
+- **Given:** An authenticated User who owns a wallet with balance `1000.00`; an `EXPENSE` transaction
+  `T1` of amount `200.00` is logged first (wallet balance now `800.00`); an `INCOME` transaction `T2`
+  of amount `300.00` is then logged (wallet balance now `1100.00`); an `EXPENSE` transaction `T3` of
+  amount `100.00` is then logged (wallet balance now `1000.00`)
+- **When:** `T1` is deleted
+- **Then:** The response is `204`; the wallet's balance is now exactly `1200.00` (`1000.00` plus
+  `T1`'s reversed `200.00`); `T2` and `T3` remain exactly as they were
+- **AC:** EC-03
+- **Type:** integration
+
+### TC-126: Deleting an INCOME transaction is accepted unconditionally even when its reversal drives the wallet's balance to zero or negative
+
+- **US:** TM-US-05
+- **Given:** An authenticated User who owns a wallet with balance `100.00`, with one `INCOME`
+  transaction of amount `500.00` already logged against it (recorded when the wallet's balance was
+  `-400.00` — reachable per WM-US-01 EC-02)
+- **When:** The User requests deletion of that transaction by its own id
+- **Then:** The response is `204`, not refused for any balance-related reason; the wallet's balance is
+  now exactly `-400.00` (`100.00` minus the reversed `500.00`)
+- **AC:** EC-04 *(proof technique per QF-25)*
 - **Type:** integration

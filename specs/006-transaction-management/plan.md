@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)* · TM-US-04 *(implemented, verified — 30/30 TC PASS)*
+> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)* · TM-US-04 *(implemented, verified — 30/30 TC PASS)* · TM-US-05 *(spec/design/quality drafted — not yet implemented)*
 
 ---
 
@@ -1680,3 +1680,302 @@ spelled out as SQL), no `;` or `#` in any label (DG-06), and the one `UI→API` 
 (`PATCH /transactions/:id`) is answered by exactly one of the six terminal branches, each carrying an
 HTTP status back to `UI` (DG-05). One workflow only (DG-07) — the reverse-then-reapply balance
 recalculation is drawn as two `Svc→Store` steps inside this single flow, not as a second diagram.
+
+---
+
+## TM-US-05: Delete a Transaction
+
+> **IDs in this section are local to TM-US-05** (`A*`/`T-NN`), matching `spec.md`'s convention. Only
+> `TC-NN` in `test_cases.md` continues across this epic file — this story continues from `TC-113`.
+> `QF-NN` also continues, from `QF-21` (TM-US-04 used `QF-16`…`QF-20`) — confirmed by direct count of
+> `test_cases.md`'s own last entries before this dispatch.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Domain / Scope | **No restriction is imposed on which transactions may be deleted based on their type, amount, or age.** Carries forward BM-US-05 A1's own reasoning (itself carried forward from BM-US-04's settled "no active-period restriction" ruling), adapted here since a Transaction has no period concept at all: nothing in SRS/SDS or the built system gives a reason a caller should be unable to remove any transaction they own, regardless of whether it is an `EXPENSE` or `INCOME`, its amount, or how long ago it was recorded. Not a fresh disagreement to escalate — the same settled pattern applied a third time in this codebase (BM-US-04 → BM-US-05 → here). | ✅ Resolved |
+| A2 | Domain / Data | **Hard delete — an actual row removal from `transactions`, no `is_deleted`/soft-delete/archival column.** Confirmed directly against every model file in `backend/app/models/`: no table in this schema uses a soft-delete pattern — the identical confirmation BM-US-05 A2 already made for `budgets`, now repeated for `transactions`. Consistent with every other model this codebase has built; SDS §5.6.5's own goal text ("**Remove** a transaction") reads as literal removal. | ✅ Resolved |
+| A3 | Architecture | **No cascade handling of any kind — confirmed directly against every model file that no table carries a foreign key to `transactions.id`.** A transaction has no children of its own, the identical situation BM-US-05 A3 already found for `budgets.id`, now confirmed for the entity with the most inbound references of any in this schema (wallets, categories) and still none pointing *at* it. This story's delete is therefore self-contained on the removal side: one row removed from `transactions`, nothing else removed, by construction. | ✅ Resolved |
+| A4 | API | **`DELETE /api/v1/transactions/{transaction_id}` — a verb-free path on the resource's own id**, the identical shape BM-US-05 A4 already established for `DELETE /budgets/{budget_id}` and TM-US-03 A2 already established for `GET /transactions/{transaction_id}` on this same router. Constitution NC-03 reserves verb-named paths for explicit state transitions (API-05); deleting a resource by its own id is the default verb/path pairing, not a state transition needing its own named route. Declared on the already-mounted `transactions.py` router, alongside `POST /transactions`, `GET /transactions`, `GET /transactions/{transaction_id}`, and `PATCH /transactions/{transaction_id}` — a fifth path shape FastAPI/Starlette's router distinguishes by method, not declaration order (`DELETE` + the same `{transaction_id}` pattern `GET`/`PATCH` already use). | ✅ Resolved |
+| A5 | API | **Success response is `204 No Content`, with no response body — not `200` with a minimal body.** This is the **second** story in this codebase to need a status code outside constitution API-03's literal catalog, not the first — BM-US-05 A5 already extended it once, with its own four-part reasoning (no misleading last-known body for a hard-deleted row; no single-purpose acknowledgement DTO invented solely to satisfy a status-code choice; no AC in this story's own `spec.md` requires response content; `204`'s own HTTP semantics is the literal description of this operation's outcome). That reasoning is cited here, not re-derived: it transfers unchanged from Budget's own delete to Transaction's. BM-US-05 A5's own one-line note — that the user may wish to fold `204` into `constitution.md`'s own API-03 text the next time it is edited — still stands and is not reopened a second time here. | ✅ Resolved |
+| A6 | Architecture | **The reversal happens in the service layer, calling `wallet_repo.increment_balance()`/`wallet_repo.decrement_balance_unconditional()` directly — the identical placement TM-US-04's own reversal step already established (TM-US-04 A3/A5/A6), not the repository.** AR-01 keeps the *decision* of which balance operation undoes which stored effect in the service; AR-03 keeps `wallet_repo`'s functions pure persistence. The new `transaction_repo.delete_transaction(db, *, transaction) -> None` is therefore a pure row-removal, identical in shape to `budget_repo.delete_budget()` (BM-US-05 A6) — it performs no reversal and knows nothing about wallets; by the time it is called, the wallet's balance has already been corrected by the service. **No new `wallet_repo` function is needed at all**: both of this story's reversal branches — `EXPENSE` → `increment_balance()` (TM-US-01), `INCOME` → `decrement_balance_unconditional()` (TM-US-04 A5) — already exist and are reused completely unchanged. There is no third, "reapply" balance operation to call, because deletion has no reapplication step (`spec.md` *Assumptions & Dependencies*) — this is the one structural way this story's design is genuinely simpler than TM-US-04's, not merely smaller. | ✅ Resolved |
+| A7 | Security / API | **No new error class — this story reuses `TransactionNotFoundError` (404, `TRANSACTION_NOT_FOUND`) unchanged from TM-US-03.** TM-US-03 already established this exact error for "no such transaction, or a transaction that exists but is not this caller's" — the identical collapsed semantics this story's own AC-04/AC-05 need, against the identical resource (a transaction looked up by its own id). Mirrors BM-US-05 A7's own reasoning for reusing `BudgetNotFoundError`. | ✅ Resolved |
+| A8 | Domain | **A second deletion request against an already-deleted transaction is `404 TRANSACTION_NOT_FOUND` — the same outcome as a reference that never existed — not a distinct "already deleted" error or a `204` no-op success.** Mirrors BM-US-05 A8 exactly: once removed (A2's hard delete), `transaction_repo.get_owned_by_id()` finds nothing, structurally identical to a transaction that was never created — the same "absent vs. not-owned, collapsed by construction" idiom this codebase's `get_owned_by_id()` functions already use, extended one further step to "absent because it once existed and was removed." | ✅ Resolved |
+| A9 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.6.5 tags this story "(USER)", identical to every other Transaction Management story's own tag. Mirrors TM-US-01 A12, TM-US-02 A11, TM-US-03 A5, TM-US-04 A10. | ✅ Resolved |
+| A10 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families; none of creation (TM-US-01 A13), listing (TM-US-02 A10), viewing (TM-US-03 A6), or updating (TM-US-04 A11) qualified, and deleting a transaction is no closer to any of the three than those were. No AC or FR here asks for one. | ✅ Resolved |
+| A11 | Architecture | **No new Alembic migration.** This story performs a DML row removal against the existing `transactions` table and an `UPDATE` against the existing `wallets.balance` column — no column, index, or table is added, removed, or renamed. Mirrors BM-US-05 A11/TM-US-03 A8's own first non-schema-changing stories in their epics. | ✅ Resolved |
+| A12 | Architecture | **The router issues exactly one `db.commit()`, after the service call succeeds** — identical shape to every other write endpoint in this codebase (TM-US-01/04's own routers, BM-US-05's own router). `transaction_service.delete_transaction()` performs exactly **two** flushed writes — the reversal (one `wallet_repo` call) and the row deletion (`transaction_repo.delete_transaction()`) — never commits (AR-06). Simpler than TM-US-04's own three-flush request (reversal, reapplication, row update): this story's reversal has no reapplication step to follow it, so there is no insufficient-balance failure mode to protect against mid-request at all — unlike TM-US-04, the second of this story's two flushes can never itself fail for a business reason. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only — no new top-level module, no migration, no new DTO, no new error
+class; the first Transaction Management story to remove a row entirely, and the first whose success
+response carries no body at all).
+
+```text
+backend/app/
+├── repositories/
+│   └── transaction_repo.py           # update: add delete_transaction() (A6)
+├── services/
+│   └── transaction_service.py        # update: add delete_transaction() (A1, A6, A7, A8)
+└── api/v1/
+    └── transactions.py               # update: add DELETE /transactions/{transaction_id} (A4, A5, A9)
+
+backend/tests/
+└── integration/test_tm_us_05_delete_transaction.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No change to `models/transaction.py` or `models/wallet.py` (no schema change, A11), `wallet_repo.py`
+(both reversal functions — `increment_balance()`, `decrement_balance_unconditional()` — already exist
+and are reused completely unchanged, A6), `category_repo.py` (this story issues no query against
+`categories` at all — the deleted transaction's category is left untouched by construction, not by a
+check this story performs), `schemas/transaction.py` (A5's "no body" decision means no new request or
+response DTO), `core/errors.py` (A7), `core/deps.py` (`CurrentUserDep` reused exactly as every prior
+Transaction Management story already established, A9), and `api/v1/router.py` (`transactions.router`
+is already mounted, TM-US-01).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `TransactionModel` | `transactions` | *(row removed)* | The only operation this story performs against `transactions` — no column is written; the row itself ceases to exist (A2). No schema change (A11). |
+| `WalletModel` | `wallets` | `balance` (write, once) | The third story, after TM-US-01 (one mutation) and TM-US-04 (two mutations per request), to mutate an existing Wallet's `balance` — this time exactly once, through the reversal alone. |
+
+**Repository addition** (`app/repositories/transaction_repo.py`)
+
+```python
+def delete_transaction(db: Session, *, transaction: TransactionModel) -> None:
+    """spec AC-01, AC-02, FR-05 (plan.md A2, A6). Hard-deletes an already-
+    fetched, already-ownership-verified, already-reversed row -- no
+    soft-delete column exists on this table or any other in this codebase
+    (A2). Performs no reversal itself: by the time this is called, the
+    wallet's balance has already been corrected by the service (A6).
+    Flushed, not committed (AR-06) -- the router owns the transaction
+    boundary.
+    """
+    db.delete(transaction)
+    db.flush()
+```
+
+No new repository *read* function — `get_owned_by_id()` (TM-US-03 A1) is reused unchanged for the
+ownership-scoped lookup this story also needs.
+
+**Service** (`app/services/transaction_service.py`, addition)
+
+```python
+def delete_transaction(db: Session, *, owner: UserModel, transaction_id: str) -> None:
+    """spec AC-01..AC-07, FR-04, FR-05 (plan.md A1, A6, A7, A8). Looks up
+    the transaction scoped to the caller -- reusing
+    transaction_repo.get_owned_by_id() unchanged from TM-US-03 -- then
+    reverses its stored effect on its wallet exactly as TM-US-04's own
+    reversal step does (BR-02): reuses wallet_repo.increment_balance()
+    (undoing a stored EXPENSE) / wallet_repo.decrement_balance_unconditional()
+    (undoing a stored INCOME) unchanged, never wallet_repo.decrement_balance()
+    -- there is no new effect to reapply, only the old one to undo, and a
+    reversal must never be refused (A6). Deletes the row once the reversal
+    has flushed. A second delete of the same id finds nothing (A8) and
+    raises the identical TransactionNotFoundError a delete against a
+    never-existed id would raise. No audit call (A10).
+    """
+    transaction = transaction_repo.get_owned_by_id(
+        db, transaction_id=transaction_id, user_id=owner.id
+    )
+    if transaction is None:
+        raise TransactionNotFoundError()
+
+    if transaction.type is TransactionType.EXPENSE:
+        wallet_repo.increment_balance(
+            db, wallet_id=transaction.wallet_id, amount=transaction.amount
+        )
+    else:
+        wallet_repo.decrement_balance_unconditional(
+            db, wallet_id=transaction.wallet_id, amount=transaction.amount
+        )
+
+    transaction_repo.delete_transaction(db, transaction=transaction)
+```
+
+**Router** (`app/api/v1/transactions.py`, addition)
+
+```python
+@router.delete(
+    "/{transaction_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Delete a transaction",
+    description=(
+        "Permanently deletes one of the authenticated caller's own "
+        "transactions, identified by its own id, reversing its effect on "
+        "its wallet's balance. The transaction's category and every other "
+        "transaction are left unaffected."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "TRANSACTION_NOT_FOUND"},
+    },
+)
+def delete_transaction(
+    transaction_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> None:
+    """TM-US-05 (plan.md A4, A5, A9, A12). One commit, after the service
+    call succeeds -- the service only flushes (AR-06). No body is
+    returned -- response_model=None alongside 204 (A5).
+    """
+    transaction_service.delete_transaction(db, owner=current_user, transaction_id=transaction_id)
+    db.commit()
+```
+
+**New errors**
+
+None. This story reuses `TransactionNotFoundError` (404, `TRANSACTION_NOT_FOUND`) unchanged from
+TM-US-03 (A7).
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Authenticated User of any role may delete their own transaction | AC-01, AC-02, FR-01, A9 | `DELETE /api/v1/transactions/{transaction_id}` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before anything else is evaluated | AC-03, FR-02 | `CurrentUserDep` resolves before the path is handled |
+| `transaction_id` must resolve to the caller's own transaction; not-found and not-owned collapsed | AC-04, AC-05, EC-01, EC-02, FR-03, A7 | `transaction_repo.get_owned_by_id()` (reused from TM-US-03) returns `None` for both cases by construction; service raises `TransactionNotFoundError` |
+| Deletion always reverses the transaction's stored effect first, unconditionally | AC-01, AC-02, EC-03, EC-04, FR-04, BR-02, A6 | `wallet_repo.increment_balance()` (reversing a stored EXPENSE) / `wallet_repo.decrement_balance_unconditional()` (reversing a stored INCOME) — both unconditional, both reused unchanged |
+| Deletion permanently removes the transaction's own row; no other entity is touched | AC-06, FR-05, FR-07, A2, A3 | `transaction_repo.delete_transaction()` — `db.delete(transaction)`; no cascade exists to configure (A3) |
+| No restriction based on type, amount, or age | FR-06, A1 | `delete_transaction()`'s service function performs no such check at all |
+| A repeated deletion is refused identically to a never-existed reference | AC-07, EC-05, FR-08, A8 | The second call's `get_owned_by_id()` finds nothing — the same `TransactionNotFoundError` path as a first-ever unknown id |
+| No audit event | A10 | `transaction_service.delete_transaction()` calls no `audit.record()` |
+
+**Sequence diagram — Delete a Transaction**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request
+into `API` answered back to `UI` with a status code, one workflow.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as TransactionService
+    participant Store as Store
+
+    UI->>API: DELETE /transactions/:id
+    API->>Svc: delete(input)
+    Svc->>Store: find the transaction owned by the caller
+    Store-->>Svc: transaction, or none
+
+    alt Transaction not found, or found but not owned by the caller (AC-04/AC-05, collapsed outcome)
+        API-->>UI: 404 TRANSACTION_NOT_FOUND
+    else Transaction owned by the caller
+        Note over Svc,Store: The transaction's stored effect is reversed first, unconditionally — adding back a stored EXPENSE, or subtracting back a stored INCOME — and this reversal can never itself be refused (BR-02)
+        Svc->>Store: reverse the transaction's effect on its wallet
+        Store-->>Svc: reversed
+        Svc->>Store: delete the transaction
+        Store-->>Svc: deleted
+        Svc-->>API: deleted
+        API-->>UI: 204 no content
+    end
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-03)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+```
+
+Only one workflow is drawn (DG-07). The `alt`/`else` block is the one flow's own branching — not a
+second flow — mirroring every prior Transaction Management diagram's own single-picture discipline. No
+`opt` for payload validation this story — the request carries no body at all, so there is no
+malformed-payload branch to draw (unlike TM-US-01/04's own `POST`/`PATCH` bodies, mirrors BM-US-05's
+own identical observation for its own no-body `DELETE`). Verified with `check.mjs`
+(`mermaid.parse()`) — see *Verification note* below.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-03) | 401 | `NOT_AUTHENTICATED` |
+| Transaction not found, or found but not owned by the caller (AC-04, AC-05) | 404 | `TRANSACTION_NOT_FOUND` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02) for
+every *failure* response — the success response itself carries no body at all (A5). No `403` (A9: no
+role restriction), no `409` of any kind (a reversal is never refused — A6, BR-02 — so deletion has no
+business conflict to guard against), and no `422` (there is no request payload for this endpoint to
+validate at all — the only input is the path parameter, which either resolves to an owned transaction
+or does not).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `transaction_service.delete_transaction()` is the only place that decides what a failed lookup means and which reversal operation applies |
+| AR-02 Thin router | Required | Router binds the path param, resolves `CurrentUserDep`, calls the service, commits, returns no body — no branching on business state |
+| AR-03 Repository isolation | Required | `transaction_repo.get_owned_by_id()` (reused), the new `delete_transaction()`, and `wallet_repo`'s two reused reversal functions are queries/persistence only — the *decision* of which reversal applies is the service's (A6) |
+| AR-04 DTO ↔ model mapping outside routers/repos | N/A | No DTO exists for this endpoint's response at all (A5) — nothing to map |
+| AR-05 No framework objects in services | Required | `delete_transaction()` takes plain values (`owner`, `transaction_id`); no `Request`/`Response` |
+| AR-06 One transaction per request | Required | Service flushes at most twice (the reversal, then the deletion); the router commits once (A12) |
+| AR-07 Router → service → repository | Required | The router never calls `transaction_repo`/`wallet_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only to existing modules |
+| API-01 Versioned plural path | Required | `DELETE /api/v1/transactions/{transaction_id}` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged — governs the failure responses; the success response has no body to envelope (A5) |
+| API-03 Status codes | Required (extended, second time) | `204` delete (not in API-03's literal list — extended once already by BM-US-05 A5, reused here, not re-derived) · `401` · `404` |
+| API-04 Prefixed error codes | Required | `TRANSACTION_NOT_FOUND` — reused, not duplicated (A7) |
+| API-05 No generic status endpoint | Required | `DELETE /transactions/{transaction_id}` is a plain resource-deletion route, not a state-machine setter |
+| API-06 Pagination | N/A | Single-resource deletion; no list in this story |
+| API-07 Explicit response_model | Required | `response_model=None`, `status_code=204` — declared explicitly so the generated OpenAPI schema correctly shows no response body (A5) |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `transaction_repo.py`/`transaction_service.py`/`transactions.py` |
+| NC-02 Naming | N/A | No new DTO (A5) |
+| NC-03 No verbs except state transitions | Required | `/transactions/{transaction_id}` — no verb in the path (A4) |
+| NC-04 Column naming | N/A | No column added, removed, or renamed (A2, A11) |
+| NC-05 Enum serialisation | N/A | No enum touched by this story's own schema surface (`TransactionType` is read, not serialised, to decide the reversal branch) |
+| NC-06 Concise service methods | Required | `transaction_service.delete_transaction`, matching `create_transaction`/`list_transactions`/`get_transaction`/`update_transaction`'s own naming |
+| VL-01 Pydantic is the source of truth | N/A | No request body for this endpoint at all |
+| VL-02 Errors grouped | N/A | No validation scenario this story can produce — there is no payload to validate |
+| VL-05 Two-level uniqueness | N/A | No uniqueness constraint touched by a deletion |
+| VL-06 Referenced entities verified before use | Required (404 only) | `404` if the transaction is absent/not owned (reused from TM-US-03 A4). No "wrong state" / `409` branch applies — no restriction based on type, amount, or age (A1) |
+| VL-07 Decimal money | N/A (indirect) | The reversal reads the transaction's own already-validated `Decimal` `amount`; no new monetary value is accepted from a request by this story |
+| SEC-06 JWT parameters | N/A | Consumed via `CurrentUserDep`, not defined here |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case to test (A9) |
+| SEC-08 Ownership filter | Required | `get_owned_by_id()` filters by `user_id` via the join to `wallets`, reused unchanged from TM-US-03 |
+| SEC-09 Secrets from .env | N/A | No secret introduced by this story |
+| SEC-10 No enumeration | N/A (reasoning reused) | Same discipline as every prior story's own note — VL-06's absent-vs-present collapse (A7) means a non-owner learns nothing from a `404` |
+| SEC-11 Rate limiting | N/A | Scoped by its own text to the invitation and activation endpoints |
+| LA-01 No secrets in logs | N/A | No credential or token handled by this story |
+| LA-02 / LA-04 Audit | N/A (by decision) | Deleting a transaction is not one of LA-04's three named audited events, and no AC/FR asks for one (A10) |
+| PF-01 300 ms p95 | Required | One indexed lookup (join on `wallets.user_id`, already indexed) plus one balance `UPDATE` and one row delete, no slow I/O off the request path |
+| PF-02 Indexed lookups | Required | `transactions.id` is the primary key; `wallets.user_id` already indexed (WM-US-01); the reversal's `UPDATE` targets `wallets.id`, the primary key |
+| PF-03 DTO projection | N/A | No response body to project at all — the first Transaction Management endpoint with none (A5) |
+| PF-04 Bounded lists | N/A | No list endpoint in this story |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| TST-06 Deterministic time | N/A | This story introduces no new timestamp-sensitive behaviour; `timestamp` is read (for no purpose this story needs) but never written |
+| DOD-02 Migration | N/A | No schema change — a DML row removal plus a balance `UPDATE` against existing tables, no Alembic revision (A11) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No transaction-delete screen exists this round — `mobile/`'s fixture-driven prototype covers only UM-US-01's invite screen (`CLAUDE.md` §5); no SRS UXR names a transaction-delete screen either. |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `transaction_repo.delete_transaction(db, *, transaction)` — pure row removal, no reversal logic (A2, A6) | `backend/app/repositories/transaction_repo.py` | Open |
+| T-02 | `transaction_service.delete_transaction(db, *, owner, transaction_id)` — ownership lookup reused from TM-US-03, then reversal (reusing `wallet_repo.increment_balance()`/`decrement_balance_unconditional()` unchanged), then delete; no type/amount/age restriction (A1, A6, A7, A8) | `backend/app/services/transaction_service.py` | Open |
+| T-03 | `DELETE /api/v1/transactions/{transaction_id}` router — `204`, `response_model=None` (A4, A5, A9) | `backend/app/api/v1/transactions.py` | Open |
+| T-04 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_05_delete_transaction.py` | Open |
+
+**Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
+was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`, scratch install already
+present in this session's scratchpad per `CLAUDE.md` §3) before this gate was claimed — see the gate
+report for the actual `check.mjs` output against this file's now-five mermaid blocks. By eye/grep: four
+lanes only (`UI`, `API`, `Svc`, `Store`), no `Repo`/`DB` lane, no
+`SELECT`/`INSERT`/`UPDATE … WHERE`/`JOIN`/`rowcount`/table-and-column syntax in any arrow label (the
+reversal mechanism is described in prose in a `Note`, per DG-04's own allowance), no `;` or `#` in any
+label (DG-06), and the one `UI→API` request (`DELETE /transactions/:id`) is answered by exactly one of
+the two terminal branches, each carrying an HTTP status back to `UI` (DG-05). One workflow only
+(DG-07).

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)* · TM-US-04 *(spec/design/quality drafted — not yet implemented)*
+> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)* · TM-US-04 *(implemented, verified — 30/30 TC PASS)* · TM-US-05 *(spec/design/quality drafted — not yet implemented)*
 
 ---
 
@@ -1474,4 +1474,311 @@ mirroring TM-US-01 EC-11.
 - **This story never reads or writes the `budgets` table**, for the same reason every prior
   Transaction Management story already recorded: BM-US-03 owns spending-vs-budget computation, not
   this story, even though an edited Transaction's new amount/type is exactly the kind of change that
+  computation eventually reflects on its next read.
+
+---
+
+## TM-US-05: Delete a Transaction
+
+> **IDs in this section are local to TM-US-05.** `AC-01` below is not TM-US-01/02/03/04's own `AC-01`;
+> each story section numbers its own criteria, per `artifact-templates/spec-templates.md` and this
+> epic file's own precedent. Only `TC-NN` (and `QF-NN`) in `test_cases.md` run continuously across the
+> epic (`CLAUDE.md` §1.1 rule 4) — this story continues from `TC-113`/`QF-21`, confirmed by direct
+> count of `test_cases.md`'s own last entries before this dispatch (`TC-112`, `QF-20`).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-06 — searched in full; confirmed still accurate**
+> `### Feature-06: Transaction Management` contains exactly three story headers, the same three
+> TM-US-04's own Source section already found: `#### US-06-01: Create a Transaction for a Wallet
+> [MVP]` (TM-US-01), a bare `#### US-06-02: View List of Transactions [MVP]` (TM-US-02), and a bare
+> `#### US-06-03: Update/Delete a Transaction` — **one combined header for both TM-US-04 and this
+> story**, no `[MVP]` tag, no Gherkin. There is no separate header distinguishing delete from update
+> the way SDS §5.6 does (SDS §5.6.4 "TM-US-04" vs §5.6.5 "TM-US-05", confirmed below). Not a source
+> contradiction — TM-US-04's own Source section already worked through this exact gap for the sibling
+> half of the same bare header; this story is grounded in SDS §5.6.5's own separate entry and in SRS
+> §1.5/§2 FR-06's text directly, the same way TM-US-04 grounded itself. No `[NEEDS RULING]` follows.
+
+**SRS §1.5 Conceptual Domain Model**
+> **Transaction** — A single recorded movement of money, in or out, against one Wallet and one
+> Category, at a point in time (FR-06).
+>
+> | Relationship | Cardinality | Meaning |
+> | Wallet contains Transaction | one Wallet → many Transactions | Every Transaction moves money
+> into or out of exactly one Wallet (FR-06) |
+> | Category classifies Transaction | one Category → many Transactions | Every Transaction is
+> tagged with exactly one Category (FR-06) |
+
+**SRS §2 FR-06 — Transaction Management**
+> The System shall allow Users to log income and expense Transactions against a designated Wallet
+> and Category. The System shall automatically recalculate and persist wallet balances atomically.
+
+**SDS §5.6.5 TM-US-05: Delete a Transaction (USER)**
+> **Goal:** Remove a transaction and reverse its impact on wallet balance.
+
+Unlike BM-US-05's own SDS goal for the budget epic's equivalent story ("Remove an active budget
+tracker" — no explicit side effect named), this goal sentence explicitly names the balance reversal as
+part of *this* story's own job, not something left to be inferred the way BM-US-05 A1 had to read
+"active" against silence elsewhere. This story is accordingly simpler than TM-US-04 in one respect and
+no thinner in another: deletion only ever *reverses* a transaction's already-applied effect — there is
+no "apply a new effect" step the way Update's reapplication needed, so there is no insufficient-balance
+refusal possible at this story's own hands at all — while still carrying the identical reversal
+mechanics TM-US-04 already built and proved.
+
+**`specs/005-budget-management/plan.md` BM-US-05 "Gaps & Decisions"** *(this story's own closest-shape
+precedent — the delete/204/hard-delete/idempotent-as-404 pattern reused below)*
+> A2: "Hard delete — an actual row removal from `budgets`, no `is_deleted`/soft-delete/archival
+> column... Confirmed directly against every model file in `backend/app/models/`: no table in this
+> schema uses a soft-delete pattern."
+> A4/A5: "`DELETE /api/v1/budgets/{budget_id}` — a verb-free path on the resource's own id... Success
+> response is `204 No Content`, with no response body — not `200` with a minimal body... this is the
+> first story in this codebase, in any epic, to need [`204`], since no `DELETE` endpoint has existed
+> before this story."
+> A8: "A second deletion request against an already-deleted budget is `404 BUDGET_NOT_FOUND` — the
+> same outcome as a reference that never existed — not a distinct 'already deleted' error or a `204`
+> no-op success."
+
+**`specs/006-transaction-management/spec.md` TM-US-04 "Business Rules"** *(this story's own inherited
+precedent — the reversal machinery this story runs once per request instead of TM-US-04's twice)*
+> BR-03: "Updating a transaction always reverses its current, stored effect on its wallet and applies
+> its new, effective effect."
+> BR-04: "Reversing a transaction's current, stored effect never fails for insufficient balance,
+> regardless of the wallet's balance at the time: undoing a previously applied `EXPENSE` always adds
+> its amount back, and undoing a previously applied `INCOME` always subtracts its amount back."
+
+**constitution.md API-03** *(already extended once, by BM-US-05, for exactly this shape of response — not
+reopened here)*
+> HTTP status codes: `200` read/update · `201` creation · `400` malformed or expired-token per SRS ·
+> `401` unauthenticated · `403` authenticated but forbidden · `404` not found · `409` business conflict
+> · `422` payload validation. *(No `204` listed — BM-US-05's own `plan.md` A5 already noted the gap
+> and left a one-line suggestion for `constitution.md` to be amended the next time it is edited; this
+> story is the second, not the first, to rely on the same unlisted-but-uncontradicted status code.)*
+
+**constitution.md AR-06, SEC-08, VL-06**
+> AR-06: Multi-entity writes execute in **one** transaction. Services never call `commit()`; the
+> router owns the commit boundary.
+> SEC-08: Queries for user-owned data filter on the authenticated `user_id` at the repository layer.
+> VL-06: Referenced entities are verified to exist and be active before use — `404` if absent, `409`
+> if present but in the wrong state.
+
+**Confirmed directly against `backend/app/models/`** — no table in this schema carries a foreign key
+to `transactions.id`. A Transaction has no children of its own, the identical situation BM-US-05 A3
+already found for `budgets.id` — this story's deletion therefore has no cascade behaviour of any kind
+to design.
+
+### Out of scope for this story
+
+TM-US-01/02/03/04 (create, list, view, update — all implemented) · soft-delete, archival, or any
+"undo" of a deletion (reasoned through explicitly below, not merely declined) · cascading removal of
+any other entity (no table in this schema references `transactions.id` — see *Source* and
+*Assumptions & Dependencies*) · recomputing or re-deriving any Budget's `amount_spent`,
+`progress_percentage`, or `status` — those remain BM-US-02/BM-US-03's own read-time computations over
+whatever transactions exist at read time, unaffected by this story except as a natural consequence of
+a deleted transaction's absence on the next such read · BM-US-01..05 · WM-US-02..05 · CM-US-02..05 ·
+UM-US-04/05, DC-US-01/02 · Features 07–11 · SRS §6 Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: retaining a deleted transaction's row in any recoverable
+form — this story's contract is a permanent removal, not a status change (see *Assumptions &
+Dependencies*); any "insufficient balance" refusal of the deletion itself — deletion only ever reverses
+an already-applied effect, and a reversal is never refused (see *Requirements*, *Assumptions &
+Dependencies*); restricting which transactions may be deleted based on their type, amount, or age — no
+source imposes one (see *Assumptions & Dependencies*); and any mobile/UI screen — confirmed directly in
+`mobile/app/(tabs)/transactions/index.tsx`'s own source comments, which name only TM-US-03/04 as the
+screens this round's prototype deliberately does not build, and no SRS UXR names a transaction-delete
+screen either.
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to permanently remove a transaction I no longer want recorded, so
+that my wallet's balance reflects only the transactions I still consider real, with the transaction's
+original effect undone exactly as if it had never been logged.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully delete an EXPENSE transaction**
+**Given** an authenticated User who owns an `EXPENSE` transaction logged against one of their own
+wallets,
+**When** the User requests that transaction be deleted, identifying it by its own identifier,
+**Then** the system permanently removes that transaction's record — it never again appears in any
+subsequent listing or lookup the caller performs — and increases the wallet's balance by exactly the
+transaction's amount, reversing the decrease the transaction originally caused.
+
+**AC-02: Successfully delete an INCOME transaction, regardless of the wallet's current balance**
+**Given** an authenticated User who owns an `INCOME` transaction logged against one of their own
+wallets,
+**When** the User requests that transaction be deleted,
+**Then** the system permanently removes that transaction's record — it never again appears in any
+subsequent listing or lookup — and decreases the wallet's balance by exactly the transaction's amount,
+reversing the increase the transaction originally caused, accepted regardless of what the wallet's
+balance is at the time of deletion.
+
+**AC-03: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to delete a transaction,
+**Then** the system denies the request before evaluating anything else, deletes nothing, and returns
+an unauthenticated error.
+
+**AC-04: Reject a deletion of a transaction that does not exist at all**
+**Given** an authenticated User,
+**When** the submitted transaction reference matches no transaction in the system,
+**Then** the system deletes nothing and returns a not-found error.
+
+**AC-05: Reject a deletion of a transaction belonging to a different User**
+**Given** an authenticated User,
+**When** the submitted transaction reference matches a transaction belonging to a wallet owned by a
+different User,
+**Then** the system deletes nothing and returns the same not-found outcome AC-04 describes — the
+response gives no indication of which of the two happened.
+
+**AC-06: A deleted transaction's category, and every other transaction, are left untouched**
+**Given** an authenticated User successfully deletes one of their own transactions,
+**When** the deletion completes,
+**Then** that transaction's category, every other transaction logged against the same wallet, and
+every transaction logged against any other wallet, all remain exactly as they were immediately before
+the request — only the deleted transaction's own record and its own wallet's balance change.
+
+**AC-07: Deleting a transaction a second time is refused as not found**
+**Given** an authenticated User who has already deleted one of their own transactions,
+**When** the User submits another request to delete that same transaction reference,
+**Then** the system deletes nothing further — there is nothing left to delete — and returns the
+identical not-found outcome AC-04 describes.
+
+### Edge Cases
+
+**EC-01**: **A transaction reference that is not even a well-formed identifier** — a value such as
+`"not-a-real-id"` is refused with the same not-found outcome as a well-formed but non-existent
+reference (AC-04). No separate malformed-identifier error exists; a reference either resolves to a
+transaction the caller owns, or it does not, regardless of its shape.
+
+**EC-02**: **A caller who owns one or more transactions of their own, attempting to delete a different
+User's transaction** — refused with the identical outcome AC-05 describes; owning some transaction
+never entitles a caller to act on another User's transaction.
+
+**EC-03**: **Deleting an EXPENSE transaction whose wallet has, since that transaction was recorded, had
+other transactions recorded against it** — the reversal still applies, scoped to only this
+transaction's own amount; the wallet's resulting balance reflects every one of its other recorded
+transactions' effects plus this reversal, never losing or double-counting any of them.
+
+**EC-04**: **Deleting an INCOME transaction whose reversal would drive the wallet's balance to zero or
+below** — accepted unconditionally; a reversal undoes a real effect already counted as having
+happened, and is never refused for any reason related to the wallet's current balance, the identical
+guarantee TM-US-04 BR-04 already established for a reversal performed as part of an update.
+
+**EC-05**: **A transaction deleted successfully, immediately followed by a second deletion request
+against that same reference** — refused with the identical not-found outcome AC-04/EC-01 describe;
+there is nothing left to delete, and no distinct "already deleted" outcome exists.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to submit a transaction
+  reference, identifying it by its own identifier, in order to delete that transaction (SDS §5.6.5;
+  AC-01, AC-02).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before anything else (constitution API-08; mirrors TM-US-01 FR-02, TM-US-04 FR-02).
+- **FR-03**: The system must **require** the submitted transaction reference to resolve to a
+  transaction belonging to a wallet owned by the authenticated caller, and **refuse** the request with
+  an identical outcome whether no such transaction exists at all or it exists and belongs to a wallet
+  owned by a different User (AC-04, AC-05, EC-01, EC-02; constitution SEC-08, VL-06).
+- **FR-04**: The system must, on a successful deletion, **reverse** the transaction's current, stored
+  effect on its wallet before removing its own row — adding back the amount of a stored `EXPENSE`, or
+  subtracting back the amount of a stored `INCOME` — and this reversal must **never be refused**,
+  regardless of the wallet's current balance, because it undoes a real effect already counted as having
+  happened (AC-01, AC-02, EC-03, EC-04; mirrors TM-US-04 FR-11, BR-04).
+- **FR-05**: The system must, once the reversal in FR-04 has been applied, **permanently remove** the
+  transaction's own record; the removed row never again resolves through any lookup or listing
+  performed by the caller (AC-01, AC-02).
+- **FR-06**: The system must **impose no restriction** on which transactions may be deleted based on
+  their type, amount, or age — any transaction the caller owns may be deleted, exactly as any other
+  (see *Assumptions & Dependencies*).
+- **FR-07**: The system must **never alter** any entity other than the deleted transaction's own row
+  and its own wallet's balance — no other transaction, no category, and no other wallet is touched by
+  a deletion (AC-06).
+- **FR-08**: The system must **refuse** a repeated deletion of an already-deleted transaction with the
+  identical not-found outcome a never-existed reference produces (AC-07, EC-05).
+
+#### Business Rules
+
+- **BR-01**: A transaction's ownership for this operation is established the same way every prior
+  Transaction Management story already established it — entirely transitive through the transaction's
+  own `wallet_id`, since the transaction carries no owner column of its own. A transaction reference
+  that does not resolve to a row the caller owns is refused identically whether no such row exists at
+  all or it exists and belongs to a different User (FR-03).
+- **BR-02**: Deleting a transaction always reverses its current, stored effect on its wallet before the
+  row is removed — unconditionally, regardless of the wallet's balance at the time: undoing a stored
+  `EXPENSE` always adds its amount back, and undoing a stored `INCOME` always subtracts its amount back
+  (FR-04).
+- **BR-03**: Deleting a transaction changes exactly two things — the deleted transaction's own row
+  (removed) and its own wallet's balance (adjusted by the reversal) — and nothing else (FR-07).
+- **BR-04**: A transaction reference that no longer resolves to an existing row — whether because it
+  never existed at all or because it was already deleted — is refused identically to one that never
+  existed (FR-08).
+
+#### Key Entities
+
+- **Transaction**: A single recorded movement of money, in or out, against one Wallet and one
+  Category, at a point in time (SRS §1.5; TM-US-01). The first Transaction Management story to remove
+  a Transaction row entirely, rather than create (TM-US-01), list (TM-US-02), view (TM-US-03), or
+  mutate the fields of one while keeping its row (TM-US-04).
+- **Wallet**: Reused from WM-US-01 with no new column. The third story, after TM-US-01 (one mutation)
+  and TM-US-04 (two mutations per request), to mutate an existing Wallet's `balance` — this time
+  exactly once per request, through a reversal only, with no reapplication step to follow it (BR-02).
+- **Category**: Reused from CM-US-01 with no new column. Referenced by this story only incidentally —
+  to confirm it is left unaffected by a deletion (AC-06) — never queried for ownership by this story.
+- **User**: Reused from Feature-01/Feature-02 with no new column. The authenticated caller's own
+  ownership of the transaction being deleted, reached through the wallet it belongs to, is what
+  entitles them to delete it; no role restriction applies.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can delete any one of their own transactions, and it never again
+  appears in any listing or lookup the caller performs.
+- **SC-02**: No transaction can be deleted without an authenticated caller.
+- **SC-03**: A transaction can never be deleted by a User who does not own it — refused identically
+  whether the reference does not exist at all or belongs to someone else.
+- **SC-04**: Deleting a transaction always reverses exactly its own effect on its own wallet, exactly
+  once, and that reversal is never refused for any reason related to the wallet's current balance.
+- **SC-05**: Deleting a transaction never changes any other transaction, any category, or any other
+  wallet.
+- **SC-06**: A repeated deletion attempt against an already-deleted transaction is refused identically
+  to a reference that never existed.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01) and TM-US-01 (Create a Transaction) are already implemented** — there is nothing
+  to delete otherwise. TM-US-03 (View) is this story's own closest architectural precedent for looking
+  a transaction up by its own id, scoped to the caller, and is reused completely unchanged
+  (`transaction_repo.get_owned_by_id()`, `TransactionNotFoundError`) — see `plan.md` for the concrete
+  reuse.
+
+- **This story is simpler than TM-US-04, not harder.** Deleting a transaction only ever *reverses* its
+  stored effect on its wallet; there is no "reapply a new effect" step the way Update needed (TM-US-04
+  BR-03), so there is no insufficient-balance refusal possible through this operation at all — the
+  reversal mechanics themselves (TM-US-04 BR-03/BR-04/BR-05: adding back a stored `EXPENSE` via
+  `increment_balance()`, subtracting back a stored `INCOME` via
+  `decrement_balance_unconditional()` — both built by TM-US-01/TM-US-04 A5 and never refused) are
+  reused completely unchanged, run exactly once per request instead of TM-US-04's reverse-then-reapply
+  pair.
+
+- **The delete/204/hard-delete/idempotent-as-404 pattern is inherited from BM-US-05**
+  (`specs/005-budget-management/plan.md` BM-US-05 A2/A4/A5/A8), the budget epic's own `DELETE
+  /resource/{id}` → `204 No Content` precedent — crossed here with TM-US-04's own reversal mechanics
+  rather than re-derived from first principles. Full design: `plan.md`.
+
+- **No cascade behaviour exists to design.** Confirmed directly against every model file in
+  `backend/app/models/`: no table in this schema carries a foreign key to `transactions.id` — a
+  Transaction has no children of its own, the identical situation BM-US-05 A3 already found for
+  `budgets.id`.
+
+- **No restriction based on a transaction's type, amount, or age.** Nothing in SRS/SDS or the built
+  system gives a reason a caller should be unable to delete any transaction they own, regardless of
+  whether it is an `EXPENSE` or `INCOME`, how large its amount is, or how long ago it was recorded —
+  the same "nothing restricts it, so nothing is invented" reading BM-US-05 A1 already carried forward
+  from BM-US-04's own settled period-independence ruling, adapted here since Transaction has no period
+  concept to begin with.
+
+- **This story never reads or writes the `budgets` table**, for the same reason every prior
+  Transaction Management story already recorded: BM-US-03 owns spending-vs-budget computation, not
+  this story, even though a deleted Transaction's absence is exactly the kind of change that
   computation eventually reflects on its next read.
