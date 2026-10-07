@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** TM-US-01 *(TC-01…TC-36, implemented, verified — 36/36 PASS)* · TM-US-02 *(TC-37…TC-72, implemented, verified — 36/36 PASS)* · TM-US-03 *(TC-73…TC-82, implemented, verified — 10/10 PASS)*
+> **Stories in this file:** TM-US-01 *(TC-01…TC-36, implemented, verified — 36/36 PASS)* · TM-US-02 *(TC-37…TC-72, implemented, verified — 36/36 PASS)* · TM-US-03 *(TC-73…TC-82, implemented, verified — 10/10 PASS)* · TM-US-04 *(TC-83…TC-112, drafted — not yet implemented)*
 
 ---
 
@@ -1316,4 +1316,467 @@ same file.
 - **When:** The caller requests a transaction by an `id` that does not match any transaction in the system
 - **Then:** The response is `401` `NOT_AUTHENTICATED`, not `404` — mirrors TM-US-02 TC-41/UM-US-03 TC-61's own ordering
 - **AC:** AC-02, FR-02
+- **Type:** integration
+
+---
+
+## TM-US-04: Update a Transaction
+
+> **IDs in this section are local to TM-US-04.** `TC-NN`/`QF-NN` continue across the epic — this
+> story continues from `TC-83`/`QF-16`, confirmed by direct count of this file's own last entries
+> before this dispatch (`TC-82`, `QF-15`).
+
+### Quality Findings
+
+#### QF-16
+
+**Description.** AC-17/EC-06 require that a reapplication refused for insufficient balance leaves the
+transaction's previously stored fields and the wallet's balance completely unchanged — not merely that
+the HTTP response is `409`. Because this story's recalculation flushes a reversal *before* the
+reapplication is even attempted (`plan.md` A3/A6), a weak test checking only the response body could
+pass even if the reversal's flushed-but-uncommitted write somehow leaked into what a subsequent request
+observes, or if the transaction row were partially mutated before the sufficiency check ran.
+
+**Impact.** A test that only asserts the `409` envelope would not actually prove the money-handling
+guarantee this story exists to protect — that a failed update leaves nothing, not even a half-applied
+reversal, behind.
+
+**Recommendation.** `TC-88` reads the wallet's `balance` and the transaction's own stored row directly
+from the database, independent of any response, after a reapplication refusal, and asserts both are
+bit-for-bit identical to their values immediately before the request — the same direct-row-read
+discipline TM-US-01 QF-07 already established for its own analogous "did the refused write really
+leave nothing behind" question, now applied to an *update* rather than a *create*.
+
+#### QF-17
+
+**Description.** `plan.md` A4 skips type-consistency re-validation when neither the effective category
+nor the effective type differs from the transaction's own stored row — but every stored transaction's
+pairing is already guaranteed valid at creation time (TM-US-01 BR-03/FR-07), so there is no
+constructible stored row with an *invalid* pairing to re-check against in the first place. A black-box
+test cannot distinguish "the check was skipped" from "the check ran again and, unsurprisingly, passed"
+— both produce an identical `200` response.
+
+**Impact.** Without a named limitation, a reader could wonder whether this story's own claimed
+optimization (`plan.md` A4) is actually exercised by any test, or merely asserted.
+
+**Recommendation.** No test claims to prove the skip itself. Instead, `TC-89`/`TC-90` prove the
+*outcome* the skip is supposed to preserve — a category-only or note-only update succeeds and leaves
+`amount`/`type`/balance alone — which is the only externally observable consequence either design
+(skip, or re-check-and-pass) could produce. The skip's own performance/clarity rationale is therefore
+a design decision recorded in `plan.md`, not an independently testable behaviour — the same class of
+structurally-unprovable gap TM-US-01 QF-06 already recorded for its own untestable check-order pairing.
+
+#### QF-18
+
+**Description.** AC-09/AC-10 require a transaction reference that does not exist at all and one that
+exists but belongs to a different User to produce "the same not-found outcome" — `transaction_repo
+.get_owned_by_id()` (reused unchanged from TM-US-03) makes this true by construction. A test that
+merely checks both cases return *some* `404` would not distinguish "genuinely identical" from "two
+different messages that both happen to carry status 404."
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — the same class of minor information leak about another User's data BM-US-04 QF-16
+already flagged for this exact shape of lookup, now exercised a third time for Transaction.
+
+**Recommendation.** `TC-94` compares the full response body of the ownership-mismatch case against
+the full response body of the corresponding not-found-at-all case (`TC-93`) and asserts they match
+exactly — `error_code`, `message`, and `details` all identical, not merely the status code — the
+identical technique BM-US-04 QF-16/TC-68 established.
+
+#### QF-19
+
+**Description.** `plan.md` A3 claims, with a worked mathematical proof, that a category-only or
+note-only update (leaving `amount` and `type` both unchanged) can **never** be refused for insufficient
+balance, no matter how low other, later transactions have since driven the same wallet's balance. This
+is the single most important correctness property this story's design rests on, and an assertion this
+load-bearing deserves a test that actually stresses it, not merely a test that happens not to trigger
+the failure it claims is impossible.
+
+**Impact.** Without a dedicated stress test, this guarantee would rest entirely on the proof in
+`plan.md` A3 and on whichever ordinary-case tests happen to pass — neither of which would catch a
+regression that silently broke the proof's own precondition (for instance, a future change that made
+`decrement_balance_unconditional()` itself conditional).
+
+**Recommendation.** `TC-108` deliberately drives a wallet's balance down to exactly zero using *other*
+transactions, then performs a note-only update on an earlier, unrelated `EXPENSE` transaction, and
+asserts the update succeeds and the wallet's balance is unaffected — concretely exercising the proof's
+own worst case rather than merely an easy one.
+
+#### QF-20
+
+**Description.** True concurrent-writer verification — two simultaneous updates to the *same*
+transaction, or an update racing a separate `EXPENSE` creation against the same wallet — cannot be
+constructed in this environment. TM-US-01 QF-04/UM-US-01 QF-02 already established that this codebase's
+test database (SQLite, `StaticPool`, single-threaded test execution — constitution ENV-03) serialises
+writers, so a literal race test would prove serialisation, not conflict handling.
+
+**Impact.** The concurrency-safety argument this story's conditional `decrement_balance()` reuse rests
+on (TM-US-01 A9) is exercised here only at the same single-request granularity TM-US-01 itself could
+prove, not under genuine concurrent load.
+
+**Recommendation.** Deferred to a PostgreSQL run, exactly as TM-US-01 QF-04 already deferred its own
+analogous gap. This suite's own `TC-87`/`TC-88`/`TC-107` prove the single-request mechanism's
+correctness deterministically — the boundary and refusal cases a single writer can exercise.
+
+### Acceptance Criteria Classification
+
+No transaction-edit screen exists in `mobile/` this round — confirmed directly in
+`mobile/app/(tabs)/transactions/index.tsx`'s own source comments, which name "TM-US-03/04 (a
+transaction-detail screen)" together as a screen that prototype deliberately does not build. No SRS
+UXR names one either.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Update only the amount of an EXPENSE transaction | **[API]** | No UI surface; backend balance-recalculation contract |
+| AC-02 | Update only the amount of an INCOME transaction | **[API]** | Backend balance-recalculation contract |
+| AC-03 | Change type EXPENSE → INCOME | **[API]** | Backend balance-recalculation contract |
+| AC-04 | Change type INCOME → EXPENSE, within balance | **[API]** | Backend balance-recalculation contract |
+| AC-05 | Update only the category | **[API]** | Backend re-validation contract |
+| AC-06 | Update only the note | **[API]** | Backend partial-update contract |
+| AC-07 | Update several fields together | **[API]** | Backend partial-update + recalculation contract |
+| AC-08 | Deny unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-09 | Reject a transaction that does not exist | **[API]** | Persistence/ownership contract; bounded by QF-18 |
+| AC-10 | Reject a transaction owned by a different User | **[API]** | Persistence/ownership contract; bounded by QF-18 |
+| AC-11 | Reject a request with no field submitted | **[API]** | Payload validation contract |
+| AC-12 | Reject an unresolvable category reference | **[API]** | Persistence/ownership contract |
+| AC-13 | Reject an invalid amount | **[API]** | Payload validation contract |
+| AC-14 | Reject an invalid type | **[API]** | Payload validation contract |
+| AC-15 | Reject an over-long note | **[API]** | Payload validation contract |
+| AC-16 | Reject an effective category/type disagreement | **[API]** | Backend conflict rule |
+| AC-17 | Reject a reapplication that would overdraw | **[API]** | Backend conflict rule; bounded by QF-16 |
+| AC-18 | Return exactly the documented fields | **[API]** | Response-payload contract |
+| EC-01 | A submitted wallet reference is ignored | **[API]** | Backend immutability rule |
+| EC-02 | Note resubmitted unchanged succeeds | **[API]** | Backend partial-update contract |
+| EC-03 | Category-only change creates a mismatch | **[API]** | Backend re-validation contract |
+| EC-04 | Type-only change creates a mismatch against the existing category | **[API]** | Backend re-validation contract |
+| EC-05 | Amount resubmitted unchanged succeeds | **[API]** | Backend partial-update contract |
+| EC-06 | A refused reapplication leaves everything unchanged | **[API]** | Backend atomicity contract; bounded by QF-16 |
+| EC-07 | A different User's transaction is refused | **[API]** | Persistence/ownership contract |
+| EC-08 | Amount updated to exactly the post-reversal balance | **[API]** | Backend boundary rule |
+| EC-09 | Note/category-only update on a zero-balance wallet still succeeds | **[API]** | Backend invariant proof; bounded by QF-19 |
+| EC-10 | Category-not-found outranks a separately-insufficient amount | **[API]** | Backend check-ordering contract |
+| EC-11 | Type-mismatch outranks a separately-insufficient amount | **[API]** | Backend check-ordering contract |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-83, TC-84 | — |
+| AC-02 | [API] | TC-85 | — |
+| AC-03 | [API] | TC-86 | — |
+| AC-04 | [API] | TC-87, TC-88 | — |
+| AC-05 | [API] | TC-89 | — |
+| AC-06 | [API] | TC-90 | — |
+| AC-07 | [API] | TC-91 | — |
+| AC-08 | [API] | TC-92 | — |
+| AC-09 | [API] | TC-93 | — |
+| AC-10 | [API] | TC-94 | — |
+| AC-11 | [API] | TC-95 | — |
+| AC-12 | [API] | TC-96 | — |
+| AC-13 | [API] | TC-97, TC-98, TC-99 | — |
+| AC-14 | [API] | TC-100 | — |
+| AC-15 | [API] | TC-101 | — |
+| AC-16 | [API] | TC-102, TC-103 | — |
+| AC-17 | [API] | TC-88 | — |
+| AC-18 | [API] | TC-111 | — |
+| EC-01 | [API] | TC-104 | — |
+| EC-02 | [API] | TC-105 | — |
+| EC-03 | [API] | TC-102 | — |
+| EC-04 | [API] | TC-103 | — |
+| EC-05 | [API] | TC-106 | — |
+| EC-06 | [API] | TC-88 | — |
+| EC-07 | [API] | TC-94 | — |
+| EC-08 | [API] | TC-107 | — |
+| EC-09 | [API] | TC-108 | — |
+| EC-10 | [API] | TC-109 | — |
+| EC-11 | [API] | TC-110 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no
+> transaction-edit screen exists this round, confirmed directly in mobile's own source comments (see
+> classification note above). This story never touches `budgets` (spec *Out of scope*), so no test
+> here exercises the SDS §2.4.3 Budget Monitoring State machine. `TC-112` (unconditional INCOME
+> reversal under a low/negative intermediate balance, proving BR-04 directly) and `TC-88`/`TC-107`
+> together are this suite's own concurrency-adjacent limit recorded as QF-20 — true concurrent-writer
+> verification is deferred to a PostgreSQL run.
+
+### Test Implementation Map *(filled at step 4)*
+
+Not yet populated — this dispatch covers steps 1–3 (Spec, Design, Quality) only; no test code exists
+yet for TM-US-04. `backend/tests/integration/test_tm_us_04_update_transaction.py` will be written at
+the Implement dispatch (steps 4–6) from the test cases below, one test per `TC-NN`, each carrying its
+`TC-NN` id in its docstring, following TM-US-01/02/03's own Test Implementation Map precedent in this
+same file.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-83…TC-112 | *(not yet written)* | Not run |
+
+### TC-83: Updating only the amount of an EXPENSE transaction recalculates the wallet balance to reflect exactly the new amount, not the sum of old and new
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `1000.00`, with one `EXPENSE` transaction of amount `200.00` already logged against it and a category of its own (wallet balance now `800.00`)
+- **When:** The User submits only a new `amount` of `350.00` for that transaction
+- **Then:** The response is `200`; the transaction's `amount` is `350.00`; the wallet's balance is exactly `650.00` (`1000.00` minus the new `350.00`, never `800.00` minus `350.00`)
+- **AC:** AC-01, FR-11, FR-12, FR-14
+- **Type:** integration
+
+### TC-84: Updating only the amount of an EXPENSE transaction to a smaller value frees the difference back to the wallet
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `1000.00`, with one `EXPENSE` transaction of amount `400.00` already logged against it (wallet balance now `600.00`)
+- **When:** The User submits only a new `amount` of `100.00` for that transaction
+- **Then:** The response is `200`; the transaction's `amount` is `100.00`; the wallet's balance is exactly `900.00`
+- **AC:** AC-01, FR-11, FR-12, FR-14
+- **Type:** integration
+
+### TC-85: Updating only the amount of an INCOME transaction succeeds and recalculates the balance, regardless of the wallet's balance
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `50.00`, with one `INCOME` transaction of amount `20.00` already logged against it (wallet balance now `70.00`)
+- **When:** The User submits only a new `amount` of `500.00` for that transaction
+- **Then:** The response is `200`; the transaction's `amount` is `500.00`; the wallet's balance is exactly `550.00` (`70.00` minus the reversed `20.00`, plus the new `500.00`) — accepted with no sufficiency check of any kind
+- **AC:** AC-02, FR-11, FR-12, FR-14
+- **Type:** integration
+
+### TC-86: Changing a transaction's type from EXPENSE to INCOME always succeeds and recalculates the balance
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `1000.00`, with one `EXPENSE` transaction of amount `300.00` already logged against it (wallet balance now `700.00`), and an `INCOME`-typed category of their own
+- **When:** The User submits `type` `"INCOME"` together with that `INCOME`-typed category, and no new amount
+- **Then:** The response is `200`; the transaction's `type` is `"INCOME"`; the wallet's balance is exactly `1300.00` (`700.00` plus the reversed `300.00`, plus the reapplied `300.00` as income)
+- **AC:** AC-03, FR-11, FR-12, BR-04
+- **Type:** integration
+
+### TC-87: Changing a transaction's type from INCOME to EXPENSE succeeds when the wallet can support the new expense
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `100.00`, with one `INCOME` transaction of amount `400.00` already logged against it (wallet balance now `500.00`), and an `EXPENSE`-typed category of their own
+- **When:** The User submits `type` `"EXPENSE"` together with that `EXPENSE`-typed category, and no new amount
+- **Then:** The response is `200`; the transaction's `type` is `"EXPENSE"`; the wallet's balance is exactly `100.00` (`500.00` minus the reversed `400.00`, minus the reapplied `400.00` as expense)
+- **AC:** AC-04, FR-11, FR-12, BR-05
+- **Type:** integration
+
+### TC-88: Changing a transaction's type from INCOME to EXPENSE is refused for insufficient balance, leaving the transaction and the wallet's balance completely unchanged
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `50.00`, with one `INCOME` transaction of amount `400.00` already logged against it (wallet balance now `450.00`), and an `EXPENSE`-typed category of their own
+- **When:** The User submits `type` `"EXPENSE"` together with that category, and an amount of `1000.00`
+- **Then:** The response is `409` `TRANSACTION_INSUFFICIENT_BALANCE`; a direct read of the `transactions` row shows `type` still `"INCOME"`, `amount` still `400.00`, `category_id` still the original category; a direct read of the `wallets` row shows `balance` still exactly `450.00`
+- **AC:** AC-04, AC-17, FR-13, BR-06 *(DB-level verification technique per QF-16)*
+- **Type:** integration
+
+### TC-89: Updating only the category succeeds and leaves the amount, type, and wallet balance unchanged
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `800.00`, with one `EXPENSE` transaction of amount `150.00` already logged against it under category `"Groceries"`, and a second `EXPENSE`-typed category `"Transport"` of their own
+- **When:** The User submits only the `"Transport"` category as the new `category_id`
+- **Then:** The response is `200`; the transaction's `category_id` is `"Transport"`'s id; its `amount` is still `150.00` and its `type` is still `"EXPENSE"`; the wallet's balance is still exactly `650.00`, unchanged by this request
+- **AC:** AC-05, FR-07, FR-14
+- **Type:** integration
+
+### TC-90: Updating only the note succeeds and leaves the amount, type, category, and wallet balance unchanged
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `800.00`, with one `EXPENSE` transaction of amount `150.00` already logged against it
+- **When:** The User submits only a new `note` of `"Corrected merchant name"`
+- **Then:** The response is `200`; the transaction's `note` is `"Corrected merchant name"`; its `amount`, `type`, and `category_id` are all unchanged; the wallet's balance is still exactly `650.00`
+- **AC:** AC-06, FR-14
+- **Type:** integration
+
+### TC-91: Updating category, amount, type, and note together recalculates the balance to reflect exactly the new effective state
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `1000.00`, with one `EXPENSE` transaction of amount `200.00` already logged against it (wallet balance now `800.00`), and an `INCOME`-typed category `"Salary"` of their own
+- **When:** The User submits `category_id` `"Salary"`'s id, `amount` `600.00`, `type` `"INCOME"`, and `note` `"Bonus"` together
+- **Then:** The response is `200`; the transaction's `category_id`, `amount`, `type`, and `note` are all exactly as submitted; the wallet's balance is exactly `1600.00` (`800.00` plus the reversed `200.00` expense, plus the reapplied `600.00` income)
+- **AC:** AC-07, FR-11, FR-12, FR-14
+- **Type:** integration
+
+### TC-92: An unauthenticated caller is denied with 401
+
+- **US:** TM-US-04
+- **Given:** A caller presenting no `Authorization` header, and an existing transaction belonging to some other, real User
+- **When:** The caller submits a `PATCH` against that transaction's own `id` with a valid payload
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`; the transaction and its wallet's balance are unchanged
+- **AC:** AC-08, FR-02
+- **Type:** integration
+
+### TC-93: A transaction_id matching no transaction at all is rejected with 404 TRANSACTION_NOT_FOUND
+
+- **US:** TM-US-04
+- **Given:** An authenticated User
+- **When:** The User submits a `PATCH` against a `transaction_id` that matches no transaction in the system
+- **Then:** The response is `404` with `error_code` `TRANSACTION_NOT_FOUND`
+- **AC:** AC-09, FR-03
+- **Type:** integration
+
+### TC-94: A transaction belonging to a different User is rejected with the identical outcome as TC-93
+
+- **US:** TM-US-04
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a wallet with one transaction logged against it and `A` owns nothing of the kind
+- **When:** `A` submits a `PATCH` against `B`'s transaction's own `id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-93's response; `B`'s transaction and wallet balance are unchanged
+- **AC:** AC-10, EC-07, FR-03 *(assertion technique per QF-18)*
+- **Type:** integration
+
+### TC-95: A request naming no editable field at all is rejected with 422
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a transaction
+- **When:** The User submits a `PATCH` whose body names none of `category_id`, `amount`, `type`, or `note`
+- **Then:** The response is `422` `VALIDATION_ERROR`; the transaction and its wallet's balance are unchanged
+- **AC:** AC-11, FR-04
+- **Type:** integration
+
+### TC-96: A submitted category reference that does not resolve to the caller's own category is rejected with 404 TRANSACTION_CATEGORY_NOT_FOUND
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a transaction
+- **When:** The User submits a `category_id` that matches no category at all
+- **Then:** The response is `404` with `error_code` `TRANSACTION_CATEGORY_NOT_FOUND`; the transaction and its wallet's balance are unchanged
+- **AC:** AC-12, FR-06
+- **Type:** integration
+
+### TC-97: A submitted amount of exactly zero is rejected with 422
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a transaction
+- **When:** The User submits `amount` `0.00`
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying the `amount` field; nothing is changed
+- **AC:** AC-13, FR-08
+- **Type:** integration
+
+### TC-98: A negative submitted amount is rejected with 422
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a transaction
+- **When:** The User submits `amount` `-50.00`
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying the `amount` field; nothing is changed
+- **AC:** AC-13, FR-08
+- **Type:** integration
+
+### TC-99: A submitted amount with three decimal places is rejected, not rounded
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a transaction with a wallet of a known balance
+- **When:** The User submits `amount` `99.999`
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying the `amount` field; a direct read of the `transactions` row shows the amount unchanged from before the request, and the wallet's balance is unchanged
+- **AC:** AC-13, FR-08
+- **Type:** integration
+
+### TC-100: A submitted type other than INCOME or EXPENSE is rejected with 422
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a transaction
+- **When:** The User submits `type` `"TRANSFER"`
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying the `type` field; nothing is changed
+- **AC:** AC-14, FR-09
+- **Type:** integration
+
+### TC-101: A submitted note longer than the supported length is rejected with 422
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a transaction
+- **When:** The User submits a `note` of 501 characters
+- **Then:** The response is `422` `VALIDATION_ERROR` identifying the `note` field; nothing is changed, and the note is not truncated and saved
+- **AC:** AC-15, FR-10
+- **Type:** integration
+
+### TC-102: A category-only change whose new category's type disagrees with the transaction's own, unchanged type is rejected with 409
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns an `EXPENSE` transaction, and a second category of their own typed `INCOME`
+- **When:** The User submits only that `INCOME`-typed category as the new `category_id`, naming no new `type`
+- **Then:** The response is `409` `TRANSACTION_CATEGORY_TYPE_MISMATCH`; the transaction's `category_id`, `amount`, `type` are all unchanged, and the wallet's balance is unchanged
+- **AC:** AC-16, EC-03, FR-07
+- **Type:** integration
+
+### TC-103: A type-only change where the transaction's existing, unresubmitted category no longer matches the new type is rejected with 409
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns an `EXPENSE` transaction logged under an `EXPENSE`-typed category, naming no new `category_id`
+- **When:** The User submits only `type` `"INCOME"`
+- **Then:** The response is `409` `TRANSACTION_CATEGORY_TYPE_MISMATCH`; the transaction's `type` is still `"EXPENSE"`, its `category_id` is unchanged, and the wallet's balance is unchanged — demonstrating the existing, unresubmitted category is still re-fetched and re-validated
+- **AC:** AC-16, EC-04, FR-07
+- **Type:** integration
+
+### TC-104: A wallet reference submitted alongside other fields is silently ignored
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a transaction against wallet `W1`, and a second wallet `W2` of their own
+- **When:** The User submits `note` `"Updated"` together with a `wallet_id`-shaped key naming `W2`
+- **Then:** The response is `200`; the transaction's `wallet_id` is still `W1`'s id; `W2`'s balance is entirely unaffected; the response carries no echo of the submitted `wallet_id` value
+- **AC:** EC-01, FR-05, BR-01
+- **Type:** integration
+
+### TC-105: Resubmitting the note's own current value succeeds as an ordinary update
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a transaction with `note` `"Groceries run"`
+- **When:** The User submits `note` `"Groceries run"` — identical to the value already stored
+- **Then:** The response is `200`; the transaction's `note` is still `"Groceries run"`; nothing about the request is rejected as a no-op
+- **AC:** EC-02
+- **Type:** integration
+
+### TC-106: Resubmitting the amount's own current value succeeds as an ordinary update
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns an `EXPENSE` transaction with `amount` `75.00` against a wallet of balance `500.00`
+- **When:** The User submits `amount` `75.00` — identical to the value already stored
+- **Then:** The response is `200`; the transaction's `amount` is still `75.00`; the wallet's balance is still exactly `500.00`, unaffected by the reverse-then-reapply round trip
+- **AC:** EC-05
+- **Type:** integration
+
+### TC-107: An EXPENSE amount updated to exactly equal the wallet's balance once reversed is accepted, driving the balance to exactly zero
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `300.00`, with one `EXPENSE` transaction of amount `100.00` already logged against it (wallet balance now `200.00`)
+- **When:** The User submits a new `amount` of `300.00` for that transaction (exactly the balance once the old `100.00` effect is reversed: `200.00 + 100.00 = 300.00`)
+- **Then:** The response is `200`; the transaction's `amount` is `300.00`; the wallet's balance is exactly `0.00`
+- **AC:** EC-08, FR-12
+- **Type:** integration
+
+### TC-108: A note-only update succeeds even when other, later transactions have driven the wallet's balance to exactly zero
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `500.00`; an `EXPENSE` transaction `T1` of amount `500.00` is logged first (wallet balance now `0.00`); an `INCOME` transaction `T2` of amount `200.00` is then logged (wallet balance now `200.00`); an `EXPENSE` transaction `T3` of amount `200.00` is then logged (wallet balance now `0.00` again)
+- **When:** The User submits only a new `note` for `T1` — the oldest transaction, created when the wallet's balance was far higher than it is now
+- **Then:** The response is `200`; `T1`'s `note` is updated; `T1`'s `amount` and `type` are unchanged; the wallet's balance is still exactly `0.00`, unaffected — proving `plan.md` A3's invariant that an amount/type-unchanged update can never be refused for insufficient balance, regardless of intervening activity
+- **AC:** EC-09 *(proof technique per QF-19)*
+- **Type:** integration
+
+### TC-109: An unresolvable category reference outranks a separately-insufficient amount — only the category error is reported
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns an `EXPENSE` transaction against a wallet with a low balance
+- **When:** The User submits a `category_id` that matches no category at all, together with an `amount` far larger than the wallet could ever support
+- **Then:** The response is `404` `TRANSACTION_CATEGORY_NOT_FOUND` — never `409 TRANSACTION_INSUFFICIENT_BALANCE`
+- **AC:** EC-10, FR-16
+- **Type:** integration
+
+### TC-110: A category/type mismatch outranks a separately-insufficient amount — only the mismatch error is reported
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns an `EXPENSE` transaction against a wallet with a low balance, and an `INCOME`-typed category of their own
+- **When:** The User submits that `INCOME`-typed category as the new `category_id`, naming no new `type` (so the effective type stays `EXPENSE`), together with an `amount` far larger than the wallet could ever support
+- **Then:** The response is `409` `TRANSACTION_CATEGORY_TYPE_MISMATCH` — never `409 TRANSACTION_INSUFFICIENT_BALANCE`
+- **AC:** EC-11, FR-16
+- **Type:** integration
+
+### TC-111: A successful update's response exposes exactly the seven documented fields
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a transaction
+- **When:** The User successfully updates its `note`
+- **Then:** The response body's keys are exactly `id`, `wallet_id`, `category_id`, `amount`, `type`, `timestamp`, `note` — no more, and in particular no `user_id` and no second, "previous value" echo of any kind
+- **AC:** AC-18, FR-15
+- **Type:** integration
+
+### TC-112: Reversing a stored INCOME transaction's effect always succeeds, even when it drives the wallet's balance temporarily negative
+
+- **US:** TM-US-04
+- **Given:** An authenticated User who owns a wallet with balance `50.00`, with one `INCOME` transaction of amount `500.00` already logged against it (wallet balance now `550.00`), and other, later `EXPENSE` activity has since brought the balance down to `30.00`
+- **When:** The User submits only a new `note` for that `INCOME` transaction (its `amount` and `type` both unchanged)
+- **Then:** The response is `200`; the reversal (unconditionally subtracting `500.00`, intermediate balance `-470.00`) and the reapplication (unconditionally adding `500.00` back, an `INCOME` with no sufficiency check) both succeed; the wallet's final balance is exactly `30.00`, unaffected — proving `decrement_balance_unconditional()` (plan.md A5) never refuses a reversal regardless of intermediate negativity (spec BR-04)
+- **AC:** AC-06 *(mechanism proof — BR-04)*
 - **Type:** integration

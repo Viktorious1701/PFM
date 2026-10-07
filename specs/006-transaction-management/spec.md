@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)*
+> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)* · TM-US-04 *(spec/design/quality drafted — not yet implemented)*
 
 ---
 
@@ -919,3 +919,554 @@ established for the list endpoint.
   are out of scope"). No SRS UXR names a transaction-detail screen either.
 - **This story never reads or writes the `budgets` table**, for the same reason TM-US-01/02 already
   recorded: BM-US-03 owns spending-vs-budget computation, not this story.
+
+---
+
+## TM-US-04: Update a Transaction
+
+> **IDs in this section are local to TM-US-04.** `AC-01` below is not TM-US-01/02/03's own `AC-01`;
+> each story section numbers its own criteria, per `artifact-templates/spec-templates.md` and this
+> epic file's own TM-US-01/02/03 precedent. Only `TC-NN` (and `QF-NN`) in `test_cases.md` run
+> continuously across the epic (`CLAUDE.md` §1.1 rule 4) — this story continues from `TC-83`/`QF-16`,
+> confirmed by direct count of this file's own last entries (`TC-82`, `QF-15`).
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-06 — searched in full; confirmed still accurate**
+> `### Feature-06: Transaction Management` contains exactly three story headers: `#### US-06-01:
+> Create a Transaction for a Wallet [MVP]` (Gherkin, TM-US-01's own section), a bare `#### US-06-02:
+> View List of Transactions [MVP]` (TM-US-02), and a bare `#### US-06-03: Update/Delete a
+> Transaction` — **one combined header for both this story and TM-US-05**, no `[MVP]` tag, no
+> Gherkin, no "As a/I want/So that" statement. There is no separate `US-06-04` header distinguishing
+> update from delete the way SDS §5.6 does (SDS §5.6.4 "TM-US-04" vs §5.6.5 "TM-US-05", confirmed
+> below). Not a source contradiction — the same thinness TM-US-02/03's own Source sections already
+> found and worked around, now extended one header further: SRS bundles two SDS-distinct operations
+> under one bare title. No `[NEEDS RULING]` follows; this story is grounded in SDS §5.6.4's own
+> separate entry and in SRS §1.5/§2 FR-06's text directly, the same way TM-US-03 grounded itself when
+> SRS had no entry of its own at all.
+
+**SRS §1.5 Conceptual Domain Model**
+> **Transaction** — A single recorded movement of money, in or out, against one Wallet and one
+> Category, at a point in time (FR-06).
+>
+> | Relationship | Cardinality | Meaning |
+> | Wallet contains Transaction | one Wallet → many Transactions | Every Transaction moves money
+> into or out of exactly one Wallet (FR-06) |
+> | Category classifies Transaction | one Category → many Transactions | Every Transaction is
+> tagged with exactly one Category (FR-06) |
+
+**SRS §2 FR-06 — Transaction Management**
+> The System shall allow Users to log income and expense Transactions against a designated Wallet
+> and Category. The System shall automatically recalculate and persist wallet balances atomically.
+
+**SDS §5.6.4 TM-US-04: Update a Transaction (USER)**
+> **Goal:** Edit transaction details and automatically recalculate wallet balances.
+
+One sentence — the same thinness every other Transaction Management story's own SDS goal carried
+before it. Unlike TM-US-02's own goal sentence (which named its three filter dimensions explicitly),
+this one names no specific field — "transaction details" is read against SRS §1.5's own enumeration
+of what a Transaction carries (`amount`, `type`, `category_id`, `note` — `wallet_id`/`id`/`timestamp`
+excluded for the reasons in *Assumptions & Dependencies*), the same style of reading BM-US-04 A1 gave
+its own equally bare "Adjust spending caps" goal.
+
+**SDS §6.3 API Index**
+> Confirmed stale, not a contract to match — the same pre-existing gap TM-US-02/03's own Source
+> sections already found: it lists no row for any already-shipped Transaction endpoint beyond
+> `TM-API-01` (create), so its silence on an update endpoint carries no meaning one way or the other.
+
+**constitution.md API-03, API-05**
+> API-03: HTTP status codes: `200` read/update … — an update response is `200`, not `201`.
+> API-05: No generic `updateStatus` endpoint. Each business state transition gets its own explicit
+> endpoint.
+
+**constitution.md AR-06**
+> Multi-entity writes execute in **one** transaction. Services never call `commit()`; the router owns
+> the commit boundary.
+
+**constitution.md VL-06, VL-07, SEC-08**
+> VL-06: Referenced entities are verified to exist and be active before use — `404` if absent, `409`
+> if present but in the wrong state.
+> VL-07: Monetary values use `Decimal` with `DECIMAL(15,2)` precision. Never float.
+> SEC-08: Queries for user-owned data filter on the authenticated `user_id` at the repository layer.
+
+**`specs/005-budget-management/spec.md` BM-US-04 "Assumptions & Dependencies"** *(this story's own closest-shape precedent — the only prior "Update" story in this codebase, and the one this story's own wallet-immutability reasoning is weighed against)*
+> "Only `amount_limit` is updatable; `wallet_id`, `category_id`, and `period` have no corresponding
+> field on the request DTO at all... Accepting a new `wallet_id`/`category_id`/`period` would reopen
+> BM-US-01 BR-05's uniqueness constraint in a materially harder form... None of that is asked for by
+> any source, and the single-field reading leaves BR-05 structurally inapplicable here."
+
+**`specs/004-category-management/spec.md` CM-US-04 "Assumptions & Dependencies"** *(the only prior
+*multi*-field optional-update precedent in this codebase)*
+> "All three fields are independently optional... At least one field must be given a non-None value or
+> the request is refused — the first multi-field optional update contract in this codebase."
+
+**`specs/006-transaction-management/spec.md` TM-US-01 "Business Rules"** *(this story's own inherited
+precedent — the balance-mutation machinery this story runs twice per request)*
+> BR-03: "A transaction's `type` must equal its referenced category's own `type`."
+> BR-05: "An `EXPENSE` transaction is refused when its amount exceeds the wallet's current balance at
+> the moment of the request... and never applies to an `INCOME` transaction."
+> BR-07: "The new transaction row and the wallet's balance update are written as a single atomic
+> unit; a failure anywhere in the operation leaves neither persisted."
+
+### Out of scope for this story
+
+TM-US-01/02/03 (create, list, view — all implemented) · TM-US-05 (delete a transaction) · changing a
+transaction's wallet reference, reasoned through explicitly below rather than merely declined ·
+BM-US-02..05 · WM-US-02..05 · CM-US-02..05 · UM-US-04/05, DC-US-01/02 · Features 07–11 · SRS §6
+Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: **moving a transaction to a different wallet.** SDS
+§5.6.4's own goal sentence is "edit transaction **details** and automatically recalculate **wallet**
+balances" (singular wallet, not "wallets") — it describes one wallet's balance being recalculated,
+not money moving between two. Re-targeting a transaction to a different wallet would mean reversing
+its effect on the *old* wallet and applying it to a *different* wallet, a two-wallet balance
+recalculation with its own ownership question (is the new wallet also the caller's own?) and no
+source asks for it — the same "fewest invented rules" discipline BM-US-04 A1 already used to keep a
+budget's wallet/category/period immutable, extended here to keep exactly one of a transaction's two
+references immutable while leaving the other (`category_id`) genuinely editable, because nothing about
+`category_id` carries the two-ledger-balance complication `wallet_id` does. Also excluded: deleting a
+transaction (TM-US-05); recomputing or re-deriving any Budget's `amount_spent`, `progress_percentage`,
+or `status` — those remain BM-US-02/BM-US-03's own read-time computations over whatever transactions
+exist at read time, unaffected by this story except as a natural consequence of an edited amount/type
+on the next such read, the same boundary TM-US-01's own Out-of-scope note already drew; and any
+mobile/UI screen — confirmed directly in `mobile/app/(tabs)/transactions/index.tsx`'s own source
+comments, which name "TM-US-03/04 (a transaction-detail screen)" together as out of scope for this
+round's prototype.
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to edit one or more of the details of a transaction I already
+logged — its category, amount, type, or note — so that I can correct a mistake or reclassify an entry
+without deleting and recreating it, with my wallet's balance always reflecting exactly the transaction
+as it now stands rather than as it was originally recorded.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully update only the amount of an EXPENSE transaction**
+**Given** an authenticated User who owns an `EXPENSE` transaction logged against one of their own
+wallets,
+**When** the User submits a new, positive amount for that transaction and no other field,
+**Then** the system updates the transaction's amount, and the wallet's balance reflects exactly the
+net effect of replacing the old amount's deduction with the new amount's deduction — never the sum of
+both.
+
+**AC-02: Successfully update only the amount of an INCOME transaction, regardless of the wallet's balance**
+**Given** an authenticated User who owns an `INCOME` transaction logged against one of their own
+wallets,
+**When** the User submits a new, positive amount for that transaction and no other field,
+**Then** the system updates the transaction's amount and the wallet's balance reflects exactly the net
+effect of the change — accepted regardless of what the wallet's balance is at the time, exactly as an
+`INCOME` transaction's amount was never balance-checked at creation.
+
+**AC-03: Successfully change a transaction's type from EXPENSE to INCOME**
+**Given** an authenticated User who owns an `EXPENSE` transaction, and a category of their own typed
+`INCOME`,
+**When** the User submits `INCOME` as the new type together with that category,
+**Then** the system reverses the expense's original effect on the wallet, applies the income's effect
+instead, and the update always succeeds regardless of the wallet's balance.
+
+**AC-04: Successfully change a transaction's type from INCOME to EXPENSE when the wallet can support it**
+**Given** an authenticated User who owns an `INCOME` transaction, and a category of their own typed
+`EXPENSE`,
+**When** the User submits `EXPENSE` as the new type together with that category, and the wallet's
+balance — once the income's original effect has been reversed — is at least the transaction's
+(possibly also newly submitted) amount,
+**Then** the system reverses the income's original effect, applies the expense's effect instead, and
+returns success.
+
+**AC-05: Successfully update only a transaction's category**
+**Given** an authenticated User who owns a transaction, and a second category of their own whose type
+agrees with that transaction's own existing, unchanged type,
+**When** the User submits only the new category reference,
+**Then** the system updates the transaction's category reference, and the amount, type, and the
+wallet's balance are all left exactly as they were.
+
+**AC-06: Successfully update only a transaction's note**
+**Given** an authenticated User who owns a transaction,
+**When** the User submits only a new note value,
+**Then** the system updates the transaction's note, and the amount, type, category reference, and the
+wallet's balance are all left exactly as they were.
+
+**AC-07: Successfully update several fields together in one request**
+**Given** an authenticated User who owns a transaction,
+**When** the User submits a new category, a new amount, a new type, and a new note together in one
+request, and the new category's type agrees with the new type, and the wallet can support the new
+effective effect,
+**Then** the system updates all four submitted fields, and the wallet's balance reflects exactly the
+net effect of the transaction's new amount and new type — never an intermediate or partial state.
+
+**AC-08: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to update a transaction,
+**Then** the system denies the request before evaluating anything else, changes nothing, and returns
+an unauthenticated error.
+
+**AC-09: Reject an update to a transaction that does not exist at all**
+**Given** an authenticated User,
+**When** the submitted transaction reference matches no transaction in the system,
+**Then** the system changes nothing and returns a not-found error.
+
+**AC-10: Reject an update to a transaction belonging to a different User**
+**Given** an authenticated User,
+**When** the submitted transaction reference matches a transaction belonging to a wallet owned by a
+different User,
+**Then** the system changes nothing and returns the same not-found outcome AC-09 describes — the
+response gives no indication of which of the two happened.
+
+**AC-11: Reject a request that submits no field at all**
+**Given** an authenticated User who owns a transaction,
+**When** the User submits a request naming none of the transaction's editable fields,
+**Then** the system changes nothing and returns a validation error, rather than treating the request as
+a no-op success.
+
+**AC-12: Reject a submitted category reference that does not resolve to the caller's own category**
+**Given** an authenticated User who owns a transaction,
+**When** the submitted category reference matches no category at all, or matches a category owned by
+a different User,
+**Then** the system changes nothing and returns the same not-found outcome in either case.
+
+**AC-13: Reject a submitted amount that is zero, negative, or carries more than two decimal places**
+**Given** an authenticated User who owns a transaction,
+**When** the submitted amount is zero, a negative value, or carries more than two digits after the
+decimal point,
+**Then** the system changes nothing and returns a validation error rather than treating it as a valid
+amount, rounding it, or truncating it.
+
+**AC-14: Reject a submitted type that is not INCOME or EXPENSE**
+**Given** an authenticated User who owns a transaction,
+**When** the submitted type is any value other than `INCOME` or `EXPENSE`,
+**Then** the system changes nothing and returns a validation error rather than accepting an
+open-ended value.
+
+**AC-15: Reject a submitted note exceeding the maximum supported length**
+**Given** an authenticated User who owns a transaction,
+**When** the submitted note is longer than the system supports,
+**Then** the system changes nothing and returns a validation error rather than truncating the note.
+
+**AC-16: Reject an update whose effective category and effective type disagree**
+**Given** an authenticated User who owns a transaction,
+**When** the category that would be in effect after this update (whichever was submitted, or the
+transaction's own existing category if none was submitted) is typed differently from the type that
+would be in effect after this update (whichever was submitted, or the transaction's own existing type
+if none was submitted),
+**Then** the system changes nothing and returns a conflict error — exactly the same rule creation
+already enforces, applied again whenever the update actually changes which category or which type is
+in effect.
+
+**AC-17: Reject an update whose effective new effect would overdraw the wallet**
+**Given** an authenticated User who owns a transaction,
+**When** the type that would be in effect after this update is `EXPENSE`, and the amount that would be
+in effect exceeds the wallet's balance once the transaction's current, stored effect has already been
+reversed,
+**Then** the system returns an error indicating insufficient balance, and the transaction's previously
+stored amount, type, category, and note, together with the wallet's balance, are all left exactly as
+they were before the request — nothing is left partially applied.
+
+**AC-18: Return exactly the documented transaction fields**
+**Given** an authenticated User successfully updates one of their own transactions,
+**When** the system returns the success result,
+**Then** the result carries exactly the transaction's identifier, wallet reference, category
+reference, amount, type, timestamp, and note — the same seven fields every other Transaction
+Management story already established, no other field, and no data belonging to any other User's
+wallet or category.
+
+### Edge Cases
+
+**EC-01**: **A wallet reference submitted alongside other fields** — the request body additionally
+carries a wallet-shaped value; the updated transaction's wallet reference remains exactly what it was
+before the request, and the response carries no echo of the submitted value. This story's contract has
+no field for a caller to populate it (see *Assumptions & Dependencies*), so the extra key is silently
+ignored, never honoured — mirrors BM-US-04 EC-06's identical treatment of `wallet_id`/`category_id`/
+`period`.
+
+**EC-02**: **A note resubmitted identical to the value already stored** — accepted as an ordinary
+successful update, not treated as a no-op error or rejected as unchanged (mirrors BM-US-04 EC-05's
+"equal to the value the budget already holds").
+
+**EC-03**: **A category-only change whose new category's type disagrees with the transaction's own,
+unchanged type** — refused with AC-16's outcome, demonstrating that changing *only* the category still
+triggers re-validation even though `type` itself was never named in this request.
+
+**EC-04**: **A type-only change where the transaction's existing, unchanged category's type no longer
+agrees with the newly submitted type** — refused with AC-16's outcome, demonstrating that the
+transaction's existing category is still re-validated even though the caller never named it in this
+request.
+
+**EC-05**: **An amount resubmitted identical to the value already stored** — accepted as an ordinary
+successful update (mirrors EC-02 for `amount`).
+
+**EC-06**: **A reversal-then-reapplication that fails the reapplication step for insufficient balance**
+— the transaction's previously stored amount, type, category, and note, and the wallet's own balance,
+are left exactly as they were before the request; nothing about the attempt is left partially applied
+(the same outcome AC-17 describes, stated here as its own edge case because it is the one place in this
+story where a two-step wallet mutation could otherwise leave a half-finished state if it were not
+reasoned through carefully).
+
+**EC-07**: **A caller who owns one or more transactions of their own, attempting to update a different
+User's transaction** — refused with the identical outcome AC-10 describes; owning some transaction
+never entitles a caller to act on another User's transaction.
+
+**EC-08**: **An EXPENSE amount updated to exactly equal the wallet's balance once the transaction's own
+old effect has been reversed** — accepted; the boundary AC-17 excludes is an amount that *exceeds* that
+balance, not one that exactly exhausts it, mirroring TM-US-01 EC-08's identical boundary at creation
+time. The wallet's balance becomes exactly zero.
+
+**EC-09**: **Updating only the note (or only the category, to another category of the same type) of a
+transaction whose wallet has, in the meantime, been driven to a balance of exactly zero by other,
+later transactions** — still succeeds, and the wallet's balance is unaffected by this update. Leaving
+`amount` and `type` both unchanged means the reapplied effect is identical in kind and size to the
+effect being reversed, which this story's own balance-recalculation rule (see *Assumptions &
+Dependencies*) guarantees can never be refused — unrelated wallet activity that happened after this
+transaction was created cannot retroactively make an unchanged amount/type combination unsupportable.
+
+**EC-10**: **A submitted category reference that does not resolve to the caller's own category, in the
+same request as a submitted amount that would separately have caused an insufficient-balance refusal**
+— only the category-not-found error is returned (AC-12's outcome), never the insufficient-balance
+error, and never both; this story's own fixed check order (see *Requirements*) is what makes that
+deterministic rather than a coincidence of implementation, mirroring TM-US-01 EC-14.
+
+**EC-11**: **An update whose effective category and effective type disagree, and whose effective amount
+would independently exceed the wallet's balance, in the same request** — only the category-type-
+mismatch error is returned (AC-16's outcome), never the insufficient-balance error, and never both,
+mirroring TM-US-01 EC-11.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to submit any one or more of
+  a new category reference, a new amount, a new type, and a new note, identifying the transaction to
+  update by its own identifier (SDS §5.6.4).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before anything else (constitution API-08; mirrors TM-US-01 FR-02, TM-US-03 FR-02).
+- **FR-03**: The system must **require** the submitted transaction reference to resolve to a
+  transaction belonging to a wallet owned by the authenticated caller, and **refuse** the request with
+  an identical outcome whether no such transaction exists at all or it exists and belongs to a wallet
+  owned by a different User (AC-09, AC-10, EC-07; constitution SEC-08, VL-06).
+- **FR-04**: The system must **require** at least one of category reference, amount, type, or note to
+  be submitted, and **reject** a request naming none of them with a validation error rather than
+  treating it as a no-op success (AC-11).
+- **FR-05**: The system must **accept no field at all** for the transaction's wallet reference; any
+  wallet-shaped value submitted anyway is silently ignored, and the transaction's wallet never changes
+  through this operation (EC-01; see *Assumptions & Dependencies*).
+- **FR-06**: The system must, when a category reference is submitted, **require** it to resolve to a
+  category owned by the authenticated caller, and **refuse** the request with an identical outcome
+  whether no such category exists at all or it exists and is owned by a different User (AC-12;
+  constitution SEC-08, VL-06).
+- **FR-07**: The system must **determine** the category and the type that would be in effect after
+  this update — whichever was submitted, or the transaction's own existing value when nothing was
+  submitted for that field — and **require** the two to agree, exactly as transaction creation already
+  requires (TM-US-01 BR-03); this re-validation **runs only when** the effective category or the
+  effective type actually differs from the transaction's own stored row — when neither differs, the
+  pairing is already known valid from the moment of creation and is not re-checked (AC-16, EC-03,
+  EC-04).
+- **FR-08**: The system must, when an amount is submitted, **require** it to be a `Decimal` value with
+  at most two digits after the decimal point and at most fifteen significant digits in total, and
+  strictly greater than zero — rejecting, never rounding or truncating, a value violating any of these
+  (AC-13; constitution VL-07).
+- **FR-09**: The system must, when a type is submitted, **require** it to be exactly `INCOME` or
+  `EXPENSE` (AC-14).
+- **FR-10**: The system must, when a note is submitted, **reject** — rather than truncate — one longer
+  than the system supports (AC-15).
+- **FR-11**: The system must **reverse** the transaction's current, stored effect on its wallet before
+  applying anything new — adding back the amount of a stored `EXPENSE`, or subtracting back the amount
+  of a stored `INCOME` — and this reversal must **never be refused**, regardless of the wallet's
+  current balance, because it undoes a real effect already counted as having happened (AC-03, AC-04,
+  EC-09).
+- **FR-12**: The system must **apply** the effective new effect to the wallet exactly as creation
+  already does — refusing, for an effective `EXPENSE`, when the effective amount exceeds the wallet's
+  balance once the reversal in FR-11 has already taken place; never refusing an effective `INCOME`
+  regardless of that balance (AC-01..AC-04, AC-17, EC-08, EC-09).
+- **FR-13**: The system must, when FR-12 refuses the update, **leave** the transaction's previously
+  stored fields and the wallet's balance exactly as they were before the request — the reversal in
+  FR-11 is not left half-applied (AC-17, EC-06).
+- **FR-14**: The system must, on success, **persist** exactly the field(s) actually submitted onto the
+  transaction's own row, leaving every field not submitted exactly as it already was (AC-01..AC-07).
+- **FR-15**: The system must **return**, on success, exactly the transaction's identifier, `wallet_id`,
+  `category_id`, `amount`, `type`, `timestamp`, and `note` (AC-18).
+- **FR-16**: The system must **evaluate** transaction ownership, then (only when a category reference
+  is submitted) category ownership, then (only when the effective category or effective type actually
+  changed) type-consistency, then the balance recalculation in FR-11/FR-12, in that fixed order, so
+  that a request failing more than one of these reports only the first (EC-10, EC-11).
+
+#### Business Rules
+
+- **BR-01**: A transaction's wallet reference is immutable; no update performed through this operation
+  ever changes which wallet a transaction belongs to (FR-05, EC-01).
+- **BR-02**: A transaction's effective type must equal its effective category's own type — the
+  identical rule creation already enforces (TM-US-01 BR-03) — re-validated whenever the effective
+  category or the effective type actually changes relative to the transaction's stored row, and left
+  unchecked otherwise because the stored pairing is already known valid from creation (FR-07, AC-16).
+- **BR-03**: Updating a transaction always reverses its current, stored effect on its wallet and
+  applies its new, effective effect — uniformly, regardless of how many or which of the four editable
+  fields were actually submitted (FR-11, FR-12).
+- **BR-04**: Reversing a transaction's current, stored effect never fails for insufficient balance,
+  regardless of the wallet's balance at the time: undoing a previously applied `EXPENSE` always adds
+  its amount back, and undoing a previously applied `INCOME` always subtracts its amount back (FR-11).
+- **BR-05**: Applying the effective new effect follows the identical sufficiency rule transaction
+  creation already establishes (TM-US-01 BR-05) — refused for an effective `EXPENSE` whose amount
+  exceeds the wallet's balance once BR-04's reversal has already taken place, never refused for an
+  effective `INCOME` (FR-12).
+- **BR-06**: A refusal under BR-05 leaves nothing changed — the transaction's stored fields and the
+  wallet's balance are exactly as they were before the request (FR-13).
+
+#### Key Entities
+
+- **Transaction**: A single recorded movement of money, in or out, against one Wallet and one
+  Category, at a point in time (SRS §1.5; TM-US-01). The first Transaction Management story to mutate
+  an existing Transaction row after its creation — `amount`, `type`, `category_id`, and `note` are
+  each independently editable; `id`, `wallet_id`, and `timestamp` never change through this operation
+  (BR-01; *Assumptions & Dependencies*).
+- **Wallet**: Reused from WM-US-01 with no new column. The second story, after TM-US-01, to mutate an
+  existing Wallet's `balance` — and the first to mutate the same Wallet's balance twice within one
+  request, first reversing a transaction's old effect and then applying its new one (BR-03).
+- **Category**: Reused from CM-US-01 with no new column. Referenced by this story both as an optional
+  new value to adopt and, when neither it nor `type` changes, as the already-validated existing
+  pairing this story deliberately does not re-check (BR-02).
+- **User**: Reused from Feature-01/Feature-02 with no new column. The authenticated caller's own
+  ownership of the transaction being updated, and of any newly submitted category, is what entitles
+  them to perform this update; no role restriction applies.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can update any one or more of a transaction's category, amount,
+  type, and note, and the response reflects exactly what the transaction now holds.
+- **SC-02**: No transaction can be updated without an authenticated caller.
+- **SC-03**: A transaction can never be updated by a User who does not own it, or using a category the
+  User does not own — refused identically whether the reference is absent or belongs to someone else.
+- **SC-04**: A transaction's wallet reference never changes through this operation, regardless of what
+  is submitted.
+- **SC-05**: A wallet's balance always reflects the net effect of a transaction's current, up-to-date
+  amount and type — never the sum of an old and a new effect, and never a partially applied change.
+- **SC-06**: Reversing a transaction's previously applied effect can never itself be refused for
+  insufficient balance; only applying a *new*, larger, or newly-`EXPENSE` effect can be.
+- **SC-07**: A refused update leaves the transaction's stored fields and the wallet's balance exactly
+  as they were — observable both in the response and by reading the stored rows directly.
+- **SC-08**: Malformed transaction-update input — no field submitted at all, an unresolvable category
+  reference, a type disagreeing with the effective category's own type, a non-positive or over-precise
+  amount, an invalid type, or an over-long note — is rejected before anything is persisted.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01) and TM-US-01 (Create a Transaction) are already implemented** — there is nothing
+  to update otherwise, mirroring every other story's own dependency on creation existing first.
+  TM-US-03 (View) is not a hard dependency but is this story's own closest architectural precedent for
+  looking a transaction up by its own id, scoped to the caller.
+
+- **The scope question: which fields are editable.** Four candidates were weighed against SDS §5.6.4's
+  own goal sentence ("Edit transaction details and automatically recalculate wallet balances") and
+  against SRS §1.5's enumeration of what a Transaction carries (`id`, `wallet_id`, `category_id`,
+  `amount`, `type`, `timestamp`, `note`):
+  - **`wallet_id` is excluded.** "Transaction details" reads naturally as the transaction's own
+    descriptive content — what it was for, how much, what kind — not which account it is filed under.
+    Moving a transaction to a different wallet would mean reversing its effect on the *old* wallet and
+    applying it to a *different* wallet: a two-wallet balance recalculation with its own ownership
+    question (must the new wallet also belong to the caller? — certainly, but no source says so
+    explicitly, because no source imagines this operation at all) and its own currency question (SDS
+    §4.3.3's `wallets` ERD gives each wallet its own `currency` — moving a transaction between two
+    wallets of different currencies would need a conversion rate no source provides). Keeping
+    `wallet_id` immutable means every balance recalculation in this story touches exactly one wallet,
+    the one the transaction already belongs to — the same "fewest invented rules" discipline BM-US-04
+    A1 used to keep a budget's wallet/category/period immutable, applied here to exactly one of a
+    transaction's two references rather than all three, because nothing about `category_id` carries
+    `wallet_id`'s two-ledger complication.
+  - **`id` and `timestamp` are excluded** for the obvious reason neither BM-US-04 nor CM-US-04 needed
+    to state explicitly: an identifier is never user-settable, and TM-US-01 BR-06 already settles that
+    a transaction's timestamp is permanently the moment of its creation — "update" has no bearing on
+    either.
+  - **`amount`, `type`, `category_id`, and `note` are the four editable fields**, each independently
+    optional on the request — the same multi-field optional-update contract CM-US-04 first established
+    in this codebase (`name`, `type`, `icon`, each independently optional, at least one required). All
+    four are plausible readings of "transaction details": `amount` and `type` are the two fields that
+    actually drive the balance recalculation that gives this story its own distinct complexity;
+    `category_id` is reclassification, the most literal reading of "edit transaction details"; `note`
+    is free-form annotation with no effect on anything else. Nothing in SDS §5.6.4 singles out a
+    subset the way BM-US-04's own SDS goal ("adjust spending **caps**", plural of the one field
+    `amount_limit`) pointed at exactly one field — here, every one of the four is as plausible as the
+    others, so all four are built, matching CM-US-04's own "all three fields" precedent rather than
+    BM-US-04's own "exactly one field" precedent.
+  - **The coupling between `amount`, `type`, and `category_id`.** Unlike CM-US-04's three fields (which
+    have no cross-field rule at all beyond "at least one must be given"), this story's three
+    business-meaningful fields are coupled two ways: (a) `type` determines *which* wallet operation
+    applies on reapplication — `EXPENSE` is sufficiency-checked, `INCOME` is not, the identical
+    distinction TM-US-01 BR-05 draws at creation; and (b) whichever category is in effect (the
+    submitted one, or the existing one if none was submitted) must have a `type` consistent with
+    whichever transaction `type` is in effect (the submitted one, or the existing one if none was
+    submitted) — the identical BR-03 rule creation already enforces, now stated over *effective* rather
+    than merely *submitted* values, because a category-only update or a type-only update can each, on
+    its own, make a previously-valid pairing invalid. A re-validation of this pairing is only actually
+    *needed* when the effective category or the effective type differs from the transaction's own
+    stored row — when neither differs, the original pairing is already known-valid from the moment
+    `create_transaction()` first checked it (TM-US-01 FR-07), and re-running an identical check against
+    unchanged inputs would prove nothing new. This is recorded as its own functional requirement
+    (FR-07) precisely because skipping a check that would otherwise trivially re-confirm something
+    already known is a deliberate design choice, not an oversight.
+
+- **The balance recalculation always reverses then reapplies, uniformly, regardless of which fields
+  changed.** Two designs were weighed. **(a)** Special-case the recalculation: skip any wallet mutation
+  at all when neither `amount` nor `type` was submitted (a pure category/note edit), and otherwise
+  compute a single net delta. **(b)** Always reverse the transaction's current stored effect, then
+  always apply its new effective effect — two wallet operations every time, even when the net result
+  is a no-op. Design (b) is chosen. It is the same "fewest invented rules" preference this codebase's
+  other Update stories already used, applied to *logic* rather than to *scope*: a single algorithm that
+  behaves correctly whether 1, 2, 3, or 4 fields changed is simpler to state, simpler to verify, and
+  structurally incapable of the bug a hand-written special-case tree invites — forgetting one of the
+  several field-combination branches a reverse-skipping design would need (amount-only, type-only,
+  both, neither, each crossed with the category question). It also makes the reversal-then-reapplication
+  machinery exercised on *every* successful update, not only the ones a human reviewer might expect
+  "really" needed it, which is exactly the kind of uniform code path this project's own repeated
+  "fewest invented rules" standard favors over a combinatorial special-case tree.
+
+  This design is provably safe for the sub-case that might appear riskiest — updating only `category_id`
+  and/or `note`, leaving `amount` and `type` both unchanged (EC-09). A wallet's balance can only ever be
+  driven non-negative by a *conditional* `EXPENSE` decrement (whose own sufficiency check guarantees the
+  result stays at or above zero) or increased by an unconditional `INCOME` increment — so once a stored
+  `EXPENSE` transaction has been successfully created against a wallet at all, that wallet's balance is
+  guaranteed never to have gone negative from that moment on. Consequently: reversing a stored `EXPENSE`
+  (adding its amount back) always produces an intermediate balance at least equal to that same amount,
+  so reapplying the *identical*, unchanged amount as an `EXPENSE` can never fail the sufficiency check —
+  regardless of what unrelated activity has happened on the wallet since. And reversing a stored `INCOME`
+  followed by reapplying it as `INCOME` again needs no sufficiency check at all, by BR-05. A category-only
+  or note-only update therefore can **never** be refused for insufficient balance, no matter how low
+  other, later transactions have since driven the wallet's balance — the only ways FR-12's sufficiency
+  check can genuinely fail are a *larger* submitted amount, or a *type flip* from `INCOME` to `EXPENSE`
+  (AC-04), both of which are real, correctly-refusable business situations, not artifacts of the uniform
+  algorithm. This reasoning is the basis for EC-09 and is proven again, concretely, by `test_cases.md`
+  TC-108/QF-19.
+
+- **Reversing a transaction's current effect is unconditional, in both directions — this is new
+  territory for `wallet_repo`.** TM-US-01 A9 built exactly one conditional balance mutation
+  (`decrement_balance()`, EXPENSE only) and one unconditional one (`increment_balance()`, INCOME only)
+  — the two operations creation ever needs. This story needs a *third*: an unconditional subtraction,
+  used only to reverse a previously applied `INCOME`'s effect, because a reversal must never be refused
+  (BR-04) and the existing `decrement_balance()` is conditional by design (TM-US-01 A9's own
+  sufficiency-check-is-the-WHERE-clause reasoning), which is exactly the wrong behaviour for undoing a
+  credit that was already counted as available. Reversing a previously applied `EXPENSE` needs no new
+  function at all — adding its amount back is exactly `increment_balance()`, reused completely
+  unchanged. Full design: `plan.md` A5.
+
+- **A failed reapplication (FR-12/FR-13) is safe because nothing commits until the router does.**
+  The reversal (FR-11) and the attempted reapplication (FR-12) are both flushed, not committed, within
+  the same database session the service already runs in — the identical one-request-one-transaction
+  discipline constitution AR-06 and TM-US-01 A10 already established for creation, now exercised across
+  *two* wallet mutations plus a row update in a single request instead of one mutation plus one insert.
+  When the reapplication step refuses, the service raises before the transaction's own row is ever
+  touched; the already-flushed reversal is discarded along with everything else in the session the
+  moment the exception reaches the database session's own rollback handling, which is a technical
+  mechanism belonging to `plan.md`, not this conceptual document — see `plan.md` A6 for the concrete
+  grounding.
+
+- **A caller clears an existing note by submitting an empty string, not `null`.** This story's
+  `note` field carries the identical "submitting nothing, or submitting an explicit null, both mean
+  'leave unchanged'" convention WM-US-04/CM-US-04 already established for their own optional fields —
+  inherited here unchanged, not newly decided. Because `note` (unlike `name`/`icon`) has never carried
+  a non-blank requirement (TM-US-01 A6 permits an empty value in principle, though creation itself
+  makes a blank note moot by simply treating an absent `note` as `null`), a caller who genuinely wants
+  to blank out an existing note can do so by submitting an empty string, which is a real, distinct value
+  from both "omitted" and "null" under this convention — no new rule is invented to support this, it
+  falls out of `note` never having required non-blankness in the first place.
+
+- **This story never reads or writes the `budgets` table**, for the same reason every prior
+  Transaction Management story already recorded: BM-US-03 owns spending-vs-budget computation, not
+  this story, even though an edited Transaction's new amount/type is exactly the kind of change that
+  computation eventually reflects on its next read.

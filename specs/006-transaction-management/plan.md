@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-06 · SDS §5.6 (TM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)*
+> **Stories in this file:** TM-US-01 *(implemented, verified — 36/36 TC PASS)* · TM-US-02 *(implemented, verified — 36/36 TC PASS)* · TM-US-03 *(implemented, verified — 10/10 TC PASS)* · TM-US-04 *(spec/design/quality drafted — not yet implemented)*
 
 ---
 
@@ -1215,3 +1215,468 @@ The block at line 1104 is this story's own diagram; it parses cleanly. By eye/gr
 `rowcount`/table-and-column syntax in any arrow label, no `;` or `#` in any label (DG-06), and the
 one `UI→API` request (`GET /transactions/:id`) is answered by exactly one of the two terminal
 branches, each carrying an HTTP status back to `UI` (DG-05). One workflow only (DG-07).
+
+---
+
+## TM-US-04: Update a Transaction
+
+> **IDs in this section are local to TM-US-04** (`A*`/`T-NN`), matching `spec.md`'s convention. Only
+> `TC-NN` in `test_cases.md` continues across this epic file — this story continues from `TC-83`.
+> `QF-NN` also continues, from `QF-16` (TM-US-03 used `QF-13`…`QF-15`) — confirmed by direct count of
+> `test_cases.md`'s own last entries before this dispatch.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Domain / Scope | **`wallet_id` is immutable; `category_id`, `amount`, `type`, and `note` are the four independently optional editable fields.** `wallet_id`'s exclusion mirrors BM-US-04 A1's "fewest invented rules" reasoning for a budget's wallet/category/period, narrowed here to exactly one of a transaction's two references: moving a transaction between wallets is a two-wallet balance recalculation with its own ownership and currency questions no source asks for, where `category_id` carries no such complication and is kept editable. The remaining four fields are all built, independently optional, as CM-US-04 first established for this codebase's only other *multi*-field optional-update contract (`name`/`type`/`icon`) — unlike BM-US-04's own single-field contract, nothing in SDS §5.6.4's bare "edit transaction details" goal singles out one of `amount`/`type`/`category_id`/`note` over the others. Full reasoning: `spec.md` Assumptions & Dependencies. | ✅ Resolved |
+| A2 | API | **`PATCH /api/v1/transactions/{transaction_id}`** — a verb-free path on the resource's own id, identical reasoning to BM-US-04 A2: this is an ordinary scalar/reference business-field edit, not a named lifecycle transition (API-05 does not apply), so NC-03's default verb-free path governs. `PATCH`, not `PUT`, because the request is a genuine partial update of up to four of seven fields, matching constitution API-03's "`200` read/update" mapping. Declared on the already-mounted `transactions.py` router, alongside the existing `POST /transactions`, `GET /transactions`, and `GET /transactions/{transaction_id}` — a fourth path shape (`PATCH` + the same `{transaction_id}` pattern `GET` already uses) that FastAPI/Starlette's router distinguishes by method, not by declaration order. | ✅ Resolved |
+| A3 | Domain / Architecture | **The recalculation always reverses the transaction's current stored effect on its wallet, then applies its new effective effect — uniformly, for every successful update, regardless of which of the four fields were actually submitted.** Chosen over special-casing "skip the wallet mutation entirely when neither `amount` nor `type` was submitted," for the same "fewest invented rules" reason this codebase's other Update stories already applied to *scope* (BM-US-04 A1), now applied to *logic*: one algorithm that behaves correctly whether 1, 2, 3, or 4 fields changed is simpler to state and verify than a combinatorial special-case tree (amount-only, type-only, both, neither, each crossed with the category question), and is structurally incapable of a bug a hand-rolled branch could introduce by forgetting one combination. **Proven safe, not merely asserted,** for the sub-case that looks riskiest — a category-only or note-only update, where `amount` and `type` are both left unchanged (`spec.md` EC-09): once a stored `EXPENSE` has ever been successfully created against a wallet, that wallet's balance is guaranteed by `wallet_repo.decrement_balance()`'s own conditional sufficiency check (TM-US-01 A9) never to have gone negative from that point on; reversing that same `EXPENSE` (adding its amount back, unconditionally, A5) therefore always produces an intermediate balance at least equal to that same amount, so reapplying the *identical*, unchanged amount as an `EXPENSE` can never fail the sufficiency check, regardless of what unrelated activity has happened on the wallet since. Reversing then reapplying an unchanged `INCOME` needs no sufficiency check at all (TM-US-01 BR-05). The only two ways the reapplication step can genuinely fail are therefore a *larger* submitted amount or a *type flip* from `INCOME` to `EXPENSE` (spec AC-04) — both real, correctly-refusable business situations, never an artifact of running the uniform algorithm on an edit that did not need it. Verified concretely by `test_cases.md` TC-108/QF-19 (a wallet driven to exactly zero balance by unrelated activity, then a note-only edit on an older transaction, which still succeeds). | ✅ Resolved |
+| A4 | Domain | **Type-category re-validation runs only when the effective category or the effective type actually differs from the transaction's own stored row** (spec FR-07, BR-02). The pairing was already checked once, at creation (TM-US-01 FR-07/BR-03), and nothing about leaving both fields unsubmitted — or resubmitting their existing values unchanged — can have invalidated that prior check; re-running it against identical inputs would prove nothing new. This is the one place this story's design deliberately *skips* a check TM-US-01's own fixed order always ran, and it is recorded as its own functional requirement (FR-07) rather than left implicit, specifically because a skipped check is exactly the kind of thing a later refactor could accidentally reinstate everywhere (wasteful, not incorrect) or accidentally remove everywhere (a real correctness regression) without a test ever having named the skip as deliberate. `test_cases.md` QF-17 records why no black-box test can directly *observe* the skip happening (as opposed to "always re-validating and it happening to pass") — every stored transaction's pairing is already guaranteed valid at creation time, so there is no constructible stored row with an invalid pairing to re-check against in the first place. | ✅ Resolved |
+| A5 | Architecture | **New `wallet_repo.decrement_balance_unconditional(db, *, wallet_id, amount) -> None`** — the third balance-mutation primitive this codebase has needed, alongside TM-US-01's own `decrement_balance()` (conditional) and `increment_balance()` (unconditional). Used only to reverse a previously applied `INCOME` transaction's effect (BR-04): a reversal must never be refused, because it undoes a real effect already counted as having happened, not a new spend — the identical reasoning the Create-story's own `increment_balance()` already applies to a *forward* `INCOME`, now needed for a *backward* one. `decrement_balance()` (TM-US-01 A9) is unsuitable for this because its sufficiency check — `WHERE balance >= amount` — is deliberately conditional, which is exactly the wrong behaviour for undoing a credit the wallet already legitimately holds. Reversing a previously applied `EXPENSE`, by contrast, needs **no new function at all**: adding its amount back is exactly `increment_balance()`, reused completely unchanged — the task brief's own "reuse `wallet_repo.increment_balance()`/`decrement_balance()` directly, don't duplicate them" is honoured for three of this story's four balance-mutation call sites (both reapplication branches, and the EXPENSE-reversal branch); only the fourth (INCOME-reversal) needs this one new, narrowly-scoped sibling. | ✅ Resolved |
+| A6 | Architecture | **A failed reapplication is safe because of `app.db.session.get_db()`'s own exception handling, confirmed directly rather than merely asserted.** `get_db()` wraps the whole request in `try: yield db / except Exception: db.rollback() / finally: db.close()`. The reversal (A5/`increment_balance()`) and the attempted reapplication (`decrement_balance()`) are both flushed, never committed, inside `transaction_service.update_transaction()` — the router's own single `db.commit()`, reached only after the service call returns successfully, is the one and only commit point for the whole request (AR-06, mirroring TM-US-01 A10's own two-write atomicity, now extended to three writes: two balance mutations plus one row update). When `decrement_balance()`'s conditional UPDATE affects zero rows, the service raises `TransactionInsufficientBalanceError` **before** `transaction_repo.update_transaction()` is ever called, so the transaction's own row is never touched; the exception then propagates up through the router (whose `db.commit()` line is never reached) to `get_db()`'s `except Exception: db.rollback()`, which discards the already-flushed reversal along with everything else in the session. The net effect a client (or a direct row read) observes is therefore nothing changed at all — not the reversal alone, not a half-updated row — exactly spec FR-13/EC-06's guarantee. | ✅ Resolved |
+| A7 | Architecture | **New `transaction_repo.update_transaction(db, *, transaction, category_id, amount, type, note) -> TransactionModel`** — mutates only the field(s) actually submitted (non-`None`) on an already-fetched, already-ownership-verified, already-reversed-and-reapplied row; `wallet_id` and `id` are never touched. Identical "if X is not None: row.X = X" shape to `wallet_repo.update_wallet()` (WM-US-04)/`category_repo.update_category()` (CM-US-04) — the third repository in this codebase to follow this exact convention. Flushed, not committed (AR-06). | ✅ Resolved |
+| A8 | API / Domain | **New request DTO `TransactionUpdate`, four independently optional fields, validated identically to `TransactionCreate`'s own bounds.** `category_id: str \| None` (non-empty when given), `amount: Decimal \| None` (`max_digits=15, decimal_places=2, gt=0`, reused unchanged from TM-US-01), `type: TransactionType \| None`, `note: str \| None` (`max_length=500`) — no `wallet_id` field at all (A1). A `model_validator(mode="after")` requires at least one of the four to be non-`None`, the identical cross-field rule CM-US-04 first needed for this codebase's only other multi-field optional-update DTO, raising the existing generic validation path (no new error class). `None` means "leave this field's stored value unchanged," whether the key was omitted or submitted explicitly as `null` — the same convention `WalletUpdate`/`CategoryUpdate` already established — **except** that `note`, unlike `name`/`icon`, has never carried a non-blank requirement (TM-US-01 A6), so a caller who wants to genuinely blank out an existing note can do so by submitting an empty string, a real, distinct value from both "omitted" and "null" under this convention; no new rule is invented to support this, it falls out of `note` never requiring non-blankness in the first place. | ✅ Resolved |
+| A9 | API | **The success response reuses `TransactionRead` unchanged** — the same seven fields every other Transaction Management story already returns (TM-US-01 A14, TM-US-02 A8, TM-US-03 A3). No new DTO; this write's response is structurally identical in kind to every other story's own. | ✅ Resolved |
+| A10 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.6.4 tags this story "(USER)", identical to every other Transaction Management story's own tag. Mirrors TM-US-01 A12, TM-US-02 A11, TM-US-03 A5. | ✅ Resolved |
+| A11 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families; neither transaction creation (TM-US-01 A13), listing (TM-US-02 A10), nor viewing (TM-US-03 A6) qualified, and editing one is no closer to any of the three than those were. No AC or FR here asks for one. | ✅ Resolved |
+| A12 | Architecture | **No new Alembic migration.** Every column this story writes (`category_id`, `amount`, `type`, `note`) already exists on `transactions` (TM-US-01 T-01); this story changes values in existing columns, not the schema — the same position BM-US-04 A11/TM-US-03 A8 each recorded for their own first non-schema-changing story. | ✅ Resolved |
+| A13 | Architecture | **No new error class.** All four errors this story can raise already exist and are directly reusable for the exact concepts they already cover: `TransactionNotFoundError` (TM-US-03, the transaction being acted on), `TransactionCategoryNotFoundError` (TM-US-01, a submitted category reference), `TransactionCategoryTypeMismatchError` (TM-US-01, effective type/category disagreement), `TransactionInsufficientBalanceError` (TM-US-01, a refused reapplication). No fifth concept this story introduces needs a sixth error class. | ✅ Resolved |
+| A14 | Architecture | **The router issues exactly one `db.commit()`, after the service call succeeds** — identical shape to every other write endpoint in this codebase (TM-US-01's own router, BM-US-04's own router). `transaction_service.update_transaction()` itself only flushes, across all three of its repository calls (the A5 reversal, the reapplication, and the A7 row update) — never commits (AR-06). This is the first Transaction Management story where a single request's service logic performs three separate flushed writes under one commit, extending TM-US-01 A10's own two-write (balance mutation + insert) atomicity argument to three. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only — no new top-level module, no migration; the first Transaction
+Management story to mutate an existing Transaction row, and the first to need a third balance-mutation
+primitive on `wallet_repo.py`).
+
+```text
+backend/app/
+├── schemas/
+│   └── transaction.py                # update: add TransactionUpdate (A8)
+├── repositories/
+│   ├── wallet_repo.py                 # update: add decrement_balance_unconditional() (A5)
+│   └── transaction_repo.py            # update: add update_transaction() (A7)
+├── services/
+│   └── transaction_service.py         # update: add update_transaction() (A3, A4, A6)
+└── api/v1/
+    └── transactions.py                # update: add PATCH /transactions/{transaction_id} (A2, A10)
+
+backend/tests/
+└── integration/test_tm_us_04_update_transaction.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No change to `models/transaction.py` or `models/wallet.py` (no schema change, A12), `category_repo.py`
+(`get_owned_by_id()` already exists from BM-US-01, reused completely unchanged — this story needs no
+new category-lookup shape), `core/errors.py` (A13), `core/deps.py` (`CurrentUserDep` reused exactly as
+TM-US-01/02/03 already established, A10), and `api/v1/router.py` (`transactions.router` is already
+mounted, TM-US-01).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `TransactionModel` | `transactions` | `category_id`, `amount`, `type`, `note` (write) | The first Transaction Management story to write to an existing row. `id`, `wallet_id`, `timestamp` are read (for ownership and the reversal) but never written (A1, spec BR-01). No schema change (A12). |
+| `WalletModel` | `wallets` | `balance` (write, twice per request) | The second story, after TM-US-01, to mutate an existing Wallet's `balance` — and the first to mutate the *same* wallet's balance twice within one request (reverse, then reapply). |
+| `TransactionUpdate` (DTO) | — | `category_id`, `amount`, `type`, `note` | New request DTO (A8) — four independently optional fields, at least one required, identical per-field validation to `TransactionCreate`'s own. |
+| `TransactionRead` (DTO) | — | *(reused, unchanged)* | TM-US-01's own seven-field response shape, reused for this write's response too (A9). |
+
+**DTO addition** (`app/schemas/transaction.py`)
+
+```python
+class TransactionUpdate(BaseModel):
+    """Request DTO for PATCH /transactions/{transaction_id} (TM-US-04). Four
+    independently optional fields -- None means "leave this field's stored
+    value unchanged," whether the key was omitted or submitted explicitly
+    as null (mirrors WalletUpdate/CategoryUpdate's own convention). No
+    wallet_id field at all (plan.md A1, spec BR-01) -- a caller cannot even
+    name it meaningfully; any such key submitted anyway is silently ignored
+    by Pydantic's default BaseModel behaviour (spec EC-01).
+
+    Validation identical to TransactionCreate's own bounds (TM-US-01),
+    reused unchanged. Unlike name/icon (WalletUpdate/CategoryUpdate), note
+    carries no non-blank requirement -- a caller clears an existing note by
+    submitting an empty string, a real value distinct from both "omitted"
+    and "null" under this convention (plan.md A8).
+    """
+
+    category_id: str | None = Field(default=None, min_length=1)
+    amount: Decimal | None = Field(default=None, max_digits=15, decimal_places=2, gt=0)
+    type: TransactionType | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_at_least_one_field(self) -> "TransactionUpdate":
+        """spec AC-11, FR-04 (plan.md A8) -- the one cross-field rule
+        Pydantic cannot express on a single field, the identical shape
+        CategoryUpdate (CM-US-04) already needed.
+        """
+        if self.category_id is None and self.amount is None and self.type is None and self.note is None:
+            raise ValueError("At least one field must be provided to update a transaction.")
+        return self
+```
+
+**Repository additions**
+
+```python
+# wallet_repo.py -- one new function alongside decrement_balance()/increment_balance()
+def decrement_balance_unconditional(db: Session, *, wallet_id: str, amount: Decimal) -> None:
+    """spec BR-04, plan.md A5. Unconditionally subtract `amount` from a
+    wallet's balance -- used only to reverse a previously applied INCOME
+    transaction's effect. Unlike decrement_balance()'s conditional
+    sufficiency check (TM-US-01 A9), undoing a credit the wallet already
+    legitimately holds must never be refused, regardless of the wallet's
+    current balance. Flushed, not committed (AR-06).
+    """
+```
+
+```python
+# transaction_repo.py -- one new function alongside add_transaction()/list_owned()/get_owned_by_id()
+def update_transaction(
+    db: Session,
+    *,
+    transaction: TransactionModel,
+    category_id: str | None,
+    amount: Decimal | None,
+    type: TransactionType | None,
+    note: str | None,
+) -> TransactionModel:
+    """spec AC-01..AC-07, FR-14 (plan.md A7). Mutates only the field(s)
+    actually submitted on an already-fetched, already-ownership-verified,
+    already-reversed-and-reapplied row -- wallet_id is never touched
+    (BR-01), the identical "None means unchanged" convention
+    wallet_repo.update_wallet()/category_repo.update_category() already
+    established. Flushed, not committed (AR-06) -- the router owns the
+    transaction boundary.
+    """
+```
+
+**Service** (`app/services/transaction_service.py`, addition)
+
+```python
+def update_transaction(
+    db: Session,
+    *,
+    owner: UserModel,
+    transaction_id: str,
+    category_id: str | None,
+    amount: Decimal | None,
+    type: TransactionType | None,
+    note: str | None,
+) -> TransactionRead:
+    """spec AC-01..AC-18, FR-03, FR-06, FR-07, FR-11, FR-12, FR-13 (plan.md
+    A3, A4, A5, A6). Looks up the transaction scoped to the caller, then --
+    uniformly, regardless of which field(s) were actually submitted --
+    reverses its current stored effect on its wallet and applies its
+    effective new effect, before writing the submitted field(s) onto the
+    row itself. A failed reapplication (insufficient balance) raises
+    before the row is ever touched; app.db.session.get_db()'s own
+    `except Exception: db.rollback()` discards the already-flushed
+    reversal along with it, so nothing is left partially applied (A6).
+    """
+    transaction = transaction_repo.get_owned_by_id(
+        db, transaction_id=transaction_id, user_id=owner.id
+    )
+    if transaction is None:
+        raise TransactionNotFoundError()
+
+    category = None
+    if category_id is not None:
+        category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
+        if category is None:
+            raise TransactionCategoryNotFoundError()
+
+    effective_type = type if type is not None else transaction.type
+    effective_amount = amount if amount is not None else transaction.amount
+    category_changed = category_id is not None and category_id != transaction.category_id
+    type_changed = type is not None and type != transaction.type
+
+    # spec BR-02, FR-07, plan.md A4: re-validate only when the effective
+    # category or the effective type actually changed -- otherwise the
+    # pairing is already known valid from creation time (TM-US-01 BR-03).
+    if category_changed or type_changed:
+        if category is None:
+            category = category_repo.get_owned_by_id(
+                db, category_id=transaction.category_id, user_id=owner.id
+            )
+        if category.type.value != effective_type.value:
+            raise TransactionCategoryTypeMismatchError()
+
+    # spec BR-03, BR-04, plan.md A3, A5: reverse the stored effect first --
+    # unconditionally either way, since undoing a real, already-applied
+    # effect must never be refused.
+    if transaction.type is TransactionType.EXPENSE:
+        wallet_repo.increment_balance(db, wallet_id=transaction.wallet_id, amount=transaction.amount)
+    else:
+        wallet_repo.decrement_balance_unconditional(
+            db, wallet_id=transaction.wallet_id, amount=transaction.amount
+        )
+
+    # spec BR-05: apply the effective new effect exactly as creation does.
+    if effective_type is TransactionType.EXPENSE:
+        affected = wallet_repo.decrement_balance(
+            db, wallet_id=transaction.wallet_id, amount=effective_amount
+        )
+        if affected == 0:
+            raise TransactionInsufficientBalanceError()
+    else:
+        wallet_repo.increment_balance(db, wallet_id=transaction.wallet_id, amount=effective_amount)
+
+    transaction = transaction_repo.update_transaction(
+        db,
+        transaction=transaction,
+        category_id=category_id,
+        amount=amount,
+        type=type,
+        note=note,
+    )
+    return TransactionRead(
+        id=transaction.id,
+        wallet_id=transaction.wallet_id,
+        category_id=transaction.category_id,
+        amount=transaction.amount,
+        type=transaction.type,
+        timestamp=clock.ensure_aware(transaction.timestamp),
+        note=transaction.note,
+    )
+```
+
+**Router** (`app/api/v1/transactions.py`, addition)
+
+```python
+@router.patch(
+    "/{transaction_id}",
+    response_model=TransactionRead,
+    status_code=status.HTTP_200_OK,
+    summary="Update a transaction",
+    description=(
+        "Updates one or more of the category, amount, type, and note of "
+        "one of the authenticated caller's own transactions, identified by "
+        "its own id, and atomically recalculates its wallet's balance -- "
+        "reversing the transaction's old effect and applying its new one. "
+        "The transaction's wallet is immutable."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "TRANSACTION_NOT_FOUND / TRANSACTION_CATEGORY_NOT_FOUND"},
+        409: {
+            "description": ("TRANSACTION_CATEGORY_TYPE_MISMATCH / TRANSACTION_INSUFFICIENT_BALANCE")
+        },
+        422: {"description": "VALIDATION_ERROR"},
+    },
+)
+def update_transaction(
+    transaction_id: str,
+    payload: TransactionUpdate,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> TransactionRead:
+    result = transaction_service.update_transaction(
+        db,
+        owner=current_user,
+        transaction_id=transaction_id,
+        category_id=payload.category_id,
+        amount=payload.amount,
+        type=payload.type,
+        note=payload.note,
+    )
+    db.commit()
+    return result
+```
+
+No new error class (A13) — all four reused unchanged from `core/errors.py`.
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Authenticated User of any role may update their own transaction | AC-01..AC-07, FR-01, A10 | `PATCH /api/v1/transactions/{transaction_id}` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before anything else is evaluated | AC-08, FR-02 | `CurrentUserDep` resolves before the body is validated |
+| `transaction_id` must resolve to the caller's own transaction; not-found and not-owned collapsed | AC-09, AC-10, EC-07, FR-03 | `transaction_repo.get_owned_by_id()` (reused unchanged from TM-US-03) returns `None` for both cases by construction; service raises `TransactionNotFoundError` |
+| At least one field required | AC-11, FR-04, A8 | `TransactionUpdate`'s own `model_validator` |
+| `wallet_id` has no field at all; any submitted value ignored | EC-01, FR-05, BR-01, A1 | `TransactionUpdate` declares no such field |
+| Submitted `category_id` must resolve to the caller's own category | AC-12, FR-06 | `category_repo.get_owned_by_id()` (reused unchanged from TM-US-01/BM-US-01); service raises `TransactionCategoryNotFoundError` |
+| Submitted `amount`/`type`/`note` validated identically to creation | AC-13, AC-14, AC-15, FR-08, FR-09, FR-10 | `TransactionUpdate`'s own `Field` bounds, identical to `TransactionCreate`'s |
+| Effective category/type re-validated only when either actually changed | AC-16, EC-03, EC-04, FR-07, BR-02, A4 | `update_transaction()`'s `category_changed or type_changed` guard; raises `TransactionCategoryTypeMismatchError` on mismatch |
+| Reversal of the stored effect never fails | AC-03, AC-04, EC-09, FR-11, BR-04, A3, A5 | `increment_balance()` (reversing a stored EXPENSE) / `decrement_balance_unconditional()` (reversing a stored INCOME) — both unconditional |
+| Reapplication follows creation's own sufficiency rule | AC-01, AC-02, AC-17, EC-08, FR-12, BR-05 | `decrement_balance()` (effective EXPENSE, conditional) / `increment_balance()` (effective INCOME, unconditional); `TransactionInsufficientBalanceError` on a zero rowcount |
+| A refused reapplication leaves nothing changed | AC-17, EC-06, FR-13, BR-06, A6 | The raise happens before `transaction_repo.update_transaction()` is ever called; `get_db()`'s exception handling rolls back the already-flushed reversal |
+| Only the submitted field(s) are persisted | AC-01..AC-07, FR-14 | `transaction_repo.update_transaction()`'s "if X is not None" guards |
+| Response exposes exactly seven fields | AC-18, FR-15, constitution PF-03 | `TransactionRead` — no ORM graph, no extra field (A9) |
+| Fixed check order | EC-10, EC-11, FR-16 | `update_transaction()`'s straight-line sequence: ownership → (if submitted) category ownership → (if changed) type-consistency → reversal → reapplication |
+| No audit event | A11 | `transaction_service.update_transaction()` calls no `audit.record()` |
+
+**Sequence diagram — Update a Transaction**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request
+into `API` answered back to `UI` with a status code, one workflow — the reverse-then-reapply balance
+recalculation drawn as two `Svc→Store` steps within this one flow, not as two separate flows (DG-07).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as TransactionService
+    participant Store as Store
+
+    UI->>API: PATCH /transactions/:id
+    API->>Svc: update(input)
+    Svc->>Store: find the transaction owned by the caller
+    Store-->>Svc: transaction, or none
+
+    alt Transaction not found, or found but not owned by the caller (AC-09/AC-10, collapsed outcome)
+        API-->>UI: 404 TRANSACTION_NOT_FOUND
+    else Transaction owned by the caller
+        alt A new category is submitted
+            Svc->>Store: find the submitted category owned by the caller
+            Store-->>Svc: category, or none
+        else No new category submitted
+            Note over Svc: The effective category stays whatever the transaction already carries
+        end
+
+        alt Submitted category not found, or found but not owned by the caller (AC-12)
+            API-->>UI: 404 TRANSACTION_CATEGORY_NOT_FOUND
+        else Category resolved, or none submitted
+            alt The effective category or the effective type differs from the stored row
+                Svc->>Store: confirm the effective category's own type still agrees with the effective type
+                Store-->>Svc: agrees, or disagrees
+            else Neither changed
+                Note over Svc: Already known valid from creation — re-check skipped (BR-02)
+            end
+
+            alt Effective type disagrees with the effective category's own type
+                API-->>UI: 409 TRANSACTION_CATEGORY_TYPE_MISMATCH
+            else Types agree, or no re-check was needed
+                Note over Svc,Store: The stored effect is reversed first, unconditionally either way — adding back a stored EXPENSE, or subtracting back a stored INCOME (BR-04) — then the effective new effect is applied exactly as creation already does (BR-05)
+                Svc->>Store: reverse the transaction's current effect on its wallet
+                Store-->>Svc: reversed
+                Svc->>Store: apply the effective new effect to the wallet
+                Store-->>Svc: applied, or refused for insufficient balance
+
+                alt Reapplication refused for insufficient balance (AC-17)
+                    Note over Svc,Store: Nothing commits until the router does, so the already-flushed reversal is rolled back along with this refusal — the stored transaction and wallet balance are left exactly as they were (BR-06)
+                    API-->>UI: 409 TRANSACTION_INSUFFICIENT_BALANCE
+                else Reapplication succeeded
+                    Svc->>Store: save the transaction's submitted fields
+                    Store-->>Svc: transaction updated
+                    Svc-->>API: transaction
+                    API-->>UI: 200 transaction updated
+                end
+            end
+        end
+    end
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-08)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+    opt Malformed payload — no field submitted at all, or an invalid category, amount, type, or note shape (AC-11, AC-13..AC-15)
+        API-->>UI: 422 VALIDATION_ERROR
+    end
+```
+
+Only one workflow is drawn (DG-07). The nested `alt`/`else` blocks are the one flow's own branches —
+not a second flow — and the reverse-then-reapply sequence is exactly the two `Svc→Store` steps the
+task brief asks for, within this single diagram. Verified with `check.mjs` (`mermaid.parse()`) — see
+*Verification note* below.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-08) | 401 | `NOT_AUTHENTICATED` |
+| No field submitted at all, or an invalid category/amount/type/note shape (AC-11, AC-13..AC-15) | 422 | `VALIDATION_ERROR` |
+| Transaction not found, or found but not owned by the caller (AC-09, AC-10) | 404 | `TRANSACTION_NOT_FOUND` |
+| Submitted category not found, or found but not owned by the caller (AC-12) | 404 | `TRANSACTION_CATEGORY_NOT_FOUND` |
+| Effective type disagrees with the effective category's own type (AC-16) | 409 | `TRANSACTION_CATEGORY_TYPE_MISMATCH` |
+| Effective EXPENSE amount exceeds the wallet's balance once reversed (AC-17) | 409 | `TRANSACTION_INSUFFICIENT_BALANCE` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02) —
+reused unchanged from `main.py`. No `403` (A10: no role restriction). No new error code (A13).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `transaction_service.update_transaction()` is the only place that decides what a failed lookup, a type mismatch, or an insufficient reapplication means |
+| AR-02 Thin router | Required | Router binds the path parameter and payload, resolves `CurrentUserDep`, calls the service, commits once, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `wallet_repo`'s new function and `transaction_repo.update_transaction()` are queries/persistence only — the sufficiency *decision* (raise on rowcount 0) and the reverse/reapply *sequencing* are the service's, not the repository's |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | No field-name mapping needed (every DTO field matches its column 1:1); the service remains the boundary |
+| AR-05 No framework objects in services | Required | `update_transaction()` takes plain values (`owner: UserModel`, `transaction_id`, `category_id`, `amount`, `type`, `note`); no `Request`/`Response` |
+| AR-06 One transaction per request | Required — extended to three flushed writes in one request for the first time (A14) | The reversal, the reapplication, and the row update are all flushed, never committed, inside the service; the router's single `db.commit()` is the only commit point. A failed reapplication raises before the row update is ever attempted; `get_db()`'s exception handling rolls back everything flushed so far (A6) |
+| AR-07 Router → service → repository | Required | The router never calls `wallet_repo`/`category_repo`/`transaction_repo` directly |
+| AR-08 Module layout | Required | `backend/app/{models,schemas,repositories,services,api}` — no new top-level package; `wallet_repo.py`/`transaction_repo.py` each gain one function |
+| API-01 Versioned plural path | Required | `PATCH /api/v1/transactions/{transaction_id}` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required | `200` update · `401` · `404` (×2 codes) · `409` (×2 codes) · `422` |
+| API-04 Prefixed error codes | Required | All four codes already catalogued in TM-US-01/03's own `plan.md`; no new code (A13) |
+| API-05 No generic status endpoint | Required | This is an ordinary scalar/reference field edit, not a named lifecycle transition (A2) |
+| API-06 Pagination | N/A | Single-resource update; no list in this story |
+| API-07 Explicit response_model | Required | `response_model=TransactionRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `wallet_repo.py`/`transaction_repo.py`/`transaction_service.py`/`transactions.py` |
+| NC-02 Naming | Required | `TransactionUpdate` (new DTO); `TransactionRead` reused unchanged |
+| NC-03 API paths | Required | `/transactions/{transaction_id}` — no verb (A2) |
+| NC-04 Column naming | N/A | No column change this story |
+| NC-05 Enum serialisation | Required | `TransactionType` literals unchanged, same as every prior story |
+| NC-06 Concise service methods | Required | `transaction_service.update_transaction`, matching `budget_service.update_budget`'s own concision |
+| VL-01 Pydantic is the source of truth | Required | Every payload-shape bound (presence, decimal shape, positivity, enum membership, note length, at-least-one-field) lives on `TransactionUpdate` |
+| VL-02 Errors grouped | Required | Reused `RequestValidationError` handler, unchanged |
+| VL-06 Referenced entities verified before use | Required | `transaction_id` and (when submitted) `category_id` each resolved through an ownership-scoped lookup before any mutation; a category present but wrongly typed is VL-06's "409 if present but in the wrong state" branch, exercised again |
+| VL-07 Decimal money | Required | `Decimal`, `max_digits=15, decimal_places=2, gt=0` on `TransactionUpdate.amount`, identical to `TransactionCreate`'s own bound |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case to test (A10: no role restriction) |
+| SEC-08 Ownership filter | Required | Both the transaction being updated and any newly submitted category are filtered by `user_id` at the repository layer |
+| SEC-10 No enumeration | N/A (reasoning reused) | An authenticated caller who does not own a real transaction or category id learns nothing about who does — the identical `404` covers both cases in each lookup |
+| LA-02 / LA-04 Audit | N/A (by decision) | Updating a transaction is not one of LA-04's three named audited events (A11) |
+| PF-01 300 ms p95 | Required | One transaction lookup, an optional category lookup, up to two balance mutations, and one row update — no I/O off the request path |
+| PF-02 Indexed lookups | Required | `transaction_repo.get_owned_by_id()`/`category_repo.get_owned_by_id()` reused unchanged, already indexed (TM-US-01/BM-US-01); both wallet-balance mutations are primary-key UPDATEs |
+| PF-03 DTO projection | Required | `TransactionRead` — seven fields, no ORM graph (A9) |
+| PF-04 Bounded lists | N/A | No list endpoint in this story |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| TST-06 Deterministic time | N/A | This story introduces no new timestamp-sensitive behaviour; `timestamp` itself is never editable (spec BR-01's sibling reasoning for `id`/`timestamp`) |
+| DOD-02 Migration | N/A | No schema change (A12) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No transaction-edit screen exists this round — confirmed directly in `mobile/app/(tabs)/transactions/index.tsx`'s own source comments, which name "TM-US-03/04 (a transaction-detail screen)" together as out of scope for this round's prototype. No SRS UXR names one either. |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `wallet_repo.decrement_balance_unconditional(db, *, wallet_id, amount)` — unconditional subtraction, used only to reverse a stored INCOME (A5) | `backend/app/repositories/wallet_repo.py` | Open |
+| T-02 | `transaction_repo.update_transaction(db, *, transaction, category_id, amount, type, note)` — mutate only submitted fields (A7) | `backend/app/repositories/transaction_repo.py` | Open |
+| T-03 | `TransactionUpdate` DTO — four independently optional fields, at-least-one-field validator (A8) | `backend/app/schemas/transaction.py` | Open |
+| T-04 | `transaction_service.update_transaction(db, *, owner, transaction_id, category_id, amount, type, note)` — ownership lookup, conditional category lookup, conditional type-consistency re-check, reverse, reapply, row update, in that fixed order (A3, A4, A6) | `backend/app/services/transaction_service.py` | Open |
+| T-05 | `PATCH /api/v1/transactions/{transaction_id}` router addition (A2, A10) | `backend/app/api/v1/transactions.py` | Open |
+| T-06 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_04_update_transaction.py` | Open |
+
+**Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
+was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`, scratch install already
+present in this session's scratchpad per `CLAUDE.md` §3) before this gate was claimed:
+
+```
+=== specs/006-transaction-management/plan.md — 4 mermaid block(s) found ===
+  OK   block starting at line 366
+  OK   block starting at line 820
+  OK   block starting at line 1104
+  OK   block starting at line 1517
+
+4/4 mermaid blocks parsed cleanly.
+```
+
+The block at line 1517 is this story's own diagram; it parses cleanly. By eye/grep: four lanes only
+(`UI`, `API`, `Svc`, `Store`), no `Repo`/`DB` lane, no `SELECT`/`INSERT`/`UPDATE … WHERE`/`JOIN`/
+`rowcount`/table-and-column syntax in any arrow label (the conditional-decrement and
+unconditional-reversal mechanisms are described in prose in `Note`s, per DG-04's own allowance, not
+spelled out as SQL), no `;` or `#` in any label (DG-06), and the one `UI→API` request
+(`PATCH /transactions/:id`) is answered by exactly one of the six terminal branches, each carrying an
+HTTP status back to `UI` (DG-05). One workflow only (DG-07) — the reverse-then-reapply balance
+recalculation is drawn as two `Svc→Store` steps inside this single flow, not as a second diagram.
