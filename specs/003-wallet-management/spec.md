@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(implemented, verified — 302 passed, 99% coverage)* · WM-US-04 *(implemented, verified — 526 total passing)* · WM-US-03 *(spec'd — artifacts phase only, not yet implemented)*
+> **Stories in this file:** WM-US-01 *(implemented, verified — 198 passed, 98% coverage)* · WM-US-02 *(implemented, verified — 302 passed, 99% coverage)* · WM-US-04 *(implemented, verified — 526 total passing)* · WM-US-03 *(spec'd — artifacts phase only, not yet implemented)* · WM-US-05 *(spec'd — artifacts phase only, not yet implemented)*
 
 ---
 
@@ -1140,3 +1140,536 @@ endpoint never reads transaction data at all (see *Assumptions & Dependencies*).
   `WalletNotFoundError` already exists (built by WM-US-04) and is reused unchanged for the identical
   "the wallet being acted on directly was not found" case. `WalletRead` already exists and is reused
   unchanged (FR-05). Full detail in `plan.md`.
+
+---
+
+## WM-US-05: Delete a Wallet
+
+> **IDs in this section are local to WM-US-05** (`AC-NN`/`EC-NN`/`FR-NN`/`BR-NN`/`SC-NN`), continuing
+> the demonstrated convention: every second-or-later story in this file restarts its own
+> `AC`/`EC`/`FR`/`BR`/`SC` locally, while `test_cases.md`'s `TC-NN` and `QF-NN` run continuously across
+> the epic file. `test_cases.md`'s `TC-NN` below continues from `TC-71`, and `QF-NN` from `QF-14` —
+> confirmed by direct count against that file's actual current end (`TC-70`, `QF-13`, both WM-US-03's
+> own last entries) before writing this section, not assumed from any prior summary or from this
+> dispatch's own brief.
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-03 — searched in full; no entry at all for this story**
+> #### US-03-01: Create a Wallet [MVP]
+> #### US-03-02: View List of Wallets [MVP]
+> #### US-03-03: Update a Wallet
+
+Confirmed directly: those three headers are the entire SRS §6 Feature-03 section — no `US-03-04` and
+no header of any kind for deleting, archiving, or soft-deleting a wallet. This is the identical
+situation WM-US-03's own Source section already found for itself (no entry at all, not even a bare
+header) — the second story in this epic with no SRS anchor whatsoever.
+
+**SDS §5.3.5 WM-US-05: Delete a Wallet (USER)**
+> * **Goal:** Soft-delete or archive an unused wallet container.
+
+The entire SDS entry for this story is this one sentence. Unlike BM-US-05's own SDS §5.5.5 goal
+("**Remove** an active budget tracker") and TM-US-05's own SDS §5.6.5 goal ("**Remove** a
+transaction") — both of which this codebase already read as literal hard deletion (BM-US-05 `plan.md`
+A2; TM-US-05 `plan.md` A2) — this story's own goal uses a materially different verb pair,
+"**soft-delete or archive**," and a materially different adjective, "**unused**," neither of which
+appears in either sibling's own goal text. Defaulting to the siblings' own hard-delete precedent would
+read past a word the SDS chose differently for this story specifically. See *Assumptions &
+Dependencies* for the full reasoning this wording requires.
+
+**SDS §2.2 Domain Object**
+> **Wallet:** Financial container holding funds (`id`, `user_id`, `name`, `type`, `balance`,
+> `currency`).
+
+**The structural fact this story's whole design turns on — confirmed directly against the real models,
+not assumed from the ERD**
+> `backend/app/models/budget.py`: `wallet_id: Mapped[str] = mapped_column(String(36),
+> ForeignKey("wallets.id"), nullable=False, index=True)`
+> `backend/app/models/transaction.py`: `wallet_id: Mapped[str] = mapped_column(String(36),
+> ForeignKey("wallets.id"), nullable=False)`
+
+Both `budgets.wallet_id` and `transactions.wallet_id` are real, live foreign keys into `wallets.id` —
+confirmed directly by reading both model files in full, including their `__table_args__`, and neither
+carries `ON DELETE CASCADE`. This is the structural fact BM-US-05 `plan.md` A3 and TM-US-05 `plan.md`
+A3 each confirmed was **absent** for their own entity (`budgets.id`/`transactions.id` have no inbound
+foreign key at all, which is exactly why a hard `DELETE` was safe for both). `wallets.id` has the
+opposite shape: two live inbound foreign keys, from the two entities that record a wallet's own
+financial history. A hard delete here would either violate referential integrity outright or, if it
+somehow succeeded, silently orphan real financial history. This is the concrete, structural reason this
+story cannot simply replicate BM-US-05/TM-US-05's own pattern, and it is very likely why SDS §5.3.5's
+own goal text reads "soft-delete or archive" where both siblings' own goals read "remove."
+
+**`specs/005-budget-management/plan.md` BM-US-05, `specs/006-transaction-management/plan.md` TM-US-05
+— read in full as the closest-shape precedent for *mechanics*, not for the soft-vs-hard decision
+itself**
+> Both: a verb-free `DELETE /resource/{id}` path (A4); an ownership-collapsed-to-404 lookup reusing
+> each story's own already-existing `get_owned_by_id()` (A6/A7 reuse the existing not-found error); no
+> cascade to *other* entities (A3); `204 No Content`, no body (A5) — reasoned explicitly as the right
+> shape for an operation that leaves nothing further to say about a row that no longer exists.
+
+This story reuses the verb-free `DELETE /{id}` path and the ownership-collapsed-404 lookup mechanic
+unchanged (mirrors BM-US-05 A7/TM-US-05 A7's own error reuse, applied here to the already-existing
+`WalletNotFoundError`) — but does **not** carry forward `204`/no-body, for reasons reasoned through
+explicitly below: unlike a hard delete, the row is not removed, so there is a real, current resource
+state left to describe.
+
+**`backend/app/models/wallet.py`, `backend/app/repositories/wallet_repo.py`,
+`backend/app/core/errors.py` — confirmed directly**
+> No model anywhere in this codebase has an `is_deleted`/`is_archived`/`deleted_at`/`archived_at`
+> column, or any soft-delete pattern of any kind, today — this story is the first.
+> `wallet_repo.get_owned_by_id()` already exists (WM-US-01/BM-US-01) and already collapses "no such
+> wallet" and "exists, owned by someone else" to the identical `None`; `WalletNotFoundError` already
+> exists (WM-US-04). Both are reused unchanged.
+
+**`backend/app/services/transaction_service.py::create_transaction`,
+`backend/app/services/budget_service.py::create_budget` — confirmed directly**
+> Both validate a referenced wallet's *ownership* only, via `wallet_repo.get_owned_by_id()` — neither
+> checks any further precondition on the wallet itself before creating a row against it. Directly
+> relevant to this story's own design question on whether archiving blocks new activity (see
+> *Assumptions & Dependencies*).
+
+**`backend/app/models/user.py` `UserStatus`/`UserModel.status` — read as a possible naming/typing
+precedent, then evaluated rather than assumed to transfer**
+> `users.status` is a three-member closed enum (`PENDING`/`ACTIVE`/`DEACTIVATED`) representing a full
+> account lifecycle with multiple named states and transitions in both directions. See *Assumptions &
+> Dependencies* for why this is not read as a fair precedent for this story's own two-state wallet
+> concern.
+
+**constitution.md NC-04, VL-06, SEC-08, PF-02, PF-03, API-03**
+> NC-04: Columns snake_case; timestamps `created_at` / `updated_at` / `expires_at`.
+> VL-06: Referenced entities are verified to exist and be active before use — `404` if absent, `409` if
+> present but in the wrong state.
+> SEC-08: Queries for user-owned data filter on the authenticated `user_id` at the repository layer.
+> API-03: HTTP status codes: `200` read/update · `201` creation · `400` ... `404` not found · `409`
+> business conflict · `422` payload validation.
+
+### Out of scope for this story
+
+WM-US-01 (create a wallet, already implemented) · WM-US-02 (list wallets, already implemented) ·
+WM-US-03 (view a wallet, already implemented) · WM-US-04 (update a wallet, already implemented) ·
+UM-US-04/05, DC-US-01/02 · Features 04–11 · SRS §6 Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: **un-archiving a wallet** — no AC, FR, or source document
+names a reversal operation, and inventing one would be a second, unrequested endpoint; **blocking
+WM-US-04's own rename/retype operation against an archived wallet** (reasoned through explicitly below,
+not merely declined — see *Assumptions & Dependencies*); **adding an "include archived" filter to
+WM-US-02's own list** — this story settles only the default-exclusion behavior its own design question
+requires, not a second, unrequested query parameter; and any mobile/UI screen, for the same reason
+every prior Wallet Management story gave its own endpoint — no SRS UXR names one this round, and
+`mobile/` stays a fixture-driven prototype scoped to UM-US-01 only (`CLAUDE.md` §5).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to archive one of my own wallets that I no longer use, so that it
+stops cluttering my active wallet list and can no longer accumulate new activity, while its existing
+history and its own detail stay exactly as reachable as before.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully archive a wallet the caller owns**
+**Given** an authenticated User who owns a wallet that is not yet archived,
+**When** the User requests to delete (archive) that wallet by its own identifier,
+**Then** the system marks the wallet archived, leaves its own row and its name, type, currency, and
+balance unchanged, and returns a success result carrying the wallet's identifier, owner identifier,
+name, type, currency, balance, and the time it was archived.
+
+**AC-02: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to archive a wallet,
+**Then** the system denies the request before evaluating the wallet reference at all, archives
+nothing, and returns an unauthenticated error.
+
+**AC-03: Reject an archive request for a wallet that does not exist**
+**Given** an authenticated User,
+**When** the submitted wallet reference matches no wallet at all,
+**Then** the system archives nothing and returns a not-found error.
+
+**AC-04: Reject an archive request for a wallet owned by a different User**
+**Given** an authenticated User,
+**When** the submitted wallet reference matches a wallet owned by a different User,
+**Then** the system archives nothing and returns the same not-found outcome AC-03 describes — the
+response gives no indication of which of the two happened.
+
+**AC-05: A repeated archive request against an already-archived wallet succeeds again, without changing
+the recorded archive time**
+**Given** an authenticated User who owns a wallet that is already archived,
+**When** the User submits a second archive request for that same wallet,
+**Then** the system returns the same success result AC-01 describes, the wallet remains archived, and
+the time it was archived is identical to the time recorded by the first successful request — never
+updated to the time of the second request.
+
+**AC-06: An archived wallet is excluded from the caller's default wallet list**
+**Given** an authenticated User who owns one active wallet and one archived wallet,
+**When** the User requests their list of wallets,
+**Then** the response contains only the active wallet, and the reported total reflects only the active
+wallet — the archived wallet is absent from both the items and the total.
+
+**AC-07: An archived wallet remains individually viewable by its own identifier**
+**Given** an authenticated User who owns an archived wallet,
+**When** the User requests that wallet by its own identifier,
+**Then** the system returns the wallet's detail exactly as View a Wallet (WM-US-03) already defines
+it, succeeding rather than reporting the wallet as not found.
+
+**AC-08: Reject a new Transaction submitted against an archived wallet**
+**Given** an authenticated User who owns an archived wallet,
+**When** the User attempts to create a Transaction referencing that wallet,
+**Then** the system creates nothing and returns a business-conflict error identifying the wallet as
+archived.
+
+**AC-09: Reject a new Budget submitted against an archived wallet**
+**Given** an authenticated User who owns an archived wallet,
+**When** the User attempts to create a Budget referencing that wallet,
+**Then** the system creates nothing and returns a business-conflict error identifying the wallet as
+archived.
+
+**AC-10: Return exactly the documented fields for a successful archive**
+**Given** an authenticated User successfully archives one of their own wallets,
+**When** the system returns the success result,
+**Then** the result carries exactly the wallet's identifier, owner identifier, name, type, currency,
+balance, and the time it was archived — no other field, and no data belonging to any other User.
+
+### Edge Cases
+
+**EC-01**: **A wallet reference that is not even a well-formed identifier** — a value such as
+`"not-a-real-id"` is refused with the same not-found outcome as a well-formed but non-existent
+reference (AC-03), the identical treatment WM-US-03 EC-01/WM-US-04 EC-03 already established for this
+same kind of reference.
+
+**EC-02**: **A caller who owns a different wallet of their own, attempting to archive another User's
+wallet** — refused with the identical outcome AC-04 describes; owning some wallet never entitles a
+caller to act on another User's wallet, the identical scoping WM-US-03 EC-02/WM-US-04 EC-08 already
+established.
+
+**EC-03**: **An ADMIN-role caller attempting to archive a wallet they do not own** — refused exactly as
+any other caller would be; no role elevates visibility or authority through this endpoint, mirroring
+WM-US-03 EC-03/WM-US-02 EC-04 for their own single- and multi-wallet operations.
+
+**EC-04**: **Archiving a wallet with existing Transactions or Budgets already recorded against it** —
+the archive succeeds; none of that existing history is altered, re-pointed, or removed, and the
+wallet's own stored `balance` is untouched by the archive operation itself. Only *new* activity against
+the wallet is refused (AC-08, AC-09) — past activity is never affected.
+
+**EC-05**: **An archived wallet's stored balance is exactly what it was immediately before archiving**
+— archiving writes no value to `balance`; whatever Transaction activity had already shaped it remains
+exactly as recorded, and no further Transaction can change it again once archived (AC-08).
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to archive a wallet they own,
+  identified by its own identifier (SDS §5.3.5).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before the wallet reference is examined at all (constitution API-08; mirrors WM-US-01 FR-02, WM-US-03
+  FR-02, WM-US-04 FR-02).
+- **FR-03**: The system must **require** the submitted wallet reference to resolve to a wallet owned by
+  the authenticated caller, and **refuse** the request with an identical outcome whether no such wallet
+  exists at all or it exists and is owned by a different User (AC-03, AC-04, EC-01, EC-02; constitution
+  SEC-08, VL-06).
+- **FR-04**: The system must **mark** a wallet archived by recording the time it was archived, without
+  altering its name, type, currency, or balance, and without removing its own row (AC-01, EC-04, EC-05).
+- **FR-05**: The system must **treat a repeated archive request against an already-archived wallet as a
+  success**, returning the identical result, and must **never** overwrite the originally recorded
+  archive time with the time of a later request (AC-05).
+- **FR-06**: The system must **exclude** an archived wallet from the caller's default wallet list
+  (WM-US-02), for both the returned items and the reported total (AC-06).
+- **FR-07**: The system must **continue to return** an archived wallet's full detail, unchanged, through
+  View a Wallet (WM-US-03), identified by its own identifier (AC-07).
+- **FR-08**: The system must **refuse** a new Transaction that references an archived wallet, with a
+  business-conflict error, creating nothing (AC-08).
+- **FR-09**: The system must **refuse** a new Budget that references an archived wallet, with a
+  business-conflict error, creating nothing (AC-09).
+- **FR-10**: The system must **return**, on a successful archive, exactly the wallet's identifier,
+  owner identifier, name, type, currency, balance, and the time it was archived (AC-10).
+
+#### Business Rules
+
+- **BR-01**: A wallet's ownership for this operation is established the same way WM-US-01 BR-01,
+  WM-US-03 BR-01, and WM-US-04 BR-02 already established it — directly by the wallet's own identifier,
+  scoped to the authenticated caller. A wallet reference that does not resolve to a row the caller owns
+  is refused identically whether no such row exists at all or it exists and belongs to a different User
+  (FR-03).
+- **BR-02**: Archiving is recorded as a timestamp, not a boolean flag — the timestamp doubles as both
+  the marker that a wallet is archived and the record of when, and is set at most once: a later archive
+  request against an already-archived wallet never overwrites it (FR-05, BR-02 itself).
+- **BR-03**: Archiving a wallet never removes its row and never changes its name, type, currency, or
+  balance — only its archived state changes (FR-04).
+- **BR-04**: An archived wallet is excluded from the caller's default wallet list but remains
+  individually viewable by its own identifier — this story does not hide a wallet's own history or
+  detail from a caller who already knows how to find it directly, only from the undirected default list
+  (FR-06, FR-07).
+- **BR-05**: An archived wallet may not be referenced by a new Transaction or by a new Budget (FR-08,
+  FR-09). This restriction does not reach WM-US-04's own name/type update operation, which is
+  unaffected by a wallet's archived state (see *Assumptions & Dependencies*).
+
+#### Key Entities
+
+- **Wallet**: A named store of liquid money a User holds (SRS §1.5). Carries `id`, `user_id`, `name`,
+  `type`, `currency`, and `balance` (SDS §2.2, §4.3.3; WM-US-01), and — new in this story — a record of
+  whether, and when, it has been archived. This is the first Wallet Management story to introduce a new
+  concept onto the Wallet entity itself since WM-US-01 established its original six fields.
+- **Transaction**: Reused from Feature-06, unchanged in shape. This story adds a new precondition to
+  its own creation (TM-US-01) — a referenced wallet must not be archived — but reads and writes no
+  Transaction field itself, and removes no Transaction row.
+- **Budget**: Reused from Feature-05, unchanged in shape. This story adds the identical new precondition
+  to its own creation (BM-US-01) that it adds to Transaction's, for the same reason.
+- **User**: Reused from Feature-01/Feature-02 with no new column. The authenticated caller's own
+  ownership of the wallet being archived is the only scope this story ever checks (constitution SEC-08).
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can archive one of their own wallets in one call, and the result
+  confirms both the archived state and when it occurred.
+- **SC-02**: No wallet can be archived without an authenticated caller.
+- **SC-03**: A wallet can never be archived by a User who does not own it — whether because the
+  reference does not exist at all, or because it belongs to someone else, the request is refused
+  identically either way.
+- **SC-04**: Archiving a wallet never changes its own name, type, currency, or balance, and never
+  removes its row or any history recorded against it.
+- **SC-05**: An archived wallet disappears from the caller's default wallet list but remains reachable
+  by its own identifier, and can never again be the target of a new Transaction or a new Budget.
+- **SC-06**: Repeating the archive request against an already-archived wallet is always safe — it never
+  fails, and it never moves the recorded archive time.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01) and Create a Wallet (WM-US-01) are already implemented**, and **List Wallets
+  (WM-US-02), Update a Wallet (WM-US-04), and View a Wallet (WM-US-03) are also already implemented**.
+  Every acceptance criterion here presupposes at least one wallet already on record, owned by the
+  authenticated caller, and this story is the first in the epic that can exercise a complete chain of
+  every prior Wallet Management story's own already-shipped behavior (list, view, update) as part of
+  its own verification — the identical dependency shape every later story in this codebase accumulates
+  on its own predecessors.
+
+- **The design question this story turns on first: what does "soft-delete or archive" mean concretely
+  — a column, and what shape? Reasoned through in full, not defaulted.**
+
+  Three shapes were weighed: a boolean (`is_archived`), a nullable timestamp (`archived_at`), or a
+  status-style field modelled the way `users.status` is modelled.
+
+  **Why a status-style enum, mirroring `users.status`, is rejected.** `users.status` is a genuine,
+  evaluated precedent — it is the only existing lifecycle-like field in this codebase — but it is not a
+  fair one to copy here. `UserStatus` has **three** members (`PENDING`/`ACTIVE`/`DEACTIVATED`)
+  representing a real multi-state lifecycle with distinct meanings and transitions in both directions
+  (an account can be deactivated and, per UM-US-01 plan.md's own invitation-reactivation handling,
+  reasoned about again later). A wallet's archive concept has exactly two states — archived or not —
+  with no third state this story or any source document names, and (per the scope decision below) no
+  reversal operation either. Modelling a genuine two-state, one-directional concept as a closed enum
+  would invent a vocabulary with only ever one member actually assigned by this story (`ARCHIVED`,
+  alongside an implicit "not set" default) — more machinery than the concept needs, and a closed set
+  this story is not actually asked to enumerate beyond one value. `users.status` earns its enum because
+  it has three real members; a wallet's archive concept does not.
+
+  **Why a boolean, `is_archived`, is rejected in favor of a timestamp.** A boolean would capture *that*
+  a wallet is archived, but not *when* — and "when" is not idle metadata here: it is exactly what
+  FR-05/AC-05 need to prove the archive operation is idempotent (the *same* recorded moment survives a
+  repeat request, not merely the same `true` value, which a careless re-write could silently refresh
+  without any test able to tell the difference). A nullable timestamp, `archived_at`, carries both
+  pieces of information in one column — `NULL` means active, a non-`NULL` value means archived *and*
+  records when — with no second column needed. This also matches constitution NC-04's own naming
+  convention directly: NC-04 names `created_at`/`updated_at`/`expires_at` as this codebase's own
+  timestamp-column idiom, and `archived_at` is the identical shape, not a new pattern.
+
+  **The resulting decision: `wallets.archived_at`, a nullable `DateTime(timezone=True)` column.** `NULL`
+  (the default for every existing and newly created wallet) means active; a non-`NULL` value means
+  archived, holding the moment it was archived. Full detail — including why this is a legitimate new
+  column despite `wallets`' own ERD gap (SDS §4.3.3 already lacks `created_at`, flagged and left
+  unfixed by WM-US-01 `plan.md` A5) — is in `plan.md` A1. In short: unlike the `created_at` ordering
+  convenience WM-US-01/WM-US-02 each declined to add unilaterally, "soft-delete or archive" is this
+  story's own, explicitly stated goal — the capability cannot exist at all without some persisted
+  marker, so adding the one column it requires is executing the SDS's own instruction, not inventing a
+  requirement beyond it.
+
+- **The second design question: does archiving a wallet block new Transactions or Budgets from being
+  created against it? Reasoned through explicitly, not assumed either way.**
+
+  SDS §5.3.5's own goal text does not say so in as many words — but it does not stay silent on the
+  point either: it names the wallet being archived an "**unused**" wallet container. That word is the
+  textual anchor this question turns on. If archiving leaves a wallet exactly as usable as before, the
+  word "archived" (and the word "unused," which the goal uses to describe the wallet *before* this
+  operation even runs) would describe nothing the system itself enforces — a caller could keep logging
+  Transactions and Budgets against a wallet the system calls "archived," and the label would carry no
+  operational meaning at all, only a cosmetic one. Constitution VL-06 already anticipates exactly this
+  shape of rule and already supplies its error-status vocabulary unused until now: "Referenced entities
+  are verified to exist and be active before use — `404` if absent, `409` if present but in the wrong
+  state." Every other Wallet/Budget/Transaction story that references a wallet (BM-US-01, TM-US-01) has
+  so far only ever exercised VL-06's `404`-if-absent branch through `wallet_repo.get_owned_by_id()`
+  (confirmed directly: both `transaction_service.create_transaction` and `budget_service.create_budget`
+  check ownership only); VL-06's own `409`-if-present-but-wrong-state branch has never yet had a "wrong
+  state" for a wallet to be in, because no such state existed before this story. This story is what
+  gives that branch its first real case.
+
+  **Decision: yes, archiving blocks new Transactions and Budgets.** A new Transaction or Budget that
+  references an archived wallet is refused with a `409` business-conflict error — `AC-08`/`AC-09`,
+  `FR-08`/`FR-09`. This is scoped precisely to the two creation paths that bring new financial exposure
+  into existence against a wallet, and no further:
+
+  - `transaction_service.create_transaction` (`backend/app/services/transaction_service.py`) gains one
+    new check, immediately after its existing `wallet_repo.get_owned_by_id()` ownership lookup and
+    before its existing category lookup — extending TM-US-01 `plan.md` A4's own fixed check order by
+    one step: **wallet ownership → wallet archived-state → category ownership → category-type
+    consistency → balance sufficiency.** A new error, `TransactionWalletArchivedError`
+    (`409 TRANSACTION_WALLET_ARCHIVED`), is raised when the wallet resolves and is owned by the caller
+    but its `archived_at` is not `NULL`.
+  - `budget_service.create_budget` (`backend/app/services/budget_service.py`) gains the identical check
+    in the identical position, extending BM-US-01 `plan.md` A6's own fixed check order by one step the
+    same way: **wallet ownership → wallet archived-state → category ownership → duplicate-budget
+    check.** A new error, `BudgetWalletArchivedError` (`409 BUDGET_WALLET_ARCHIVED`), is raised the same
+    way.
+
+  This is a genuinely larger footprint than any prior "Delete" story in this codebase has had — it
+  touches two already-shipped, already-verified services outside this epic (TM-US-01, BM-US-01) —
+  acknowledged explicitly rather than minimised. It does not reopen either story's own already-settled
+  design: both checks are additive (a new `if` branch using data the existing ownership lookup already
+  fetches — `wallet.archived_at` — no new query, no new repository call), and neither disturbs the
+  check order's own existing steps, only inserts one more immediately after the step it depends on.
+  Full call-site detail, including why this does not warrant a new or redrawn sequence diagram in
+  either of those other epics, is in `plan.md` A2.
+
+  **Why option "archiving does not block new activity" was rejected, not merely not chosen.** It was the
+  cheaper implementation — no cross-epic change at all — but it was rejected because it was weighed
+  directly against the alternative and found wanting: it would make "archived" a label with no
+  enforced consequence, contradicting the one substantive word ("unused") the SDS's own goal text
+  actually supplies, and leaving constitution VL-06's own `409` branch permanently unexercised for the
+  one entity (`Wallet`) that is referenced by two other entities' own creation paths — exactly the
+  situation VL-06 was written to cover.
+
+  **New Transaction/Budget tests against an archived wallet live in *this* story's own test file, not
+  TM-US-01's or BM-US-01's.** `test_wm_us_05_delete_wallet.py` exercises the already-existing
+  `POST /api/v1/transactions` and `POST /api/v1/budgets` endpoints directly to prove the new refusal —
+  this is this story's own contract (`AC-08`/`AC-09`), not a retroactive edit to TM-US-01's or
+  BM-US-01's own, already-closed `spec.md`/`plan.md`/`test_cases.md` sections, whose existing
+  `AC`/`EC`/`FR`/`BR`/`TC` entries `CLAUDE.md` §1.1 forbids renumbering or rewriting.
+
+- **The third design question: does an archived wallet still appear in `GET /wallets` (WM-US-02's list)
+  and `GET /wallets/{id}` (WM-US-03's view)? Reasoned through for each endpoint separately, because the
+  two have different answers.**
+
+  **List (WM-US-02): excluded by default.** A hard delete has an obvious answer here (the row is gone,
+  so it cannot appear anywhere); this story does not have that luxury, since the whole point of keeping
+  the row is that its history stays reachable. But the *list* view is explicitly the caller's own
+  "which wallets do I actively use" surface — the one place an archived, "put away" wallet would
+  otherwise sit forever among the wallets a caller actually manages day to day, defeating the practical
+  purpose of archiving it in the first place. `wallet_repo.list_owned()` (`backend/app/repositories/
+  wallet_repo.py`) gains one additional predicate — `WalletModel.archived_at.is_(None)` — applied to
+  **both** its existing queries (the bounded page and the total count), mirroring exactly how WM-US-02
+  `plan.md` A3 itself already required the ownership predicate to apply to both queries together, for
+  the identical reason: scoping only one of the two would make `items` and `total` silently disagree
+  about which wallets are in scope. This is additive, not a redesign — the `WHERE` clause gains one more
+  `AND`-ed condition; pagination, ordering, and ownership scoping are untouched. No opt-in "include
+  archived" parameter is added: no AC, FR, or source document asks for one, and adding it anyway would
+  be exactly the kind of invented, unrequested surface this codebase's "fewest invented rules"
+  discipline (WM-US-04 A1, TM-US-03 A3) repeatedly declines. If a future story needs to list a caller's
+  archived wallets specifically, that is that future story's own decision to raise.
+
+  **View (WM-US-03): unaffected.** An archived wallet continues to resolve through
+  `GET /wallets/{wallet_id}` exactly as before, with no new check and no code change to
+  `wallet_service.get_wallet()` or to `wallet_repo.get_owned_by_id()` at all. This matters for the
+  same reason WM-US-03's own `spec.md` already reasoned a wallet's "history" stays reachable through a
+  separate, dedicated endpoint rather than being embedded: a caller who already knows a wallet's id —
+  from an old Transaction record, from a previous list fetch before it was archived, from
+  `GET /transactions?wallet_id=` — can still look up what that wallet is, was, and currently holds. Not
+  doing this would silently reduce an "archived" wallet toward something closer to a true deletion by
+  another name, contradicting the SDS's own deliberate choice of "archive" over "remove." This also
+  means `wallet_repo.get_owned_by_id()` — the function both the view, the update (WM-US-04), and this
+  story's own lookup all share — is reused completely unchanged, exactly as WM-US-04 A3/WM-US-03 A3
+  already established: it has no reason to start filtering by `archived_at`, because at least one of
+  its three callers (this story's own archive operation itself) must be able to find an *already*
+  archived wallet to make FR-05's idempotency guarantee possible at all.
+
+- **The fourth design question: what does the endpoint return — `204 No Content`, matching
+  BM-US-05/TM-US-05's own shape, or `200` with a body? Reasoned through on its own terms, not defaulted
+  to the hard-delete precedent.**
+
+  BM-US-05 `plan.md` A5 and TM-US-05 `plan.md` A5 each chose `204` for a specific, stated reason: a hard
+  delete leaves nothing further to describe — the resource is gone, and any body would either describe
+  a row that no longer exists (misleading) or require inventing a single-purpose acknowledgement DTO no
+  AC asks for. **Neither reason holds here.** This story's own wallet is not gone — its row persists by
+  design, specifically so its history stays reachable (the whole premise of "archive" over "remove")
+  — so there is a real, current, accurate resource state to report back: the same wallet, with the same
+  name/type/currency/balance, now carrying a real `archived_at` value the caller has no other way to
+  learn in the same response. Semantically, archiving is closer to a status-changing update (WM-US-04's
+  own `PATCH`, which already returns `200` with the updated wallet) than to an actual removal.
+  **Decision: `200 OK`, with a response body.**
+
+  **Whether that body reuses `WalletRead` unchanged, or a new DTO, was a second, separate decision —
+  and the deciding consideration was this codebase's own repeated discipline against widening an
+  already-shipped, shared DTO.** `WalletRead`'s exact six-field shape is asserted field-by-field,
+  exhaustively, by three already-implemented and verified test cases in three different stories —
+  WM-US-01 `TC-18`, WM-US-02 `TC-24`, WM-US-04 `TC-57` (and WM-US-03 `TC-68` asserts the identical
+  six-field shape for its own `GET /wallets/{id}` response) — each phrased as "exactly these six
+  fields, no more." Adding `archived_at` directly onto `WalletRead` would widen every one of those four
+  already-shipped endpoints' own response shape at once, for a field only this story's own operation
+  actually needs to report back in its immediate response (view does not need to repeat it per the
+  reasoning two paragraphs above; create/list/update never touch an archived wallet's own identity in a
+  way that would make the field meaningful there). This is the identical "fewest invented rules, no
+  widening a DTO three other stories already locked down" discipline WM-US-03 `plan.md` A2 itself used
+  to decline embedding a transaction count in `WalletRead` for a *different* reason (no source asked
+  for it there); here the field genuinely is needed, but only by this one operation's own response, so
+  it gets its own, new, dedicated envelope — `WalletArchiveRead` — rather than mutating the shared one,
+  mirroring exactly how WM-US-02 `plan.md` A2 itself introduced `WalletListRead` as a new envelope
+  instead of touching `WalletRead` for its own, different reason (a paginated wrapper). Full DTO shape
+  in `plan.md` A5.
+
+  **The accepted limitation this choice creates, stated plainly rather than left implicit:** because
+  `WalletRead` stays untouched, `GET /wallets/{wallet_id}` (WM-US-03) gives a caller no way to tell,
+  from that response alone, whether a wallet is archived — only this story's own `DELETE` response, the
+  absence of the wallet from the default list (AC-06), or a `409` on a later attempt to transact against
+  it, surface that fact. This is a real, acknowledged trade-off, not an oversight — `test_cases.md`
+  `TC-84` positively asserts the six-field shape is *still* exactly six fields when viewing an archived
+  wallet, the same "assert the limit positively so a future accidental leak is caught" discipline
+  WM-US-01 `QF-04`'s own `TC-18` already established for `created_at`'s absence.
+
+- **The fifth design question: is a second archive request against an already-archived wallet
+  idempotent, or refused as a conflict? Reasoned through on its own terms — this story does not inherit
+  hard-delete's "nothing left to find, so `404`" logic, because the row still exists and still resolves
+  by id every time.**
+
+  Two readings were weighed. **Refusal (`409`, "already archived")** would treat a repeat archive
+  request as a business conflict, the same shape `BudgetAlreadyExistsError`/
+  `TransactionCategoryTypeMismatchError` already give this codebase for genuine state conflicts. But
+  neither of those precedents actually matches this situation: both guard against a request that would
+  *create a new, inconsistent state* (a second budget for the same wallet/category/period; a
+  transaction type disagreeing with its category) — a repeat archive request creates nothing and asks
+  for nothing inconsistent with what already happened; it asks for exactly the state that is already
+  true. **Idempotent success (`200`, same result, archive time unchanged)** is the reading taken
+  instead, for two reasons. First, this matches ordinary HTTP guidance for the verb this endpoint uses
+  — `DELETE` is conventionally idempotent, meaning a repeat request against an already-actioned
+  resource should succeed the same way, not fail, even though BM-US-05/TM-US-05's own literal
+  implementation of that idempotence happens to manifest as "the row is gone, so it is a `404` either
+  way" (a different mechanism arriving at the same idempotent-safety property, not a different
+  principle). Second, and more concretely: a caller has no reliable way to know, before calling, whether
+  a given wallet is already archived — `GET /wallets/{id}` does not reveal it (the fourth design
+  question's own accepted limitation) — so refusing a repeat call with a `409` would punish a caller for
+  not knowing something this story's own design already declined to tell them anywhere, for no
+  corrective action they could even take in response (there is no "un-archive first" operation to
+  perform — see *Out of scope*). Returning the same success result every time, with the *original*
+  archive moment preserved rather than refreshed, is both the safer client contract and the one that
+  does not depend on information this design does not expose. `FR-05`/`AC-05`.
+
+- **Why this story does not extend its archived-wallet restriction to WM-US-04's own update
+  (rename/retype) operation, considered and declined rather than silently left alone.** `name`/`type`
+  are cosmetic labels, not financial exposure — WM-US-04 `plan.md` A1 already established that
+  `currency`/`balance` (the only fields with any monetary meaning) are not reachable through that
+  operation at all. Renaming an archived wallet (for example, to mark it more clearly as retired, e.g.
+  `"Old Checking (closed)"`) does not reintroduce the harm archiving exists to prevent — no new
+  financial exposure is created, and no history is reinterpreted. No AC, FR, or source document in
+  either this story or WM-US-04 names such a restriction, and inventing one here would both extend a
+  different, already-closed story's own contract (contrary to `CLAUDE.md` §1.1's append-only rule) and
+  add a rule no source asks for — the same "fewest invented rules" discipline this codebase applies
+  everywhere else. `wallet_service.update_wallet()` is therefore left completely untouched by this
+  story.
+
+- **No `[NEEDS RULING]` follows from any of the five questions above.** Each is a thin, single-sentence
+  SDS goal needing interpretation — the same shape BM-US-02 through BM-US-05, CM-US-02/04, WM-US-02/03/
+  04, and TM-US-03 have each already resolved by reasoning rather than escalating — not a genuine
+  SRS/SDS disagreement (SRS is silent on this story entirely, not contradictory with the SDS), not a
+  change to an already-published endpoint *contract* (this story adds one new endpoint and adds one new,
+  additive precondition to two existing creation endpoints' own internal checks — neither existing
+  endpoint's own request or success-response shape changes), not a domain-model or ERD change that
+  invents a capability beyond what the SDS's own goal text already instructs (the one new column exists
+  specifically to implement "soft-delete or archive," not to add a convenience no source requested — the
+  same distinction that separates this from WM-US-01 A5's declined `created_at` addition), and not an
+  NFR violation. "A thin SDS goal needing interpretation is not automatically a `[NEEDS RULING]`" — the
+  same standard WM-US-03's own Assumptions section already applied to its own, comparably open "history"
+  wording.

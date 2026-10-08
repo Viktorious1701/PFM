@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* · WM-US-04 *(TC-40…TC-59, all PASS)* · WM-US-03 *(TC-60…TC-70, all PASS)*
+> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* · WM-US-04 *(TC-40…TC-59, all PASS)* · WM-US-03 *(TC-60…TC-70, all PASS)* · WM-US-05 *(TC-71…TC-90, not yet implemented)*
 
 ---
 
@@ -1206,4 +1206,343 @@ passed. Full existing suite: `uv run pytest -m "not smtp"` — 581 passed, 1 des
 - **Then:** The response is `401` `NOT_AUTHENTICATED`, not `404` — mirrors TM-US-03 TC-82/TM-US-02 TC-41's own ordering
 - **AC:** AC-02, FR-02
 - **Type:** integration
+- **Type:** integration
+
+---
+
+## WM-US-05: Delete a Wallet
+
+> **IDs in this section are local to WM-US-05** — except `TC-NN`, which continues this epic file's own
+> numbering: WM-US-03 used `TC-60`…`TC-70`, so this story continues from `TC-71`. **`QF-NN` also
+> continues here, from `QF-14`** — confirmed by direct count of this file's own entries, not assumed:
+> WM-US-01 used `QF-01`…`QF-04`, WM-US-04 used `QF-05`…`QF-11`, and WM-US-03 used `QF-12`…`QF-13`, so
+> this file's own last `QF` entry is `QF-13`.
+
+### Quality Findings
+
+#### QF-14
+
+**Description.** `spec.md` AC-05/FR-05 require a repeated archive request against an already-archived
+wallet to succeed again *without* moving the recorded archive time. A test asserting only "the second
+request also returns `200`" would not distinguish that from a latent bug where
+`wallet_repo.archive_wallet()` overwrites `archived_at` with a fresh timestamp on every call — both
+would look identical if only the status code and the mere presence of a timestamp are checked.
+
+**Impact.** A future refactor that dropped `archive_wallet()`'s own `if wallet.archived_at is None`
+guard (`plan.md` A6) and unconditionally re-stamped the column on every call would silently turn this
+story's idempotency guarantee into something else — "the time of the *most recent* archive request" —
+and a loosely-written test would not catch it.
+
+**Recommendation.** `TC-79` captures the exact `archived_at` value from the **first** successful
+archive request, issues a **second** archive request against the same wallet some time later, and
+asserts the second response's `archived_at` is byte-identical to the first — not merely present, and
+not merely unchanged in some looser sense.
+
+#### QF-15
+
+**Description.** `spec.md` AC-06/FR-06 require an archived wallet to be excluded from **both** the
+returned `items` **and** the reported `total` of `GET /wallets`. The identical risk WM-US-02's own
+`QF-05` already flagged for the *ownership* predicate applies here for the *archived* predicate: a test
+checking only that `items` excludes the archived wallet would not catch a copy-paste that added the new
+`WHERE` clause to the items query but not the count query, in which case `total` would silently
+over-count by exactly the number of archived wallets.
+
+**Impact.** A weaker test suite could pass with a `total` that includes archived wallets even though
+`items` correctly excludes them — wrong, but not obviously wrong from `items` alone.
+
+**Recommendation.** `TC-81` seeds one active and one archived wallet for the same caller and asserts
+**both** `items` (excludes the archived one) **and** `total` (counts only the active one) in the same
+test. `TC-82` extends this to a caller whose *only* wallet is archived, proving the list becomes empty
+with a `total` of `0`, not `1`.
+
+#### QF-16
+
+**Description.** `spec.md` AC-03/AC-04 require a wallet reference that does not exist at all and one
+that exists but belongs to a different User to produce "the same not-found outcome" — the identical
+ownership-collapse risk WM-US-03 `QF-12`/WM-US-04 `QF-08`/BM-US-04 `QF-19` each already flagged for
+their own lookups, now applying to this story's own archive operation. A test that merely checks both
+cases return *some* `404` would not distinguish "genuinely identical" from "two different messages that
+both happen to carry status 404."
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — the same class of minor information leak about another User's data those earlier
+findings already warned against.
+
+**Recommendation.** `TC-75` compares the full response body of the ownership-mismatch case against
+`TC-74`'s not-found-at-all case and asserts they match exactly — `error_code`, `message`, and `details`
+all identical, not merely the status code.
+
+#### QF-17
+
+**Description.** `spec.md` AC-08/AC-09 require a new Transaction or Budget referencing an archived
+wallet to be refused — but a test asserting only "the request did not return `201`" would not prove
+*which* precondition actually failed, nor that nothing was persisted. Because the archived-wallet check
+sits in the **middle** of each service's own existing, fixed check order (`plan.md` A2: wallet ownership
+→ wallet archived-state → category ownership → …), a loosely-written test could pass even if the
+archived check were accidentally removed and a *different*, coincidental failure (a missing category,
+for instance) produced the only `409`/`422` the test happened to check for.
+
+**Impact.** A regression that silently dropped the new archived-wallet check entirely — allowing new
+financial activity against a "put away" wallet, exactly the operationally-meaningless-label risk
+`spec.md`'s own Assumptions section reasons through — could pass a test that only checks "some error
+came back."
+
+**Recommendation.** `TC-85`/`TC-86` each assert the exact `error_code`
+(`TRANSACTION_WALLET_ARCHIVED`/`BUDGET_WALLET_ARCHIVED`), the exact status (`409`), and — by direct
+inspection of the `transactions`/`budgets` tables through the test's own `db` session — that **no** new
+row was created, closing both "wrong reason" and "silently succeeded anyway" failure modes in one test.
+
+#### QF-18
+
+**Description.** `plan.md` A5 records that `WalletRead` stays unchanged and `GET /wallets/{wallet_id}`
+therefore gives no signal that a wallet is archived — a deliberate, accepted limitation, not an
+oversight. The risk is the opposite direction from every other finding in this file: a *future* change
+that widened `WalletRead` to include `archived_at` (for understandable reasons — convenience, symmetry)
+would silently touch WM-US-01/02/04's own already-shipped, already-verified six-field response
+contracts (`TC-18`, `TC-24`, `TC-57`) without anyone re-deriving whether that was still safe.
+
+**Impact.** Without a positive assertion, a future, well-intentioned change could widen a shared DTO
+across four stories at once and no test in this file would flag it.
+
+**Recommendation.** `TC-84` asserts `GET /wallets/{wallet_id}` for an **archived** wallet still returns
+*exactly* `WalletRead`'s original six keys — no more — the same "assert the limit positively so a
+future accidental leak is caught" discipline WM-US-01 `QF-04`'s own `TC-18` already established for
+`created_at`'s absence.
+
+### Acceptance Criteria Classification
+
+No wallet-archive screen exists in `mobile/` this round, and no SRS UXR names one — the same basis
+every prior Wallet Management story used for its own all-`[API]` classification.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully archive a wallet the caller owns | **[API]** | No UI surface exists or is named by any UXR this round |
+| AC-02 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-03 | Reject an archive request for a wallet that does not exist | **[API]** | Persistence/ownership contract; bounded by QF-16 |
+| AC-04 | Reject an archive request for a wallet owned by a different User | **[API]** | Persistence/ownership contract; bounded by QF-16 |
+| AC-05 | A repeated archive request succeeds again, archive time unchanged | **[API]** | Idempotency contract; bounded by QF-14 |
+| AC-06 | An archived wallet is excluded from the caller's default wallet list | **[API]** | Cross-endpoint contract (WM-US-02); bounded by QF-15 |
+| AC-07 | An archived wallet remains individually viewable by its own identifier | **[API]** | Cross-endpoint contract (WM-US-03); bounded by QF-18 |
+| AC-08 | Reject a new Transaction submitted against an archived wallet | **[API]** | Cross-epic business-conflict contract; bounded by QF-17 |
+| AC-09 | Reject a new Budget submitted against an archived wallet | **[API]** | Cross-epic business-conflict contract; bounded by QF-17 |
+| AC-10 | Return exactly the documented fields for a successful archive | **[API]** | Response-payload contract |
+| EC-01 | A wallet reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
+| EC-02 | A caller who owns a different wallet attempts to archive another User's wallet | **[API]** | Persistence/ownership contract; bounded by QF-16 |
+| EC-03 | An ADMIN-role caller attempting to archive a wallet they do not own | **[API]** | Ownership contract independent of role |
+| EC-04 | Archiving a wallet with existing Transactions/Budgets already recorded against it | **[API]** | Backend rule (history is untouched) |
+| EC-05 | An archived wallet's stored balance is exactly what it was immediately before archiving | **[API]** | Backend rule (archiving writes no monetary field) |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-71, TC-72, TC-80 | — |
+| AC-02 | [API] | TC-73, TC-90 | — |
+| AC-03 | [API] | TC-74 | — |
+| AC-04 | [API] | TC-75 | — |
+| AC-05 | [API] | TC-79 | — |
+| AC-06 | [API] | TC-81, TC-82 | — |
+| AC-07 | [API] | TC-83, TC-84 | — |
+| AC-08 | [API] | TC-85 | — |
+| AC-09 | [API] | TC-86 | — |
+| AC-10 | [API] | TC-89 | — |
+| EC-01 | [API] | TC-76 | — |
+| EC-02 | [API] | TC-77 | — |
+| EC-03 | [API] | TC-78 | — |
+| EC-04 | [API] | TC-87 | — |
+| EC-05 | [API] | TC-88 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no
+> wallet-archive screen exists this round, and none is named by any SRS UXR. **Known coverage limits,
+> accepted:** `GET /wallets/{wallet_id}` never reveals a wallet's archived state (`plan.md` A5) — `TC-84`
+> only proves the response shape does **not** leak it, not that a caller can detect it that way, which
+> this story's own design does not provide for.
+
+### Test Implementation Map *(filled at step 4)*
+
+Not yet implemented — this story is in the artifacts phase (steps 1–3) only. Pytest node ids and
+results will be filled in at the Implement step, under
+`backend/tests/integration/test_wm_us_05_delete_wallet.py`, per `CLAUDE.md` §2 step 4 and
+`constitution.md` DOD-07.
+
+---
+
+### TC-71: An authenticated owner archives a wallet — 200 with the archived wallet, other fields unchanged
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet with `name` `"Old Checking"`, `type` `"BANK"`, `currency` `"USD"`, `balance` `500.00`, not yet archived
+- **When:** `DELETE /api/v1/wallets/{id}` is sent
+- **Then:** The response is `200`; the body carries `id` unchanged, `name`/`type`/`currency`/`balance` unchanged, and `archived_at` set to a real timestamp
+- **AC:** AC-01, FR-01, FR-04, FR-10
+- **Type:** integration
+
+### TC-72: Archiving a wallet persists the new state on the same single row
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet
+- **When:** The wallet is archived successfully
+- **Then:** Direct inspection of the `wallets` row for that id shows `archived_at` set to a non-NULL value; exactly one row still exists for that wallet id
+- **AC:** AC-01, FR-04
+- **Type:** integration
+
+### TC-73: An unauthenticated caller is denied with 401
+
+- **US:** WM-US-05
+- **Given:** A caller presenting no `Authorization` header
+- **When:** An archive request is submitted against an existing wallet belonging to some other, real User
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`; the target wallet's `archived_at` remains `NULL`
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-74: A wallet_id matching no wallet at all is rejected with 404 WALLET_NOT_FOUND
+
+- **US:** WM-US-05
+- **Given:** An authenticated User
+- **When:** `DELETE /api/v1/wallets/{id}` is sent with a `wallet_id` that matches no wallet in the system
+- **Then:** The response is `404` with `error_code` `WALLET_NOT_FOUND`; nothing is archived
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-75: A wallet_id belonging to a different User is rejected with the identical outcome as TC-74
+
+- **US:** WM-US-05
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a wallet
+- **When:** `A` submits a `DELETE` against `B`'s `wallet_id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-74's response; `B`'s wallet remains unarchived
+- **AC:** AC-04, FR-03 *(assertion technique per QF-16)*
+- **Type:** integration
+
+### TC-76: A malformed wallet reference gets the same 404 as a well-formed but non-existent one
+
+- **US:** WM-US-05
+- **Given:** An authenticated User
+- **When:** `DELETE /api/v1/wallets/not-a-real-id` is sent
+- **Then:** The response is `404` `WALLET_NOT_FOUND`, identical to TC-74's response
+- **AC:** EC-01, FR-03
+- **Type:** integration
+
+### TC-77: A caller who owns a different wallet of their own cannot archive another User's wallet
+
+- **US:** WM-US-05
+- **Given:** Two authenticated Users `A` (owns wallet `WA`) and `B` (owns wallet `WB`)
+- **When:** `A` submits a `DELETE` against `WB`'s `wallet_id`
+- **Then:** The response is `404` `WALLET_NOT_FOUND`, identical to TC-74/TC-75's responses; `WB` remains unarchived, and `A`'s own `WA` is unaffected
+- **AC:** EC-02, FR-03
+- **Type:** integration
+
+### TC-78: An ADMIN-role caller cannot archive another User's wallet through this endpoint
+
+- **US:** WM-US-05
+- **Given:** An authenticated User whose role is `ADMIN`, and a second User (any role) who owns a wallet of their own
+- **When:** The ADMIN submits a `DELETE` against the other User's `wallet_id`
+- **Then:** The response is `404` `WALLET_NOT_FOUND` — the same outcome any non-ADMIN caller would get; no role grants authority through this endpoint
+- **AC:** EC-03, FR-03
+- **Type:** integration
+
+### TC-79: A repeated archive request against an already-archived wallet succeeds again, with the identical archive time as the first request
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet; a first `DELETE` has already archived it, recording `archived_at` at time `T1`
+- **When:** The User submits a second `DELETE` against the same wallet
+- **Then:** The response is `200`, not `404` or `409`; the second response's `archived_at` equals `T1` exactly — not a new, later timestamp
+- **AC:** AC-05, FR-05 *(assertion technique per QF-14)*
+- **Type:** integration
+
+### TC-80: Archiving a wallet leaves name, type, currency, and balance unchanged, verified against the stored row directly
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet with `name` `"Old Checking"`, `type` `"BANK"`, `currency` `"USD"`, `balance` `750.25`
+- **When:** The wallet is archived successfully
+- **Then:** A direct read of the `wallets` row through the test's own `db` session confirms `name`/`type`/`currency`/`balance` are identical to their pre-archive values
+- **AC:** AC-01, FR-04, BR-03
+- **Type:** integration
+
+### TC-81: An archived wallet is excluded from both the items and the total of the caller's default wallet list
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns one active wallet and one wallet that has already been archived
+- **When:** The User requests `GET /api/v1/wallets`
+- **Then:** The response's `items` contains only the active wallet, and `total` is `1` — the archived wallet appears in neither
+- **AC:** AC-06, FR-06 *(assertion technique per QF-15)*
+- **Type:** integration
+
+### TC-82: A caller whose only wallet is archived receives an empty list and a zero total
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns exactly one wallet, already archived
+- **When:** The User requests `GET /api/v1/wallets`
+- **Then:** The response's `items` is empty and `total` is `0`, not `1`
+- **AC:** AC-06, FR-06 *(assertion technique per QF-15)*
+- **Type:** integration
+
+### TC-83: An archived wallet can still be viewed directly by its own identifier
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet that has already been archived
+- **When:** The User requests `GET /api/v1/wallets/{id}` for that wallet
+- **Then:** The response is `200`, not `404`; the body carries the wallet's full, unchanged detail exactly as WM-US-03 already defines it
+- **AC:** AC-07, FR-07
+- **Type:** integration
+
+### TC-84: Viewing an archived wallet still exposes exactly the six fields WM-US-03 already established — no archived indicator leaks into WalletRead
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet that has already been archived
+- **When:** The User requests `GET /api/v1/wallets/{id}` for that wallet
+- **Then:** The response body's keys are exactly `id`, `user_id`, `name`, `type`, `currency`, `balance` — no more, and in particular no `archived_at`, `is_archived`, or any other archived-state field
+- **AC:** AC-07, FR-07 *(assertion technique per QF-18)*
+- **Type:** integration
+
+### TC-85: A new Transaction referencing an archived wallet is rejected with 409 TRANSACTION_WALLET_ARCHIVED; nothing is created
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet that has already been archived, and an existing category of their own
+- **When:** The User submits `POST /api/v1/transactions` referencing the archived wallet
+- **Then:** The response is `409` with `error_code` `TRANSACTION_WALLET_ARCHIVED`; direct inspection of the `transactions` table confirms no new row was created
+- **AC:** AC-08, FR-08 *(assertion technique per QF-17)*
+- **Type:** integration
+
+### TC-86: A new Budget referencing an archived wallet is rejected with 409 BUDGET_WALLET_ARCHIVED; nothing is created
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet that has already been archived, and an existing category of their own
+- **When:** The User submits `POST /api/v1/budgets` referencing the archived wallet
+- **Then:** The response is `409` with `error_code` `BUDGET_WALLET_ARCHIVED`; direct inspection of the `budgets` table confirms no new row was created
+- **AC:** AC-09, FR-09 *(assertion technique per QF-17)*
+- **Type:** integration
+
+### TC-87: Archiving a wallet with existing Transactions and Budgets already recorded against it succeeds, and leaves that history untouched
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet with one existing Transaction and one existing Budget already recorded against it
+- **When:** The wallet is archived successfully
+- **Then:** The response is `200`; the existing Transaction and Budget rows are unchanged — same ids, same `wallet_id`, same amounts — and remain retrievable through their own already-existing endpoints exactly as before
+- **AC:** EC-04, FR-04
+- **Type:** integration
+
+### TC-88: An archived wallet's stored balance is unaffected by the archive operation itself
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet with `balance` `312.40`, shaped by prior Transaction activity
+- **When:** The wallet is archived successfully
+- **Then:** The response's `balance` is `312.40`, identical to its pre-archive value; a direct read of the stored row confirms the same
+- **AC:** EC-05, FR-04
+- **Type:** integration
+
+### TC-89: The response exposes exactly the seven documented fields
+
+- **US:** WM-US-05
+- **Given:** An authenticated User who owns a wallet
+- **When:** The wallet is archived successfully
+- **Then:** The response body's keys are exactly `id`, `user_id`, `name`, `type`, `currency`, `balance`, `archived_at` — no more, and in particular no other invented field
+- **AC:** AC-10, FR-10
+- **Type:** integration
+
+### TC-90: Credentials are evaluated before the wallet reference is looked up
+
+- **US:** WM-US-05
+- **Given:** A caller presenting no credentials
+- **When:** An archive request is submitted against a `wallet_id` that does not match any wallet in the system
+- **Then:** The response is `401` `NOT_AUTHENTICATED`, not `404` — mirrors WM-US-03 TC-70/TM-US-03 TC-82's own ordering
+- **AC:** AC-02, FR-02
 - **Type:** integration
