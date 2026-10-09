@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-03 · SDS §5.3 (WM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* · WM-US-04 *(TC-40…TC-59, all PASS)* · WM-US-03 *(TC-60…TC-70, all PASS)* · WM-US-05 *(TC-71…TC-90, not yet implemented)*
+> **Stories in this file:** WM-US-01 *(TC-01…TC-22, all PASS)* · WM-US-02 *(TC-23…TC-39, all PASS)* · WM-US-04 *(TC-40…TC-59, all PASS)* · WM-US-03 *(TC-60…TC-70, all PASS)* · WM-US-05 *(TC-71…TC-90, all PASS)*
 
 ---
 
@@ -1360,10 +1360,38 @@ every prior Wallet Management story used for its own all-`[API]` classification.
 
 ### Test Implementation Map *(filled at step 4)*
 
-Not yet implemented — this story is in the artifacts phase (steps 1–3) only. Pytest node ids and
-results will be filled in at the Implement step, under
-`backend/tests/integration/test_wm_us_05_delete_wallet.py`, per `CLAUDE.md` §2 step 4 and
-`constitution.md` DOD-07.
+Implemented in `backend/tests/integration/test_wm_us_05_delete_wallet.py`, one test per `TC-NN`. All 20
+seen failing first (405 `Method Not Allowed` — the route did not exist yet) by `git stash push`-ing only
+the eight implementation files (`app/models/wallet.py`, `app/schemas/wallet.py`,
+`app/repositories/wallet_repo.py`, `app/core/errors.py`, `app/services/wallet_service.py`,
+`app/services/transaction_service.py`, `app/services/budget_service.py`, `app/api/v1/wallets.py`) with
+the new test file left in place, running the suite red, then `git stash pop` to restore the
+implementation and running it green. Full run: `uv run pytest -v tests/integration/test_wm_us_05_delete_wallet.py`
+— 20 passed. Full existing suite: `uv run pytest -m "not smtp"` — 601 passed, 1 deselected, including
+every TM-US-01 and BM-US-01 test unchanged.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-71 | `tests/integration/test_wm_us_05_delete_wallet.py::test_an_authenticated_owner_archives_a_wallet_200_other_fields_unchanged` | PASS |
+| TC-72 | `tests/integration/test_wm_us_05_delete_wallet.py::test_archiving_a_wallet_persists_the_new_state_on_the_same_single_row` | PASS |
+| TC-73 | `tests/integration/test_wm_us_05_delete_wallet.py::test_an_unauthenticated_caller_is_denied_with_401_and_nothing_is_archived` | PASS |
+| TC-74 | `tests/integration/test_wm_us_05_delete_wallet.py::test_a_wallet_id_matching_no_wallet_at_all_is_rejected_with_404` | PASS |
+| TC-75 | `tests/integration/test_wm_us_05_delete_wallet.py::test_a_wallet_belonging_to_a_different_user_gets_the_identical_404_as_not_found` | PASS |
+| TC-76 | `tests/integration/test_wm_us_05_delete_wallet.py::test_a_malformed_wallet_reference_gets_the_same_404_as_a_well_formed_unknown_one` | PASS |
+| TC-77 | `tests/integration/test_wm_us_05_delete_wallet.py::test_a_caller_who_owns_a_different_wallet_cannot_archive_another_users_wallet` | PASS |
+| TC-78 | `tests/integration/test_wm_us_05_delete_wallet.py::test_an_admin_role_caller_cannot_archive_another_users_wallet_through_this_endpoint` | PASS |
+| TC-79 | `tests/integration/test_wm_us_05_delete_wallet.py::test_a_repeated_archive_request_succeeds_again_with_the_identical_archive_time` | PASS |
+| TC-80 | `tests/integration/test_wm_us_05_delete_wallet.py::test_archiving_leaves_name_type_currency_and_balance_unchanged_verified_against_storage` | PASS |
+| TC-81 | `tests/integration/test_wm_us_05_delete_wallet.py::test_an_archived_wallet_is_excluded_from_both_items_and_total_of_the_default_list` | PASS |
+| TC-82 | `tests/integration/test_wm_us_05_delete_wallet.py::test_a_caller_whose_only_wallet_is_archived_receives_an_empty_list_and_zero_total` | PASS |
+| TC-83 | `tests/integration/test_wm_us_05_delete_wallet.py::test_an_archived_wallet_can_still_be_viewed_directly_by_its_own_identifier` | PASS |
+| TC-84 | `tests/integration/test_wm_us_05_delete_wallet.py::test_viewing_an_archived_wallet_exposes_exactly_the_six_original_fields` | PASS |
+| TC-85 | `tests/integration/test_wm_us_05_delete_wallet.py::test_a_new_transaction_against_an_archived_wallet_is_rejected_with_409` | PASS |
+| TC-86 | `tests/integration/test_wm_us_05_delete_wallet.py::test_a_new_budget_against_an_archived_wallet_is_rejected_with_409` | PASS |
+| TC-87 | `tests/integration/test_wm_us_05_delete_wallet.py::test_archiving_a_wallet_with_existing_transactions_and_budgets_leaves_them_untouched` | PASS |
+| TC-88 | `tests/integration/test_wm_us_05_delete_wallet.py::test_an_archived_wallets_stored_balance_is_unaffected_by_the_archive_operation` | PASS |
+| TC-89 | `tests/integration/test_wm_us_05_delete_wallet.py::test_the_response_exposes_exactly_the_seven_documented_fields` | PASS |
+| TC-90 | `tests/integration/test_wm_us_05_delete_wallet.py::test_credentials_are_evaluated_before_the_wallet_reference_is_looked_up` | PASS |
 
 ---
 

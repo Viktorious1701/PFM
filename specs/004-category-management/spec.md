@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(implemented, verified — 391 passed)* · CM-US-04 *(implemented, verified — 526 total passing)*
+> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(implemented, verified — 391 passed)* · CM-US-04 *(implemented, verified — 526 total passing)* · CM-US-03 *(spec + design + test cases written — not yet implemented)*
 
 ---
 
@@ -884,3 +884,283 @@ own treatment of `page_size`.
   as a single field constraint (the same class of cross-field rule TM-US-02 A7 already needed for its own
   `date_from`/`date_to` ordering, reused here as precedent for *how* to express a cross-field check, not
   *what* the check says).
+
+---
+
+## CM-US-03: View a Category
+
+> **IDs in this section are local to CM-US-03.** `AC-01` below is not CM-US-01's, CM-US-02's, or
+> CM-US-04's own `AC-01`; each story section numbers its own criteria, per
+> `artifact-templates/spec-templates.md` and this codebase's own precedent (mirrors WM-US-03's own
+> opening note in `specs/003-wallet-management/spec.md`). Only `TC-NN` (and `QF-NN`) in
+> `test_cases.md` run continuously across the epic (`CLAUDE.md` §1.1 rule 4) — confirmed by direct
+> count against that file's own current end (`TC-63`, `QF-13`, both CM-US-04's own last entries,
+> confirmed with `grep -oE '^### TC-[0-9]+' test_cases.md | sort -t- -k2 -n | tail` and the equivalent
+> for `QF-`) before writing anything here: this story continues from `TC-64` and `QF-14`.
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-04 — searched in full; confirmed, no entry for this story exists**
+> The same situation CM-US-02 and CM-US-04 were already in (each documents this precedent in its own
+> Source section above): `### Feature-04: Category Management` contains exactly one story, `#### US-04-01:
+> Create a Category [MVP]` (quoted in full in this file's CM-US-01 section), immediately followed by
+> `### Feature-05: Budget Management`. There is no `US-04-02`, `US-04-03`, `US-04-04`, or `US-04-05`
+> header of any kind — confirmed directly by re-reading `SRS.md` §6 Feature-04 in full for this
+> dispatch, not assumed from the prior stories' own findings. This story is grounded the same way
+> CM-US-02/CM-US-04 were: in SRS §1.5's conceptual domain model and SRS §2 FR-04's text directly, and
+> in SDS §5.4.3 — not in a bare story header that does not exist.
+
+**SRS §1.5 Conceptual Domain Model**
+> **Category** — A label a User defines to classify money movement as one kind of income or expense,
+> e.g. "Groceries" or "Salary" (FR-04).
+
+**SRS §2 FR-04 — Category Management**
+> The System shall support user-defined Categories classified as either `INCOME` or `EXPENSE` (e.g.,
+> Groceries, Rent, Salary, Utilities).
+
+**SDS §5.4.3 CM-US-03: View a Category (USER)**
+> * **Goal:** View details and category metadata.
+
+Confirmed directly from `SDS.md` itself, not assumed from any briefing summary — the entire SDS entry
+for this story is this one sentence, the same thinness CM-US-02 (§5.4.2) and CM-US-04 (§5.4.4) each
+already found for their own goals. Unlike WM-US-03's own SDS §5.3.3 goal ("View detailed balance and
+**history** for a specific wallet"), which named a second, genuinely open concept ("history") its own
+epic had to reason through at length (`specs/003-wallet-management/plan.md` WM-US-03 A2), this story's
+own goal — "details and category metadata" — names nothing beyond the category's own already-
+established fields. "Metadata" here is read as a synonym for the category's own attributes (`id`,
+`user_id`, `name`, `type`, `icon` — all five already established and already returned by CM-US-01/
+CM-US-02/CM-US-04), not as an invitation to embed a second entity's data the way "history" was for
+Wallet. Category has no related entity this endpoint could even embed data from in the first place:
+unlike Wallet (which owns a Transaction history), nothing in SDS §2.2/§2.3's domain model names
+anything "beneath" a Category for a detail view to surface. See *Assumptions & Dependencies* for the
+full reasoning, not merely asserted here.
+
+**SDS §2.2 Domain Object** *(Category row, as aligned — CM-US-01 G1, CM-US-04 A5)*
+> **Category:** Classification for monetary activities (`id`, `user_id`, `name`, `type`, `icon`).
+
+**SDS §4.3.3 Data Design — `CATEGORIES` ERD** *(as aligned)*
+> ```
+> CATEGORIES {
+>     uuid id PK
+>     uuid user_id FK
+>     string name
+>     string type
+>     string icon
+> }
+> ```
+
+**SDS §6.3 API Index** *(checked directly, not assumed)*
+> Lists no `/categories` endpoint at all, of any kind — confirmed directly, the same gap CM-US-02's own
+> Source section already found for this same table ("Neither table names any `/categories` endpoint at
+> all"). No stale `WM-API-03`/`WM-API-04`-shaped row exists here to be either confirmed-stale or
+> matched; there is simply nothing in this table for this story to reconcile against.
+
+**`backend/app/schemas/category.py` `CategoryRead`** *(read directly, not assumed)*
+> Five fields already: `id`, `user_id`, `name`, `type`, `icon` — extended to five by CM-US-04 (plan.md
+> A6). Unlike WM-US-03 (which reused a six-field `WalletRead` already complete at WM-US-01) or TM-US-03
+> (which reused `TransactionRead`), this story's own reused DTO was only completed to its final shape
+> one story ago, in this same epic — there is no "fewer fields than CM-US-04 returns" question to
+> resolve, because `icon` already exists in the DTO this story reuses unchanged.
+
+**`backend/app/repositories/category_repo.py` `get_owned_by_id(db, *, category_id, user_id)`** *(read
+directly, not assumed)*
+> Already exists (CM-US-01, for BM-US-01's own creation-time reference check; reused unchanged by
+> CM-US-04 for its own ownership-scoped lookup). Already collapses "no such category" and "exists,
+> owned by someone else" to the identical `None` by construction (constitution SEC-08) — exactly the
+> lookup this story's own "fetch the category being viewed" need requires.
+
+**`backend/app/core/errors.py` `CategoryNotFoundError`** *(read directly, not assumed)*
+> Already exists (CM-US-04, `404`, `CATEGORY_NOT_FOUND`) — built for exactly "the category being acted
+> on directly was not found or not owned by the caller," the identical situation this story's own
+> single collapsed outcome needs. No new error class required.
+
+**`specs/003-wallet-management/{spec.md,plan.md,test_cases.md}` WM-US-03, and
+`specs/006-transaction-management/{spec.md,plan.md,test_cases.md}` TM-US-03** *(this story's own
+primary design precedent — two prior "view a single X" stories, both already built this exact shape)*
+> WM-US-03 A2: "The response reuses `WalletRead` unchanged — no new DTO, no embedded transaction
+> data." · TM-US-03 A3: "The response reuses `TransactionRead` unchanged — no new DTO." · Both stories'
+> own AC-03/AC-04 pairs collapse "does not exist" and "exists, owned by someone else" to an identical
+> `404` body, proved in each epic's own `test_cases.md` (WM-US-03 QF-12/TC-63, extended to an
+> own-a-different-row caller by TC-69) by a full-response-body comparison, not merely a matching status
+> code.
+
+**constitution.md API-01, API-03, API-07, VL-06, SEC-08, SEC-10, PF-02, PF-03**
+> API-03: HTTP status codes: `200` read/update … `404` not found.
+> VL-06: Referenced entities are verified to exist and be active before use — `404` if absent.
+> SEC-08: Queries for user-owned data filter on the authenticated `user_id` at the repository layer.
+> SEC-10: Error messages must not reveal whether an account exists, except where a story deliberately
+> does so.
+> PF-03: Responses are built from DTO projections — never a full ORM entity graph.
+
+### Out of scope for this story
+
+CM-US-01 (create, implemented) · CM-US-02 (list, implemented) · CM-US-04 (update, implemented) ·
+CM-US-05 (delete a category — not yet designed; see *Assumptions & Dependencies* for why this story
+does not depend on it) · WM-US-*, BM-US-*, TM-US-*, UM-US-04/05, DC-US-01/02 · Features 05–11 · SRS §6
+Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: embedding any Transaction or Budget data that references
+this category (no AC asks for it, and no sibling entity's data is named by SDS §5.4.3's own goal —
+unlike WM-US-03's own "history" question, there is no equivalent open word here to reason through, see
+*Assumptions & Dependencies*); renaming, retyping, or changing any field of a category (CM-US-04,
+already delivered); archiving or removing a category (CM-US-05); listing every category a caller owns
+(CM-US-02, already delivered — this story is the single-resource counterpart); and any mobile/UI
+screen — no SRS UXR names one this round, and `mobile/` stays a fixture-driven prototype scoped to
+UM-US-01 only (`CLAUDE.md` §5).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to view the full detail of one of my own categories, so that I
+can confirm its name, type, and icon without paging through my entire category list to find it.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully view the detail of a category the caller owns**
+**Given** an authenticated User who owns a category,
+**When** the User requests that category by its own identifier,
+**Then** the system returns a success result carrying the category's identifier, owner identifier,
+name, type, and icon.
+
+**AC-02: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to view a category,
+**Then** the system denies the request before evaluating the category reference at all, and returns
+an unauthenticated error.
+
+**AC-03: Reject a category reference that does not exist at all**
+**Given** an authenticated User,
+**When** the submitted category reference matches no category in the system,
+**Then** the system returns a not-found error.
+
+**AC-04: Reject a category reference belonging to a different User**
+**Given** an authenticated User,
+**When** the submitted category reference matches a category owned by a different User,
+**Then** the system returns the same not-found outcome AC-03 describes — the response gives no
+indication of which of the two happened.
+
+**AC-05: Return exactly the documented category fields — no other User's data**
+**Given** an authenticated User successfully views one of their own categories,
+**When** the system returns the success result,
+**Then** the result carries exactly the category's identifier, owner identifier, name, type, and
+icon — no other field, and no data belonging to any other User.
+
+### Edge Cases
+
+**EC-01**: **A category reference that is not even a well-formed identifier** — a value such as
+`"not-a-real-id"` is refused with the same not-found outcome as a well-formed but non-existent
+reference (AC-03), the identical treatment CM-US-04 EC-08 already established for this same kind of
+reference.
+
+**EC-02**: **A caller who owns a different category of their own, attempting to view another User's
+category** — refused with the identical outcome AC-04 describes; owning some category never entitles
+a caller to view another User's category, the identical scoping CM-US-04 EC-11 already established
+for updating.
+
+**EC-03**: **An ADMIN-role caller attempting to view a category they do not own** — refused exactly as
+any other caller would be; no role elevates visibility through this endpoint, mirroring WM-US-03 EC-03/
+TM-US-03 EC-03 for their own single-resource reads, and CM-US-02 EC-04's own "no role elevation" ruling
+for the list endpoint.
+
+**EC-04**: **A category with no `icon` ever set** — the request still succeeds, returning `icon` as
+`null`; an absent icon is not an error condition for this endpoint, the ordinary state of every
+category CM-US-01 creates and that CM-US-04 does not require to be set.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to view the full detail of a
+  category they own, identifying it by its own identifier (SDS §5.4.3).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before the category reference is examined at all (constitution API-08; mirrors CM-US-01 FR-02,
+  CM-US-04 FR-02).
+- **FR-03**: The system must **require** the submitted category reference to resolve to a category
+  owned by the authenticated caller, and **refuse** the request with an identical outcome whether no
+  such category exists at all or it exists and is owned by a different User (AC-03, AC-04, EC-01,
+  EC-02; constitution SEC-08, VL-06).
+- **FR-04**: The system must **apply no role elevation** — an ADMIN caller viewing a category they do
+  not own is refused by the identical rule FR-03 states for any other caller (EC-03).
+- **FR-05**: The system must **return**, on success, exactly the category's identifier, owner
+  identifier, name, type, and icon — no other field, and no data belonging to any other User (AC-05).
+
+#### Business Rules
+
+- **BR-01**: A category's ownership for this operation is established directly from its own `user_id`
+  column, the identical basis CM-US-04 BR-01 already established for update — no second table is
+  consulted to decide ownership. A category reference that does not resolve to a row the caller owns
+  is refused identically whether no such row exists at all or it exists and belongs to a different
+  User (FR-03).
+- **BR-02**: Viewing a category is a pure read; it changes no stored data.
+
+#### Key Entities
+
+- **Category**: A label a User defines to classify money movement as one kind of income or expense
+  (SRS §1.5). Carries `id`, `user_id`, `name`, `type`, and `icon` (SDS §2.2, §4.3.3; CM-US-01,
+  CM-US-04). This story only **reads** an existing Category row — the second Category Management
+  story to do so without writing (after CM-US-02's list), and the first to do so for exactly one
+  category at a time.
+- **User**: Reused from Feature-01/Feature-02 with no new column. The authenticated caller's own
+  ownership of the category being viewed is the only scope this story ever checks (constitution
+  SEC-08).
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can view the full detail of one of their own categories in one
+  call, and the result carries all five of its documented fields.
+- **SC-02**: No category can be viewed without an authenticated caller.
+- **SC-03**: A category can never be viewed by a User who does not own it — whether because the
+  reference does not exist at all, or because it belongs to someone else, the request is refused
+  identically either way, regardless of the caller's role.
+- **SC-04**: The response never exposes another category's or another User's data, and never carries
+  any field beyond the five this story documents.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01), Create a Category (CM-US-01), List Categories (CM-US-02), and Update a Category
+  (CM-US-04) are already implemented.** Every acceptance criterion here presupposes at least one
+  category already on record, owned by the authenticated caller — the identical dependency shape
+  WM-US-03/TM-US-03 each declared on their own predecessors.
+
+- **CM-US-05 (Delete a Category) is not yet designed, and this story does not depend on it.** The
+  category identifier a caller submits to this endpoint is already available to them from CM-US-01's
+  own create response or CM-US-02's own list response; no "delete" capability is a precondition for
+  "view one."
+
+- **SDS §5.4.3's "category metadata" wording raises no open design question the way WM-US-03's own
+  "history" wording did, and this is reasoned through directly, not merely asserted.** WM-US-03's own
+  `plan.md` A2 had to weigh three live readings of a goal sentence that named a second, genuinely open
+  concept ("history") belonging to a different entity (Transaction) this codebase already models
+  richly and separately. This story's own SDS goal — "View details and category metadata" — names
+  nothing a Category does not already carry as one of its own five fields. Checked directly against
+  SDS §2.2/§2.3's own domain model: Category's only relationship is `User "1" -- "*" Category :
+  defines` (confirmed in CM-US-02's own Source section) — there is no second entity a Category "owns"
+  the way Wallet owns its Transactions, so there is no sibling-entity data this endpoint could even be
+  tempted to embed. "Metadata" is therefore read as the ordinary sense of "the category's own
+  descriptive attributes" — `name`, `type`, `icon` — not as an invitation to surface Transaction or
+  Budget rows that merely *reference* this category. This story's own response is `CategoryRead`
+  reused unchanged, with no enrichment, matching WM-US-03 A2/TM-US-03 A3's own conclusion but arrived
+  at here with a materially thinner source tension to resolve. No `[NEEDS RULING]` follows, the same
+  outcome CM-US-02/CM-US-04 each recorded for their own thin-SDS situations.
+
+- **The ownership-collapse behaviour (AC-03/AC-04 return the identical outcome) is reused, not
+  redesigned.** This is the third Category Management story to need "does this reference resolve to a
+  row the caller owns" (after CM-US-04's own update lookup, which itself reused the pattern BM-US-04
+  established for Budget). `category_repo.get_owned_by_id()` already performs this collapse at the
+  query level (confirmed directly by reading the file) — reused completely unchanged, following
+  WM-US-03 A3/TM-US-03's own generalisation of the identical move one epic each before this one.
+
+- **`CategoryRead` is reused completely unchanged — no new DTO, no enrichment.** Mirrors WM-US-03 A2/
+  TM-US-03 A3 exactly. Unlike those two stories, there is no competing reading of the SDS goal to
+  reject first (see above) — the "reuse, don't enrich" conclusion here has no real alternative to
+  argue down.
+
+- **`CategoryNotFoundError` is reused completely unchanged — no new error class.** It already exists
+  (CM-US-04, built for exactly "the category being acted on directly was not found or not owned"), the
+  identical situation WM-US-03 A7 found for `WalletNotFoundError` (already built by WM-US-04, one
+  story earlier in that epic) — this is the second Category Management story in a row needing no new
+  error class, after CM-US-04 itself needed one new class (`CategoryNotFoundError`) that this story
+  now gets to reuse rather than build.
+
+- **No audit event.** Constitution LA-04 names exactly three audited event families; viewing one
+  category is no closer to any of them than creating one (CM-US-01 A8), listing them (CM-US-02 A5), or
+  updating one (CM-US-04 A9) already were. No AC or FR here asks for one.

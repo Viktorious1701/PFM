@@ -3,7 +3,13 @@
 from fastapi import APIRouter, Query, status
 
 from app.core.deps import CurrentUserDep, DbDep
-from app.schemas.wallet import WalletCreate, WalletListRead, WalletRead, WalletUpdate
+from app.schemas.wallet import (
+    WalletArchiveRead,
+    WalletCreate,
+    WalletListRead,
+    WalletRead,
+    WalletUpdate,
+)
 from app.services import wallet_service
 
 router = APIRouter(prefix="/wallets", tags=["wallets"])
@@ -120,3 +126,32 @@ def get_wallet(
 ) -> WalletRead:
     """Pure read -- no db.commit() (plan.md A6)."""
     return wallet_service.get_wallet(db, owner=current_user, wallet_id=wallet_id)
+
+
+@router.delete(
+    "/{wallet_id}",
+    response_model=WalletArchiveRead,
+    status_code=status.HTTP_200_OK,
+    summary="Archive (delete) a wallet",
+    description=(
+        "Archives one of the authenticated caller's own wallets, identified "
+        "by its own id. The wallet's row, name, type, currency, and balance "
+        "are left unchanged, and it remains viewable through "
+        "GET /wallets/{wallet_id}; it is excluded from GET /wallets by "
+        "default, and can no longer be referenced by a new Transaction or "
+        "Budget. Archiving an already-archived wallet succeeds again "
+        "without changing the recorded archive time."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "WALLET_NOT_FOUND"},
+    },
+)
+def archive_wallet(
+    wallet_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> WalletArchiveRead:
+    result = wallet_service.archive_wallet(db, owner=current_user, wallet_id=wallet_id)
+    db.commit()
+    return result

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(implemented, verified — 391 passed)* · CM-US-04 *(implemented, verified — 526 total passing)*
+> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(implemented, verified — 391 passed)* · CM-US-04 *(implemented, verified — 526 total passing)* · CM-US-03 *(spec + design + test cases written — not yet implemented)*
 
 ---
 
@@ -883,5 +883,237 @@ ownership (A13).
 | T-07 | Update `create_category()`/`list_categories()` to map `icon` into `CategoryRead`; update `test_cm_us_01_create_category.py`'s `TC-14` test and `test_cm_us_02_list_categories.py`'s `TC-19` test to expect the added `icon` key (A6) | `backend/app/services/category_service.py`, `backend/tests/integration/test_cm_us_01_create_category.py`, `backend/tests/integration/test_cm_us_02_list_categories.py` | Open |
 | T-08 | `PATCH /api/v1/categories/{category_id}` router; no new mount (router already exists) | `backend/app/api/v1/categories.py` | Open |
 | T-09 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_04_update_category.py` | Open |
+
+---
+
+## CM-US-03: View a Category
+
+> **IDs in this section are local to CM-US-03** (`A*`/`T-NN`), continuing the demonstrated convention:
+> every second-or-later story in this file restarts `A*`/`T-NN` locally, while `test_cases.md`'s
+> `TC-NN`/`QF-NN` run continuously across the epic file. `test_cases.md`'s `TC-NN` below continues
+> from `TC-64` and `QF-NN` from `QF-14` — confirmed by direct count against that file's own current
+> end (`TC-63`, `QF-13`, both CM-US-04's own last entries) before writing anything here, per
+> `spec.md`'s own identical confirmation note for this story.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | API | **`GET /api/v1/categories/{category_id}` — a plain resource-read on the collection's own id, not a new verb or a nested path.** Matches API-01 (versioned, plural resource noun) and NC-03 (no verb except an explicit state-transition, not applicable here — an ordinary read). Declared on the same router (`categories.py`) as the existing `POST /categories`, `GET /categories` (list), and `PATCH /categories/{category_id}`, with no path collision: a bare `/categories`, a `/categories/{category_id}` `GET`, and a `/categories/{category_id}` `PATCH` are distinguished by method and by path shape — this router's third distinct path/method combination, the identical reasoning WM-US-03 A1/TM-US-03 A2 each already used for their own router gaining a second or third path shape. | ✅ Resolved |
+| A2 | API / Domain | **The response reuses `CategoryRead` unchanged — no new DTO, no enrichment.** Mirrors WM-US-03 A2/TM-US-03 A3 exactly. Unlike WM-US-03, which had to weigh and reject embedding Transaction "history" data against a genuinely competing reading of its own SDS goal, this story's own SDS §5.4.3 goal ("View details and category metadata") names nothing beyond Category's own five already-established fields, and Category has no sibling entity (no Transaction-shaped "owns many" relationship) for an enrichment temptation to even arise from. Full reasoning: `spec.md` Assumptions & Dependencies. | ✅ Resolved |
+| A3 | Architecture | **No new repository function at all — `category_repo.get_owned_by_id(db, *, category_id, user_id)` is reused unchanged.** It already exists (built by CM-US-01 for BM-US-01's own referenced-category check, already reused unchanged by CM-US-04 for its own ownership-scoped lookup) and already collapses "no such category" and "exists, owned by someone else" to the identical `None` by construction (constitution SEC-08) — exactly the lookup this story's own "fetch the category being viewed" need requires. This is the second Category Management story needing no new repository function of any kind (after CM-US-04 itself reused it for update), and the first needing no new repository function **and** no new migration. | ✅ Resolved |
+| A4 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.4.3 tags this story "(USER)", identical to every other Category Management story's own tag. An ADMIN caller who does not own the requested category is refused exactly as any other caller would be (spec EC-03) — nothing elevates an ADMIN's visibility here, the same scoping CM-US-02 A6/CM-US-04 A8/WM-US-03 A4/TM-US-03 A5 each already established for their own single-resource or ownership-scoped operations. | ✅ Resolved |
+| A5 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families; viewing one category is no closer to any of them than creating one (CM-US-01 A8), listing them (CM-US-02 A5), or updating one (CM-US-04 A9) already were. No AC or FR here asks for one. | ✅ Resolved |
+| A6 | Architecture | **The router issues no `db.commit()`.** Pure read, nothing to commit — mirrors `GET /categories` (CM-US-02 A4), `GET /wallets/{wallet_id}` (WM-US-03 A6), and `GET /transactions/{transaction_id}` (TM-US-03 A7). | ✅ Resolved |
+| A7 | Architecture | **No new Alembic migration, and no new error class.** This story adds no column, no index, and no table — the second Category Management story with none (after CM-US-02's own no-migration story). It also needs no new error: `CategoryNotFoundError` already exists, built by CM-US-04 for exactly "the category being acted on directly was not found or not owned," and is reused unchanged — the identical position WM-US-03 A7 recorded for its own reuse of `WalletNotFoundError` (built one story earlier, by WM-US-04, in that same epic). | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions only — no new top-level module, no migration, no new DTO, no new
+repository function, and no new error class; the second Category Management story needing none of the
+four, after CM-US-02 itself needed only a new DTO envelope and nothing else).
+
+```text
+backend/app/
+├── services/
+│   └── category_service.py        # update: add get_category() (A2, A3)
+└── api/v1/
+    └── categories.py               # update: add GET /categories/{category_id} (A1, A4)
+
+backend/tests/
+└── integration/test_cm_us_03_view_category.py   # NEW  written at the Implement step from test_cases.md
+```
+
+No change to `models/category.py` (no schema change), `schemas/category.py` (`CategoryRead` reused
+unchanged, A2), `repositories/category_repo.py` (`get_owned_by_id()` reused unchanged, A3),
+`core/errors.py` (`CategoryNotFoundError` reused unchanged, A7), `core/deps.py` (`CurrentUserDep`
+reused exactly as CM-US-01/02/04 already established, A4), and `api/v1/router.py` (`categories.router`
+is already mounted, CM-US-01).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `CategoryModel` | `categories` | none (read-only) | This story only reads, by `id` (primary key, indexed by construction) scoped by `user_id` (already indexed, CM-US-01). No new column, no new index — the second Category Management story needing neither (after CM-US-02). |
+| `CategoryRead` (DTO) | — | *(reused, unchanged)* | CM-US-04's own five-field shape, reused for this single-item read too (A2) — the third story to return it unchanged, after CM-US-01's create and CM-US-02's list items, and the second to return it with `icon` already present (after CM-US-04's own update response). |
+
+**Service** (`app/services/category_service.py`, addition)
+
+```python
+def get_category(db: Session, *, owner: UserModel, category_id: str) -> CategoryRead:
+    """spec AC-01, FR-03 (plan.md A2, A3). Looks up the category scoped to
+    the caller; no further precondition follows ownership -- a view changes
+    nothing, the same shape wallet_service.get_wallet() (WM-US-03) and
+    transaction_service.get_transaction() (TM-US-03) already established for
+    their own single-resource reads, and the same ownership-scoped lookup
+    category_service.update_category() (CM-US-04) already uses before
+    mutating.
+    """
+    category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
+    if category is None:
+        raise CategoryNotFoundError()
+
+    return CategoryRead(
+        id=category.id,
+        user_id=category.user_id,
+        name=category.name,
+        type=category.type,
+        icon=category.icon,
+    )
+```
+
+**Router** (`app/api/v1/categories.py`, addition)
+
+```python
+@router.get(
+    "/{category_id}",
+    response_model=CategoryRead,
+    status_code=status.HTTP_200_OK,
+    summary="View a category",
+    description=(
+        "Returns the full detail -- identifier, owner, name, type, and icon "
+        "-- of one of the authenticated caller's own categories, identified "
+        "by its own id."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "CATEGORY_NOT_FOUND"},
+    },
+)
+def get_category(
+    category_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> CategoryRead:
+    """Pure read -- no db.commit() (plan.md A6)."""
+    return category_service.get_category(db, owner=current_user, category_id=category_id)
+```
+
+No new error class (`app/core/errors.py` unchanged) — `CategoryNotFoundError` (CM-US-04) is reused
+exactly as `wallet_service.get_wallet()` (WM-US-03) reuses `WalletNotFoundError` within its own story,
+the identical "already built one story earlier, in this same epic" position (A7).
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Authenticated User of any role may view their own category | AC-01, FR-01, A4 | `GET /api/v1/categories/{category_id}` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before anything else is evaluated | AC-02, FR-02 | `CurrentUserDep` resolves before the path parameter is used |
+| `category_id` must resolve to a category owned by the caller; not-found and not-owned collapsed | AC-03, AC-04, EC-01, EC-02, FR-03, A3 | `category_repo.get_owned_by_id()` returns `None` for both cases by construction; service raises `CategoryNotFoundError` |
+| No role elevation — ADMIN sees only their own | EC-03, FR-04 | Same `get_owned_by_id()` call, same `user_id` scope, regardless of `current_user.role` |
+| Response exposes exactly five fields, no other User's data | AC-05, FR-05, constitution PF-03 | `CategoryRead` — no ORM graph, no extra field |
+| A category with no icon ever set still views successfully | EC-04 | `CategoryRead.icon: str \| None` — `None` serialises as `null`, not an error |
+| No audit event | A5 | `category_service.get_category()` calls no `audit.record()` |
+
+**Sequence diagram — View a Category**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request
+into `API` answered back to `UI` with a status code, one workflow.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as CategoryService
+    participant Store as Store
+
+    UI->>API: GET /categories/:id
+    API->>Svc: get(input)
+    Svc->>Store: find the category owned by the caller
+    Store-->>Svc: category, or none
+
+    alt Category not found, or found but not owned by the caller (AC-03/AC-04, collapsed outcome)
+        API-->>UI: 404 CATEGORY_NOT_FOUND
+    else Category owned by the caller
+        Svc-->>API: category
+        API-->>UI: 200 category
+    end
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-02)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+```
+
+Only one workflow is drawn (DG-07). The `alt`/`else` block is the one flow's own branching, not a
+second flow — mirrors WM-US-03's own diagram shape exactly.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-02) | 401 | `NOT_AUTHENTICATED` |
+| Category not found, or found but not owned by the caller (AC-03, AC-04) | 404 | `CATEGORY_NOT_FOUND` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02). No
+`403` (A4: no role restriction), no `422` (the only input is a path parameter with no shape
+constraint), and no `409` (a read has nothing to conflict on, mirrors CM-US-02/WM-US-03/TM-US-03).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `category_service.get_category()` is the only place that decides what a failed lookup means |
+| AR-02 Thin router | Required | Router binds the path parameter, resolves `CurrentUserDep`, calls the service, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `category_repo.get_owned_by_id()` is a query only |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | Mapping to `CategoryRead` happens in the service |
+| AR-05 No framework objects in services | Required | `get_category()` takes plain values (`owner: UserModel`, `category_id`); no `Request`/`Response` |
+| AR-06 One transaction per request | N/A | Pure read, nothing to commit (A6) |
+| AR-07 router → service → repository | Required | Router never calls `category_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only |
+| API-01 Versioned plural path | Required | `GET /api/v1/categories/{category_id}` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required | `200` read · `401` · `404` |
+| API-04 Prefixed error codes | Required | `CATEGORY_NOT_FOUND` — already catalogued by CM-US-04, reused |
+| API-05 No generic status endpoint | Required | A plain resource-read, not a state-transition |
+| API-06 Pagination | N/A | Single-resource read; no list in this story |
+| API-07 Explicit response_model | Required | `response_model=CategoryRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `category_service.py`/`categories.py` only |
+| NC-02 Naming | Required | `CategoryRead` reused unchanged (SDS §2.1); no new DTO (A2) |
+| NC-03 API paths | Required | `/categories/{category_id}` — no verb |
+| NC-04 Column naming | N/A | No column change this story |
+| NC-05 Enum serialisation | N/A | No new enum; `type` continues to serialise as `"INCOME"`/`"EXPENSE"` unchanged |
+| NC-06 Concise service methods | Required | `category_service.get_category`, matching `create_category`/`list_categories`/`update_category`'s own naming |
+| VL-01 Pydantic is the source of truth | N/A | No request body or query parameter this story validates — the only input is a path parameter with no shape constraint |
+| VL-06 Referenced entities verified before use | Required | `category_id` resolved through an ownership-scoped lookup before any response is built (absent → 404) |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case to test (A4: no role restriction) |
+| SEC-08 Ownership filter | Required | The viewed category itself, not merely a *referenced* row, is filtered by `user_id` (A3) |
+| SEC-10 No enumeration | N/A (reasoning reused) | An authenticated caller who does not own a real category id learns nothing about who does, because the identical `404` covers both cases (A3) |
+| LA-02 / LA-04 Audit | N/A (by decision) | Viewing a category is not one of LA-04's three named audited events (A5) |
+| PF-01 300 ms p95 | Required | One indexed lookup, no I/O off the request path |
+| PF-02 Indexed lookups | Required | The lookup is by `categories.id` (primary key) filtered by `categories.user_id` (indexed, CM-US-01) — no new index needed |
+| PF-03 DTO projection | Required | `CategoryRead` — five fields, no ORM graph (A2) |
+| PF-04 Bounded lists | N/A | Not a list endpoint |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| DOD-02 Migration | N/A | No schema change — the second Category Management story with none (mirrors CM-US-02) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No category-detail screen exists this round — the same treatment CM-US-01/02/04 each gave their own endpoints. `mobile/`'s fixture-driven prototype covers only UM-US-01's invite screen (`CLAUDE.md` §5). |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `category_service.get_category(db, *, owner, category_id) -> CategoryRead` — ownership lookup via existing `get_owned_by_id()` (A2, A3) | `backend/app/services/category_service.py` | Open |
+| T-02 | `GET /api/v1/categories/{category_id}` route (A1, A4, A6) | `backend/app/api/v1/categories.py` | Open |
+| T-03 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_03_view_category.py` | Open |
+
+**Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
+was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`) before this gate was claimed —
+see the gate message for the pasted output. By eye/grep: four lanes only (`UI`, `API`, `Svc`, `Store`),
+no `Repo`/`DB` lane, no `SELECT`/`INSERT`/`UPDATE … WHERE`/`JOIN`/`rowcount`/table-and-column syntax
+anywhere in the block, and every `UI→API` request (one: `GET /categories/:id`) is answered back to
+`UI` in both branches it can take (`404` and `200`), plus the `401` branch checked before the flow —
+no unanswered request in any branch (DG-05). One workflow only (DG-07). No `;` or `#` in any label
+(DG-06).
 
 ---

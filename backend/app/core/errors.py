@@ -263,3 +263,30 @@ class WalletNotFoundError(AppError):
     status_code = 404
     error_code = "WALLET_NOT_FOUND"
     default_message = "The referenced wallet was not found."
+
+
+# --- WM-US-05: Delete a Wallet -----------------------------------------------
+
+
+class TransactionWalletArchivedError(AppError):
+    """spec WM-US-05 AC-08 / FR-08. Constitution VL-06's "409 if present but
+    in the wrong state" branch, applied to a wallet referenced by a new
+    Transaction. Distinct from TransactionWalletNotFoundError (TM-US-01),
+    which covers the wallet failing to resolve at all -- this wallet
+    resolves and is owned by the caller, but is archived (plan.md A2).
+    """
+
+    status_code = 409
+    error_code = "TRANSACTION_WALLET_ARCHIVED"
+    default_message = "The referenced wallet is archived and cannot receive new transactions."
+
+
+class BudgetWalletArchivedError(AppError):
+    """spec WM-US-05 AC-09 / FR-09. Same basis as
+    TransactionWalletArchivedError, applied to a wallet referenced by a new
+    Budget.
+    """
+
+    status_code = 409
+    error_code = "BUDGET_WALLET_ARCHIVED"
+    default_message = "The referenced wallet is archived and cannot receive new budgets."

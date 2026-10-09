@@ -16,9 +16,10 @@ A1, A2) — no closed vocabulary exists in either reference document for either
 field.
 """
 
+from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String
+from sqlalchemy import DateTime, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -49,6 +50,13 @@ class WalletModel(Base):
 
     # spec FR-06/FR-09, constitution VL-07: Decimal(15,2), never float.
     balance: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+
+    # spec AC-01/AC-05/FR-04/FR-05, plan.md A1: NULL means active; a non-NULL
+    # value means archived and records the moment -- set at most once
+    # (archive_wallet() never overwrites an existing value, A6).
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<WalletModel id={self.id} user_id={self.user_id} name={self.name}>"

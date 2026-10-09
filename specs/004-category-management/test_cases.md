@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** CM-US-01 *(TC-01…TC-17, all PASS)* · CM-US-02 *(TC-18…TC-34, all PASS)* · CM-US-04 *(TC-35…TC-63, all PASS)*
+> **Stories in this file:** CM-US-01 *(TC-01…TC-17, all PASS)* · CM-US-02 *(TC-18…TC-34, all PASS)* · CM-US-04 *(TC-35…TC-63, all PASS)* · CM-US-03 *(TC-64…TC-73, test cases written — not yet implemented)*
 
 ---
 
@@ -1080,4 +1080,188 @@ left trivially passing.
 - **When:** A `PATCH` is submitted with an `icon` of exactly 50 characters
 - **Then:** The response is `200`; the stored `icon` is the full 50-character value — the cap is a ceiling, not a target: 50 is honoured, only 51 is rejected (TC-55)
 - **AC:** EC-12, FR-07
+- **Type:** integration
+
+---
+
+## CM-US-03: View a Category
+
+> **IDs in this section are local to CM-US-03** — except `TC-NN`, which continues this epic file's own
+> numbering: CM-US-04 used `TC-35`…`TC-63`, so this story continues from `TC-64`. **`QF-NN` also
+> continues here, from `QF-14`** — confirmed by direct count of this file's own entries, not assumed:
+> `grep -oE '^### TC-[0-9]+' test_cases.md | sort -t- -k2 -n | tail` returns `TC-63` as the last
+> heading, and the equivalent for `QF-` returns `QF-13` as the last heading (CM-US-01 used
+> `QF-01`…`QF-04`, CM-US-02 used `QF-05`…`QF-08`, CM-US-04 used `QF-09`…`QF-13`) — so this story
+> continues from `TC-64` and `QF-14`, matching `spec.md`'s and `plan.md`'s own confirmation notes for
+> this story.
+
+### Quality Findings
+
+#### QF-14
+
+**Description.** AC-03/AC-04 require a category reference that does not exist at all and one that
+exists but belongs to a different User to produce "the same not-found outcome" — mirrors CM-US-04
+QF-09 and WM-US-03 QF-12/TM-US-03's own equivalent, now applied to a direct view rather than an
+update. `plan.md` A3 makes this true by construction, since `category_repo.get_owned_by_id()` filters
+by `user_id` in the query itself and returns `None` either way. A test that merely checks both cases
+return *some* `404` would not distinguish "genuinely identical" from "two different messages that both
+happen to carry status 404."
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — for instance, a message that only names "belongs to another account" in the
+ownership-mismatch case, itself a minor information leak about another User's data.
+
+**Recommendation.** `TC-66` compares the full response body of the ownership-mismatch case against
+`TC-65`'s not-found-at-all case and asserts they match exactly — `error_code`, `message`, and
+`details` all identical, not merely the status code. `TC-72` extends the same comparison to a caller
+who owns a different category of their own but names someone else's. Directly mirrors CM-US-04
+QF-09/TC-44 and WM-US-03 QF-12/TC-63/TC-69.
+
+### Acceptance Criteria Classification
+
+No category-detail screen exists in `mobile/` this round, and no SRS UXR names one — the same basis
+CM-US-01/CM-US-02/CM-US-04 each used for their own all-`[API]` classification.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully view the detail of a category the caller owns | **[API]** | No UI surface exists or is named by any UXR this round |
+| AC-02 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-03 | Reject a category reference that does not exist at all | **[API]** | Persistence/ownership contract; bounded by QF-14 |
+| AC-04 | Reject a category reference belonging to a different User | **[API]** | Persistence/ownership contract; bounded by QF-14 |
+| AC-05 | Return exactly the documented category fields — no other User's data | **[API]** | Response-payload contract |
+| EC-01 | A category reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
+| EC-02 | A caller who owns a different category attempts to view another User's category | **[API]** | Persistence/ownership contract; bounded by QF-14 |
+| EC-03 | An ADMIN-role caller attempting to view a category they do not own | **[API]** | Ownership contract independent of role |
+| EC-04 | A category with no icon ever set | **[API]** | Backend rule (absent icon is not an error) |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-64 | — |
+| AC-02 | [API] | TC-67, TC-73 | — |
+| AC-03 | [API] | TC-65 | — |
+| AC-04 | [API] | TC-66 | — |
+| AC-05 | [API] | TC-64, TC-71 | — |
+| EC-01 | [API] | TC-68 | — |
+| EC-02 | [API] | TC-72 | — |
+| EC-03 | [API] | TC-69 | — |
+| EC-04 | [API] | TC-70 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no
+> category-detail screen exists this round, and none is named by any SRS UXR. **Known coverage
+> limits, accepted:** none — this story's own contract has no construction the public API cannot
+> reach; every AC/EC here is directly testable through `GET /api/v1/categories/{category_id}`.
+
+### Test Implementation Map *(filled at step 4)*
+
+**Not yet implemented.** This dispatch covers only the Spec, Design, and Quality steps (`CLAUDE.md`
+§2, steps 1–3) — `backend/tests/integration/test_cm_us_03_view_category.py` does not exist yet, and
+neither does the route or service function it would exercise. Every `TC-NN` below is pending its own
+pytest node id and a PASS/FAIL/BLOCKED result, to be filled in at the Implement step together with the
+real coverage percentage, per constitution DOD-07.
+
+| TC | pytest node id | Result |
+|---|---|---|
+| TC-64 | *(pending)* | Pending |
+| TC-65 | *(pending)* | Pending |
+| TC-66 | *(pending)* | Pending |
+| TC-67 | *(pending)* | Pending |
+| TC-68 | *(pending)* | Pending |
+| TC-69 | *(pending)* | Pending |
+| TC-70 | *(pending)* | Pending |
+| TC-71 | *(pending)* | Pending |
+| TC-72 | *(pending)* | Pending |
+| TC-73 | *(pending)* | Pending |
+
+---
+
+### TC-64: An authenticated User views a category they own — 200 with the full detail
+
+- **US:** CM-US-03
+- **Given:** An authenticated User who owns a category with `name` `"Groceries"`, `type` `"EXPENSE"`, `icon` `"shopping-cart"`
+- **When:** The User requests that category by its own `id`
+- **Then:** The response is `200`; the body carries `id` equal to the category's own id, `user_id` equal to the caller's own id, `name` `"Groceries"`, `type` `"EXPENSE"`, `icon` `"shopping-cart"`
+- **AC:** AC-01, FR-01, FR-05
+- **Type:** integration
+
+### TC-65: A category_id matching no category at all is rejected with 404 CATEGORY_NOT_FOUND
+
+- **US:** CM-US-03
+- **Given:** An authenticated User
+- **When:** The User requests a category by an `id` that matches no category in the system
+- **Then:** The response is `404` with `error_code` `CATEGORY_NOT_FOUND`
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-66: A category belonging to a different User is rejected with the identical outcome as TC-65
+
+- **US:** CM-US-03
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a category and `A` owns nothing of the kind
+- **When:** `A` requests `B`'s category by its own `id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-65's response
+- **AC:** AC-04, FR-03 *(assertion technique per QF-14)*
+- **Type:** integration
+
+### TC-67: An unauthenticated caller is denied with 401
+
+- **US:** CM-US-03
+- **Given:** A caller presenting no `Authorization` header, and an existing category belonging to some other, real User
+- **When:** The caller requests that category by its own `id`
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-68: A malformed category reference is rejected with the same outcome as a well-formed but non-existent one
+
+- **US:** CM-US-03
+- **Given:** An authenticated User
+- **When:** The User requests a category by the `id` value `"not-a-real-id"`
+- **Then:** The response is `404` `CATEGORY_NOT_FOUND`, identical to TC-65's response
+- **AC:** EC-01, FR-03
+- **Type:** integration
+
+### TC-69: An ADMIN-role caller cannot view another User's category through this endpoint
+
+- **US:** CM-US-03
+- **Given:** An authenticated User whose role is `ADMIN`, and a second User (any role) who owns a category of their own
+- **When:** The ADMIN requests the other User's category by its own `id`
+- **Then:** The response is `404` `CATEGORY_NOT_FOUND` — the same outcome any non-ADMIN caller would get; no role grants visibility through this endpoint
+- **AC:** EC-03, FR-04
+- **Type:** integration
+
+### TC-70: A category with no icon ever set still views successfully
+
+- **US:** CM-US-03
+- **Given:** An authenticated User who owns a category created with `name`/`type` only, no `icon` ever submitted
+- **When:** The User requests that category by its own `id`
+- **Then:** The response is `200`; `icon` is `null` — not an empty string, not an error
+- **AC:** EC-04
+- **Type:** integration
+
+### TC-71: The response exposes exactly the five documented fields
+
+- **US:** CM-US-03
+- **Given:** An authenticated User who owns a category
+- **When:** The User requests that category by its own `id`
+- **Then:** The response body's keys are exactly `id`, `user_id`, `name`, `type`, `icon` — no more, and no data belonging to any other User
+- **AC:** AC-05, FR-05
+- **Type:** integration
+
+### TC-72: A caller who owns a different category of their own cannot view another User's category
+
+- **US:** CM-US-03
+- **Given:** Two authenticated Users, `A` (owns a category of their own) and `B` (owns a separate category of their own)
+- **When:** `A` requests `B`'s category by its own `id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-65's response — owning a category of their own gives `A` no access to `B`'s
+- **AC:** EC-02, FR-03 *(assertion technique per QF-14)*
+- **Type:** integration
+
+### TC-73: Credentials are evaluated before the category reference is looked up
+
+- **US:** CM-US-03
+- **Given:** A caller presenting no credentials
+- **When:** The caller requests a category by an `id` that does not match any category in the system
+- **Then:** The response is `401` `NOT_AUTHENTICATED`, not `404` — mirrors WM-US-03 TC-70/TM-US-03's own ordering
+- **AC:** AC-02, FR-02
 - **Type:** integration

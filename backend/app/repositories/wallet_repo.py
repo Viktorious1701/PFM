@@ -12,6 +12,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
+from app.core import clock
 from app.models.wallet import WalletModel
 
 
@@ -120,7 +121,13 @@ def list_owned(
     db: Session, *, user_id: str, page: int, page_size: int
 ) -> tuple[Sequence[WalletModel], int]:
     """A page of wallets owned by `user_id`, plus that owner's own total count
-    (spec WM-US-02 AC-01, AC-04, AC-05, AC-07; plan.md A1, A3).
+    (spec WM-US-02 AC-01, AC-04, AC-05, AC-07; plan.md A1, A3). WM-US-05
+    A3: both queries also exclude archived wallets
+    (`WalletModel.archived_at.is_(None)`), so an archived wallet disappears
+    from the caller's default list (WM-US-05 AC-06) without reopening this
+    story's own pagination, ordering, or ownership-scoping decisions -- the
+    identical kind of additive WHERE predicate this function's own
+    ownership scope already required to apply to both queries together.
 
     Both queries carry the identical `user_id` predicate (constitution
     SEC-08) — the total is the caller's own wallet count, never the
@@ -130,18 +137,40 @@ def list_owned(
     """
     total = (
         db.scalar(
-            select(func.count()).select_from(WalletModel).where(WalletModel.user_id == user_id)
+            select(func.count())
+            .select_from(WalletModel)
+            .where(
+                WalletModel.user_id == user_id,
+                WalletModel.archived_at.is_(None),
+            )
         )
         or 0
     )
     items = db.scalars(
         select(WalletModel)
-        .where(WalletModel.user_id == user_id)
+        .where(
+            WalletModel.user_id == user_id,
+            WalletModel.archived_at.is_(None),
+        )
         .order_by(WalletModel.id.asc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
     return items, total
+
+
+def archive_wallet(db: Session, *, wallet: WalletModel) -> WalletModel:
+    """spec AC-01, AC-05, FR-04, FR-05 (plan.md A1, A6). Idempotent: stamps
+    `archived_at` with the current time only if the wallet is not already
+    archived -- a repeat call leaves the original timestamp untouched
+    rather than overwriting it with a fresh one. Flushed, not committed
+    (AR-06) -- the router owns the transaction boundary.
+    """
+    if wallet.archived_at is None:
+        wallet.archived_at = clock.utcnow()
+        db.add(wallet)
+        db.flush()
+    return wallet
 
 
 def increment_balance(db: Session, *, wallet_id: str, amount: Decimal) -> None:

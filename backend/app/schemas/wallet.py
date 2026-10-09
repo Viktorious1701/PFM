@@ -4,6 +4,7 @@ Constitution: VL-01 (Pydantic is the source of truth), VL-07 (Decimal money),
 PF-03 (DTO projection).
 """
 
+from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -109,3 +110,22 @@ class WalletListRead(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class WalletArchiveRead(BaseModel):
+    """Response DTO for DELETE /wallets/{wallet_id} (WM-US-05 plan.md A5).
+    WalletRead's own six fields, reused unchanged, plus archived_at -- a new,
+    dedicated envelope rather than widening WalletRead itself, so
+    WM-US-01/02/03/04's own already-shipped "exactly six fields" response
+    contracts (TC-18, TC-24, TC-57, TC-68) are never touched by this story.
+    Mirrors WalletListRead's own precedent (WM-US-02 plan.md A2) of adding a
+    new envelope rather than mutating WalletRead.
+    """
+
+    id: str
+    user_id: str
+    name: str
+    type: str
+    currency: str
+    balance: Decimal
+    archived_at: datetime
