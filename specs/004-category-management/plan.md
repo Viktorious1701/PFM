@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(implemented, verified — 391 passed)* · CM-US-04 *(implemented, verified — 526 total passing)* · CM-US-03 *(implemented, verified — 611 total passing)*
+> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(implemented, verified — 391 passed)* · CM-US-04 *(implemented, verified — 526 total passing)* · CM-US-03 *(implemented, verified — 611 total passing)* · CM-US-05 *(spec + design + test cases written — not yet implemented)*
 
 ---
 
@@ -1117,3 +1117,458 @@ no unanswered request in any branch (DG-05). One workflow only (DG-07). No `;` o
 (DG-06).
 
 ---
+
+## CM-US-05: Delete a Category
+
+> **IDs in this section are local to CM-US-05** (`A*`/`T-NN`), continuing the demonstrated convention:
+> every second-or-later story in this file restarts `A*`/`T-NN` locally, while `test_cases.md`'s `TC-NN`
+> and `QF-NN` run continuously across the epic file. `test_cases.md`'s `TC-NN` below continues from
+> `TC-74`, and `QF-NN` from `QF-15` — confirmed by direct count against that file's actual current end
+> (`TC-73`, `QF-14`, both CM-US-03's own last entries) before writing this section.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Domain / Data / Reference docs | **Soft-delete via a new, nullable `categories.archived_at` timestamp column — not a boolean, not a status-style enum, and not a hard `DELETE`, despite SDS §5.4.5's own goal text reading "Remove" rather than Wallet's "soft-delete or archive."** The verb alone argues for following BM-US-05's/TM-US-05's own literal hard-delete reading of "Remove" — but the structural fact controls instead: `backend/app/models/transaction.py` and `backend/app/models/budget.py` both confirm `category_id` is a real, live, `NOT NULL` foreign key into `categories.id`, with neither `ON DELETE CASCADE` nor any other automatic cascade — the identical shape WM-US-05 confirmed for `wallets.id`, and the opposite of `budgets.id`/`transactions.id` (no inbound foreign key at all), which is exactly why "Remove" was safe to read literally for those two entities. A literal hard delete here would either violate referential integrity outright or silently orphan real financial history. The word "unused" in Category's own goal — present exactly as it was in Wallet's — is the textual anchor that survives this reasoning, not the verb. `NULL` (the default) means active; a non-`NULL` value means archived and records the moment, mirroring WM-US-05 A1's own rejection of a boolean (cannot prove AC-05's idempotency guarantee by itself — a careless re-write could silently refresh a boolean's "true" value on a repeat call with no way for a test to detect it) and of a `users.status`-style enum (Category's archive concept is two-state and one-directional, no third state and no reversal operation named by any source). `archived_at` matches constitution NC-04's own timestamp-naming idiom directly. This is a new column the SDS §4.3.3 ERD does not list — the identical gap CM-US-01 G1 already corrected once for `icon`, and CM-US-04 A5 then added the column for — but "soft-delete or archive" (once "Remove" is read in light of what the schema actually permits) is this story's own explicit, stated goal: the capability cannot exist at all without some persisted marker, so adding the one column it requires executes the SDS's own instruction rather than inventing a capability beyond it. Full reasoning: `spec.md` Assumptions. | ✅ Resolved |
+| A2 | Domain / Scope / Architecture | **Archiving blocks new Transactions and Budgets from being created against the category — a new, additive precondition in `transaction_service.create_transaction` and `budget_service.create_budget`, inserted immediately next to each function's own existing WM-US-05 wallet-archived check, not a new restriction anywhere else.** SDS §5.4.5's own goal text calls the category being archived "**unused**" — the identical word WM-US-05 A2 already found decisive for Wallet, present here too — if archiving left a category exactly as usable as before, that word (and "archived" itself) would describe nothing the system actually enforces. Constitution VL-06's own "`409` if present but in the wrong state" branch already has one real case from WM-US-05 (a wallet in the "archived" state); this story gives it a second, independent case (a category in the "archived" state). **Exact call sites, both already extended once by WM-US-05:** `transaction_service.create_transaction` already carries the fixed order wallet ownership → wallet archived-state → category ownership → category-type consistency → balance sufficiency (WM-US-05 A2); this story inserts one more step immediately after the existing category-ownership lookup and before the existing category-type-consistency check — **wallet ownership → wallet archived-state → category ownership → category archived-state → category-type consistency → balance sufficiency** — raising a new `TransactionCategoryArchivedError` (`409 TRANSACTION_CATEGORY_ARCHIVED`) when `category.archived_at is not None`. `budget_service.create_budget` gains the identical check in the identical relative position — **wallet ownership → wallet archived-state → category ownership → category archived-state → duplicate-budget check** — raising a new `BudgetCategoryArchivedError` (`409 BUDGET_CATEGORY_ARCHIVED`). Both checks are additive only: they read `category.archived_at` off the row the existing lookup already fetched, add no new query, and do not reorder or remove any existing step — including the WM-US-05 wallet-archived check already sitting earlier in the same fixed order. **Neither sequence diagram is redrawn**, for the identical reason WM-US-05 A2 already gave: both already show `API→Svc: create(input)` as a single opaque call per DG-03's own convention, which does not enumerate every internal service precondition. **Tests for this refusal live in this story's own test file** (`test_cm_us_05_delete_category.py`), exercising the already-existing `POST /transactions`/`POST /budgets` endpoints directly — not a retroactive edit to TM-US-01's/BM-US-01's own closed `spec.md`/`plan.md`/`test_cases.md` sections (`CLAUDE.md` §1.1). | ✅ Resolved |
+| A3 | Architecture | **`category_repo.list_owned()` (CM-US-02) gains one additional, additive `WHERE` predicate — `CategoryModel.archived_at.is_(None)` — applied to *both* its existing queries (the bounded page and the total count).** An archived category disappears from the caller's default list (`spec.md` AC-06) without reopening CM-US-02's own pagination, ordering, or ownership-scoping decisions — the identical kind of additive predicate WM-US-05 A3 already required for Wallet's own `list_owned()`, and the identical kind CM-US-02 A3 itself already required once for the ownership scope (both queries must agree, or `items` and `total` would silently describe different sets). No opt-in "include archived" parameter is added — no source asks for one (CM-US-02 A8's own "fewest invented rules" discipline). | ✅ Resolved |
+| A4 | Architecture | **`GET /categories/{category_id}` (CM-US-03) and `category_service.get_category()`/`category_repo.get_owned_by_id()` are completely unaffected — no code change.** An archived category continues to resolve through View a Category exactly as before (`spec.md` AC-07, FR-07): a caller who already knows a category's id can still see what it is and was, the same reasoning CM-US-03 A2 used to reuse `CategoryRead` unchanged for its own single-resource read, and the same constraint WM-US-05 A4 placed on `wallet_repo.get_owned_by_id()`. `get_owned_by_id()` in particular must **not** start filtering by `archived_at` — this story's own archive operation (A8 below) reuses that same function to find an *already*-archived category, which is exactly what makes FR-05's idempotency guarantee possible at all. | ✅ Resolved |
+| A5 | API / Domain | **Success response is `200 OK` with a body — not `204` — and the body is a new, dedicated DTO (`CategoryArchiveRead`), not `CategoryRead` widened in place a second time.** Unlike BM-US-05/TM-US-05's own hard delete, this story's category is not gone — there is a real, current resource state to report, including a value (`archived_at`) the caller has no other way to learn from this same response — so `200` fits constitution API-03's existing catalog directly, mirroring WM-US-05 A5's identical reasoning. The DTO question is sharper here than it was for Wallet: `CategoryRead` has already been widened once, by CM-US-04 A6, to add `icon` — and that widening is now reused unchanged across *four* already-shipped, already-verified call sites (CM-US-01's create response, CM-US-02's list items, CM-US-03's own view response, and CM-US-04's own update response). Widening it a second time, to add `archived_at`, would touch all four again for a field only this one operation's response actually needs — a stronger version of the same argument WM-US-05 A5 made for `WalletRead` (which had only ever been widened zero times before that story). `CategoryArchiveRead` — `CategoryRead`'s own five fields (`id`, `user_id`, `name`, `type`, `icon`) plus `archived_at: datetime` — is therefore a new, dedicated envelope instead, mirroring exactly how WM-US-02 A2 introduced `WalletListRead` and WM-US-05 A5 introduced `WalletArchiveRead` for their own different reasons. **Accepted limitation, stated plainly:** because `CategoryRead` stays untouched, viewing an archived category through `GET /categories/{category_id}` gives no signal, from that response alone, that it is archived — only this endpoint's own response, the category's absence from the default list (A3), or a later `409` on an attempt to transact against it, surface that fact. `test_cases.md` `TC-87` positively asserts `CategoryRead`'s five-key shape still holds for an archived category's view, so a future accidental leak is caught rather than silently welcomed — the identical discipline WM-US-05 QF-18/TC-84 already established for Wallet. | ✅ Resolved |
+| A6 | Domain | **A repeated archive request against an already-archived category is idempotent — `200` success, identical body, the originally recorded `archived_at` preserved and never overwritten — not a `409` conflict and not a distinct "already archived" error.** Identical reasoning to WM-US-05 A6: this story's row still exists and still resolves by id every time, so BM-US-05's/TM-US-05's own "the row is gone either way" `404` fallback does not apply here either. A `409` was weighed and rejected for the identical reason WM-US-05 A6 already gave — this codebase's existing `409` precedents each guard against a request that would create a *new*, inconsistent state, and a repeat archive request creates nothing and asks for a state that is already true. A caller also has no reliable way to learn in advance whether a given category is already archived (A5's own accepted limitation), so refusing a repeat call would punish a caller for not knowing something this design does not expose anywhere. `category_repo.archive_category()` (A8) therefore only ever stamps `archived_at` when it is still `NULL`. | ✅ Resolved |
+| A7 | Architecture | **No cascade to `budgets` or `transactions` rows — confirmed directly that both carry a live `category_id` foreign key into `categories.id`, with neither `ON DELETE CASCADE` nor any other automatic cascade behaviour, and this story's own write touches only the `categories` row's own `archived_at` column.** This is the opposite structural situation from BM-US-05 A3/TM-US-05 A3 (which each confirmed *no* inbound foreign key existed for their own entity), and the identical situation WM-US-05 A7 already confirmed for `wallets` — here, the two live foreign keys are exactly why a hard delete was never on the table (`spec.md` Source), and this story's own soft-delete design means there is no row-removal cascade question to resolve at all: `budgets`/`transactions` rows referencing the now-archived category are left completely untouched, continuing to resolve through their own existing reads exactly as before. | ✅ Resolved |
+| A8 | Architecture | **No new repository *read* function — `category_repo.get_owned_by_id(db, *, category_id, user_id)` is reused unchanged.** It already exists (CM-US-01, reused unchanged by CM-US-03/CM-US-04) and already collapses "no such category" and "exists, owned by someone else" to the identical `None` by construction — exactly the lookup this story's own "fetch the category being archived" need requires, including re-finding an already-archived category on a repeat call (A6). Only a new *write* function, `category_repo.archive_category()`, is added. | ✅ Resolved |
+| A9 | Security / API | **Two new error classes: `TransactionCategoryArchivedError` (409, `TRANSACTION_CATEGORY_ARCHIVED`) and `BudgetCategoryArchivedError` (409, `BUDGET_CATEGORY_ARCHIVED`).** Neither existing category-adjacent error fits: `TransactionCategoryNotFoundError`/`BudgetCategoryNotFoundError` (TM-US-01/BM-US-01) each cover a *referenced* category failing to **resolve** at all — this category resolves and is owned by the caller, but is archived, a materially different failure VL-06's own text distinguishes as "`409` if present but in the wrong state" rather than "`404` if absent." `CategoryNotFoundError` (CM-US-04) covers the category *being archived itself* failing to resolve (reused unchanged by this story's own lookup, A8) — a third, still-different situation. Each new error keeps the same entity's own resource prefix (`TRANSACTION_`/`BUDGET_`) as its sibling `NotFound` error, matching constitution API-04's own prefixing convention and mirroring WM-US-05 A9's identical naming move for Wallet. | ✅ Resolved |
+| A10 | Security | **No role restriction — `CurrentUserDep` guards the route, not `AdminDep`.** SDS §5.4.5 tags this story "(USER)", identical to every other Category Management story's own tag. Mirrors CM-US-01 A7, CM-US-02 A6, CM-US-03 A4, CM-US-04 A8, WM-US-05 A10. | ✅ Resolved |
+| A11 | Logging | **No new audit event.** Constitution LA-04 names exactly three audited event families; none of creation (CM-US-01 A8), listing (CM-US-02 A5), viewing (CM-US-03), or updating (CM-US-04 A9) qualified, and archiving a category is no closer to any of the three than those were. No AC or FR here asks for one. | ✅ Resolved |
+| A12 | Architecture | **A new Alembic migration is required, `down_revision = b4f1e7a2c6d9` — the current head, confirmed directly with `uv run alembic heads` before writing this section, not assumed from any prior dispatch.** `archived_at` is a genuinely new column on `categories`, the same kind of change CM-US-04 A5 made once already for `icon`. No dedicated index is added for `archived_at` itself, for the identical reasoning WM-US-05 A12 already gave: `category_repo.list_owned()`'s new predicate is always combined with the already-indexed `user_id` equality filter, which already bounds the scan before the `archived_at` filter applies. A composite `(user_id, archived_at)` index is the natural, narrow follow-up if evidence of needing one ever appears — not something this story adds speculatively. | ✅ Resolved |
+| A13 | Architecture | **The router issues exactly one `db.commit()`, after the service call succeeds** — identical to every other write router in this codebase (AR-06). `category_service.archive_category()` itself only flushes (via A8's `archive_category()` repository function), never commits. | ✅ Resolved |
+| A14 | Scope | **This story's archived-category restriction does not extend to CM-US-04's own update (rename/retype/icon-change) operation — reasoned through independently for Category's own three mutable fields, not copied from WM-US-05 A14 by assumption, though it reaches the identical conclusion.** `name`, `type`, and `icon` are cosmetic labels, not financial exposure — none carries monetary meaning the way a Transaction amount or a Budget limit does. Renaming, retyping, or re-iconing an archived category reintroduces none of the harm archiving exists to prevent (new financial activity accumulating against a category the caller has put away); no source names such a restriction; and `category_service.update_category()` is therefore left completely untouched by this story. Category's `type` field, unlike Wallet's free-text one, is a closed `INCOME`/`EXPENSE` enum — considered explicitly, not overlooked: CM-US-04 BR-04 already established that a category's `type` carries no standing consistency invariant against any Transaction or Budget that references it even while *active*, so an archived category's `type` being retyped raises no new concern an active category's own retyping did not already settle. No new wrinkle follows from the enum, and none is invented. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions/updates only — the first Category Management story since CM-US-04 to add
+a column and a migration, and the first to touch code outside this epic).
+
+```text
+backend/app/
+├── models/
+│   └── category.py                   # update: add archived_at column (A1)
+├── schemas/
+│   └── category.py                   # update: add CategoryArchiveRead (A5)
+├── repositories/
+│   └── category_repo.py              # update: add archive_category(); widen list_owned()'s predicate (A1, A3, A6, A8)
+├── services/
+│   ├── category_service.py           # update: add archive_category() (A1, A2, A5, A6, A8)
+│   ├── transaction_service.py        # update: create_transaction() gains an archived-category check (A2)
+│   └── budget_service.py             # update: create_budget() gains an archived-category check (A2)
+├── core/
+│   └── errors.py                     # update: add TransactionCategoryArchivedError, BudgetCategoryArchivedError (A2, A9)
+└── api/v1/
+    └── categories.py                 # update: add DELETE /categories/{category_id} (A5, A10)
+
+backend/migrations/versions/
+└── <rev>_add_archived_at_to_categories.py  # NEW  categories.archived_at, nullable DateTime(timezone=True),
+                                             # down_revision = b4f1e7a2c6d9 (current head, A1, A12)
+
+backend/tests/
+└── integration/test_cm_us_05_delete_category.py   # NEW  written at the Implement step from test_cases.md,
+                                                     # including the archived-category-block cases against
+                                                     # the already-existing POST /transactions and
+                                                     # POST /budgets endpoints (A2)
+```
+
+No change to `core/deps.py` — `CurrentUserDep` is reused exactly as every prior Category Management
+story already established (A10). No change to `transaction_repo.py`, `budget_repo.py`, `wallet_repo.py`,
+or either Transaction/Budget's own router (A2's checks live entirely in the two services, reading data
+their own existing lookups already fetch).
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `CategoryModel` | `categories` | `archived_at` (new column, write) | The only column this story ever writes — `name`/`type`/`icon` are read (to echo in the response) but never written (A1, spec BR-03). |
+| `CategoryArchiveRead` (DTO) | — | `id`, `user_id`, `name`, `type`, `icon`, `archived_at` | New response envelope (A5) — `CategoryRead`'s own five fields, reused, plus one. |
+| `TransactionModel` | `transactions` | none (read-only, via its own `category_id` FK) | This story adds a precondition to `TransactionModel`'s own creation path; it writes no `Transaction` field itself (A2, A7). |
+| `BudgetModel` | `budgets` | none (read-only, via its own `category_id` FK) | Identical treatment to `TransactionModel`, for the identical reason (A2, A7). |
+
+**Migration** (`backend/migrations/versions/`, new revision, `down_revision = "b4f1e7a2c6d9"`)
+
+```python
+def upgrade() -> None:
+    with op.batch_alter_table("categories", schema=None) as batch_op:
+        batch_op.add_column(sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True))
+
+
+def downgrade() -> None:
+    with op.batch_alter_table("categories", schema=None) as batch_op:
+        batch_op.drop_column("archived_at")
+```
+
+`batch_alter_table` because SQLite cannot `ALTER` most things in place (`render_as_batch=True` in
+`migrations/env.py`), matching every other column/index change in this codebase, including WM-US-05's
+own `archived_at` migration for `wallets`.
+
+**Model addition** (`app/models/category.py`)
+
+```python
+from datetime import datetime
+from sqlalchemy import DateTime
+...
+    # spec AC-01/AC-05/FR-04/FR-05, plan.md A1: NULL means active; a non-NULL
+    # value means archived and records the moment -- set at most once
+    # (archive_category() never overwrites an existing value, A6).
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+```
+
+**DTO addition** (`app/schemas/category.py`)
+
+```python
+class CategoryArchiveRead(BaseModel):
+    """Response DTO for DELETE /categories/{category_id} (CM-US-05 plan.md
+    A5). CategoryRead's own five fields, reused unchanged, plus archived_at
+    -- a new, dedicated envelope rather than widening CategoryRead a second
+    time (it was already widened once, by CM-US-04 A6, to add icon, and that
+    widening is reused unchanged across four already-shipped call sites).
+    Mirrors WalletArchiveRead's own precedent (WM-US-05 plan.md A5) of
+    adding a new envelope rather than mutating the shared Read DTO.
+    """
+
+    id: str
+    user_id: str
+    name: str
+    type: CategoryType
+    icon: str | None
+    archived_at: datetime
+```
+
+**Repository addition** (`app/repositories/category_repo.py`)
+
+```python
+def archive_category(db: Session, *, category: CategoryModel) -> CategoryModel:
+    """spec AC-01, AC-05, FR-04, FR-05 (plan.md A1, A6). Idempotent: stamps
+    `archived_at` with the current time only if the category is not already
+    archived -- a repeat call leaves the original timestamp untouched
+    rather than overwriting it with a fresh one. Flushed, not committed
+    (AR-06) -- the router owns the transaction boundary.
+    """
+    if category.archived_at is None:
+        category.archived_at = clock.utcnow()
+        db.add(category)
+        db.flush()
+    return category
+```
+
+**Repository update** (`app/repositories/category_repo.py`, `list_owned()`)
+
+```python
+def list_owned(
+    db: Session, *, user_id: str, page: int, page_size: int
+) -> tuple[Sequence[CategoryModel], int]:
+    """... (CM-US-02 AC-01, AC-04, AC-05, AC-07; plan.md A1, A3). CM-US-05
+    A3: both queries also exclude archived categories
+    (`CategoryModel.archived_at.is_(None)`), so an archived category
+    disappears from the caller's default list (CM-US-05 AC-06) without
+    reopening this story's own pagination, ordering, or ownership-scoping
+    decisions -- the identical kind of additive WHERE predicate this
+    function's own ownership scope already required to apply to both
+    queries together.
+    """
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(CategoryModel)
+            .where(
+                CategoryModel.user_id == user_id,
+                CategoryModel.archived_at.is_(None),
+            )
+        )
+        or 0
+    )
+    items = db.scalars(
+        select(CategoryModel)
+        .where(
+            CategoryModel.user_id == user_id,
+            CategoryModel.archived_at.is_(None),
+        )
+        .order_by(CategoryModel.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return items, total
+```
+
+No new repository *read* function for the archive lookup itself (A8) — `get_owned_by_id()` is reused
+unchanged.
+
+**Service** (`app/services/category_service.py`, addition)
+
+```python
+def archive_category(db: Session, *, owner: UserModel, category_id: str) -> CategoryArchiveRead:
+    """spec AC-01, AC-05, FR-03, FR-04, FR-05 (plan.md A1, A2, A5, A6, A8).
+    Looks up the category scoped to the caller -- reusing
+    category_repo.get_owned_by_id() unchanged -- then archives it.
+    Idempotent (A6): a category that is already archived is returned as-is,
+    its original archived_at preserved. No precondition beyond ownership --
+    this is the operation that *sets* the archived state VL-06's 409 branch
+    later checks for (A2), not one blocked by it.
+    """
+    category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
+    if category is None:
+        raise CategoryNotFoundError()
+
+    category = category_repo.archive_category(db, category=category)
+    return CategoryArchiveRead(
+        id=category.id,
+        user_id=category.user_id,
+        name=category.name,
+        type=category.type,
+        icon=category.icon,
+        archived_at=clock.ensure_aware(category.archived_at),
+    )
+```
+
+**Service updates** (`app/services/transaction_service.py`, `app/services/budget_service.py` — the
+cross-epic footprint, A2)
+
+```python
+# transaction_service.create_transaction -- new check inserted between the
+# existing category-ownership lookup and the existing category-type check.
+# The existing wallet-ownership/wallet-archived-state checks (WM-US-05 A2)
+# sit unchanged, earlier in this same function.
+category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
+if category is None:
+    raise TransactionCategoryNotFoundError()
+if category.archived_at is not None:
+    raise TransactionCategoryArchivedError()
+
+if category.type.value != type.value:
+    raise TransactionCategoryTypeMismatchError()
+...
+```
+
+```python
+# budget_service.create_budget -- new check inserted between the existing
+# category-ownership lookup and the existing duplicate-budget check. The
+# existing wallet-ownership/wallet-archived-state checks (WM-US-05 A2) sit
+# unchanged, earlier in this same function.
+category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
+if category is None:
+    raise BudgetCategoryNotFoundError()
+if category.archived_at is not None:
+    raise BudgetCategoryArchivedError()
+
+period = clock.utcnow().date().replace(day=1)
+existing = budget_repo.get_by_wallet_category_period(...)
+...
+```
+
+**Router** (`app/api/v1/categories.py`, addition)
+
+```python
+@router.delete(
+    "/{category_id}",
+    response_model=CategoryArchiveRead,
+    status_code=status.HTTP_200_OK,
+    summary="Archive (delete) a category",
+    description=(
+        "Archives one of the authenticated caller's own categories, "
+        "identified by its own id. The category's row, name, type, and "
+        "icon are left unchanged, and it remains viewable through "
+        "GET /categories/{category_id}; it is excluded from "
+        "GET /categories by default, and can no longer be referenced by a "
+        "new Transaction or Budget. Archiving an already-archived category "
+        "succeeds again without changing the recorded archive time."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "CATEGORY_NOT_FOUND"},
+    },
+)
+def archive_category(
+    category_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> CategoryArchiveRead:
+    result = category_service.archive_category(db, owner=current_user, category_id=category_id)
+    db.commit()
+    return result
+```
+
+**New errors** (`app/core/errors.py`, appended under a new `# --- CM-US-05: Delete a Category` section)
+
+```python
+class TransactionCategoryArchivedError(AppError):
+    """spec CM-US-05 AC-08 / FR-08. Constitution VL-06's "409 if present but
+    in the wrong state" branch, applied to a category referenced by a new
+    Transaction. Distinct from TransactionCategoryNotFoundError (TM-US-01),
+    which covers the category failing to resolve at all -- this category
+    resolves and is owned by the caller, but is archived (plan.md A2).
+    """
+
+    status_code = 409
+    error_code = "TRANSACTION_CATEGORY_ARCHIVED"
+    default_message = "The referenced category is archived and cannot receive new transactions."
+
+
+class BudgetCategoryArchivedError(AppError):
+    """spec CM-US-05 AC-09 / FR-09. Same basis as
+    TransactionCategoryArchivedError, applied to a category referenced by a
+    new Budget.
+    """
+
+    status_code = 409
+    error_code = "BUDGET_CATEGORY_ARCHIVED"
+    default_message = "The referenced category is archived and cannot receive new budgets."
+```
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Authenticated User of any role may archive their own category | AC-01, FR-01, A10 | `DELETE /api/v1/categories/{category_id}` guarded by `CurrentUserDep` — not `AdminDep` |
+| Unauthenticated caller denied before anything else is evaluated | AC-02, FR-02 | `CurrentUserDep` resolves before the path is handled |
+| `category_id` must resolve to the caller's own category; not-found and not-owned collapsed | AC-03, AC-04, EC-01, EC-02, FR-03, A8 | `category_repo.get_owned_by_id()` returns `None` for both cases by construction; service raises `CategoryNotFoundError` |
+| Archiving stamps `archived_at`; name/type/icon never change; the row is never removed | AC-01, EC-04, FR-04, A1, A7 | `category_repo.archive_category()` writes only `archived_at` |
+| A repeat archive request is idempotent — same result, original timestamp preserved | AC-05, FR-05, A6 | `archive_category()`'s own `if category.archived_at is None` guard |
+| An archived category is excluded from the default list | AC-06, FR-06, A3 | `category_repo.list_owned()`'s widened predicate |
+| An archived category remains viewable by id, unaffected | AC-07, FR-07, A4 | No change to `get_category()`/`get_owned_by_id()` |
+| A new Transaction/Budget referencing an archived category is refused | AC-08, AC-09, FR-08, FR-09, A2, A9 | New checks in `transaction_service.create_transaction`/`budget_service.create_budget` |
+| Response exposes exactly six fields | AC-10, FR-10, constitution PF-03 | `CategoryArchiveRead` — no ORM graph, no extra field |
+| No audit event | A11 | `category_service.archive_category()` calls no `audit.record()` |
+
+**Sequence diagram — Delete (Archive) a Category**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes only, no SQL, no parameter lists, every request into
+`API` answered back to `UI` with a status code, one workflow. The archived-category check inside
+`transaction_service.create_transaction`/`budget_service.create_budget` (A2) is **not** redrawn here or
+in either of those other epics' own diagrams — both already show `API→Svc: create(input)` as a single
+opaque call per DG-03, which does not enumerate every internal service precondition; the new branch is
+documented in prose in this story's own error-flow and business-rule tables instead.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as CategoryService
+    participant Store as Store
+
+    UI->>API: DELETE /categories/:id
+    API->>Svc: archive(input)
+    Svc->>Store: find category owned by the caller
+    Store-->>Svc: category, or none
+
+    alt Category not found, or found but not owned by the caller (AC-03/AC-04, collapsed outcome)
+        API-->>UI: 404 CATEGORY_NOT_FOUND
+    else Category owned by the caller
+        Note over Svc,Store: Idempotent — a category already archived keeps its original archive time, never overwritten by a repeat request (AC-05)
+        Svc->>Store: mark category archived, if not already
+        Store-->>Svc: category archived
+        Svc-->>API: category
+        API-->>UI: 200 category archived
+    end
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-02)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+```
+
+Only one workflow is drawn (DG-07). The `alt`/`else` block is the one flow's own branching — not a
+second flow — mirroring WM-US-05's own single-picture discipline.
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-02) | 401 | `NOT_AUTHENTICATED` |
+| Category not found, or found but not owned by the caller (AC-03, AC-04) | 404 | `CATEGORY_NOT_FOUND` |
+| A new Transaction references an archived category (AC-08) — raised by `POST /transactions`, not this endpoint | 409 | `TRANSACTION_CATEGORY_ARCHIVED` |
+| A new Budget references an archived category (AC-09) — raised by `POST /budgets`, not this endpoint | 409 | `BUDGET_CATEGORY_ARCHIVED` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitution API-02). No
+`403` (A10: no role restriction) and no `422` (this endpoint's own request carries no body to
+validate). This story's own endpoint produces only `200`, `401`, `404`, or `500` — the two `409`s above
+are produced by `POST /transactions`/`POST /budgets`, not by `DELETE /categories/{category_id}` itself.
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | `category_service.archive_category()` decides what a failed lookup means and whether archiving is a no-op; `transaction_service.create_transaction()`/`budget_service.create_budget()` decide the archived-category refusal — business logic stays in services throughout |
+| AR-02 Thin router | Required | Router binds the path param, resolves `CurrentUserDep`, calls the service, commits, formats the response — no branching on business state |
+| AR-03 Repository isolation | Required | `category_repo.get_owned_by_id()` (reused), the new `archive_category()`, and `list_owned()`'s widened predicate are queries and persistence only |
+| AR-04 DTO ↔ model mapping outside routers/repos | Required | `CategoryModel` → `CategoryArchiveRead` mapping happens in the service |
+| AR-05 No framework objects in services | Required | `archive_category()` takes plain values (`owner`, `category_id`); no `Request`/`Response` |
+| AR-06 One transaction per request | Required | Service flushes at most once; the router commits once (A13) |
+| AR-07 Router → service → repository | Required | The router never calls `category_repo` directly |
+| AR-08 Module layout | Required | No new top-level package; additions only to existing modules |
+| API-01 Versioned plural path | Required | `DELETE /api/v1/categories/{category_id}` |
+| API-02 Flat error envelope | Required | Reused from `main.py`, unchanged |
+| API-03 Status codes | Required (fits as-is) | `200` — already in API-03's literal catalog under "read/update"; archiving is a state-setting update to a still-existing resource, not a removal, so this story needs **no** extension to the catalog |
+| API-04 Prefixed error codes | Required | `TRANSACTION_CATEGORY_ARCHIVED`, `BUDGET_CATEGORY_ARCHIVED` — new, resource-prefixed, catalogued above (A2, A9) |
+| API-05 No generic status endpoint | Required | `DELETE /categories/{category_id}` is the default verb/path pairing for this operation, matching BM-US-05 A4/TM-US-05 A4/WM-US-05 — not a generic status-field setter |
+| API-06 Pagination | N/A | Single-resource operation; no list in this story |
+| API-07 Explicit response_model | Required | `response_model=CategoryArchiveRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | This route is **protected** — not added to the public list |
+| NC-01 Module naming | Required | No new module; additions to `category_repo.py`/`category_service.py`/`categories.py`/`errors.py`/`transaction_service.py`/`budget_service.py` |
+| NC-02 Naming | Required | `CategoryArchiveRead` — new (A5); no SDS registry entry, the same gap CM-US-02 A2/CM-US-04 A6 already found for their own new envelopes/extensions |
+| NC-03 No verbs except state transitions | Required | `/categories/{category_id}` — no verb in the path |
+| NC-04 Column naming | Required | `archived_at` — snake_case, matching constitution NC-04's own `created_at`/`updated_at`/`expires_at` timestamp idiom directly, and WM-US-05's own identical column name (A1) |
+| NC-05 Enum serialisation | N/A | No new enum touched by this story; `CategoryType` is unchanged |
+| NC-06 Concise service methods | Required | `category_service.archive_category`, matching `create_category`/`list_categories`/`get_category`/`update_category`'s own naming |
+| VL-01 Pydantic is the source of truth | N/A | No request body for this endpoint at all |
+| VL-02 Errors grouped | N/A | No validation scenario this endpoint can produce |
+| VL-06 Referenced entities verified before use | Required (both branches, second time together) | `404` if the category is absent/not owned (A8, reused); `409` if a *referenced* category is present but archived (A2) — the second story in this codebase (after WM-US-05) to exercise VL-06's own "`409` wrong state" branch |
+| VL-07 Decimal money | N/A | No monetary value is read or written by the archive operation itself; the reused `amount`/`amount_limit` values the new archived-category checks guard (A2) were already validated by TM-US-01/BM-US-01 |
+| SEC-06 JWT parameters | N/A | Consumed via `CurrentUserDep`, not defined here |
+| SEC-07 Authz proven by test | Required (partial) | `401` gets a dedicated test; there is no `403` case to test (A10) |
+| SEC-08 Ownership filter | Required | `get_owned_by_id()` filters by `user_id`, reused unchanged; `list_owned()`'s widened predicate stays scoped by `user_id` too |
+| SEC-09 Secrets from .env | N/A | No secret introduced by this story |
+| SEC-10 No enumeration | N/A (reasoning reused) | VL-06's absent-vs-not-owned collapse (A8) means a non-owner learns nothing from a `404` |
+| SEC-11 Rate limiting | N/A | Scoped by its own text to the invitation and activation endpoints |
+| LA-01 No secrets in logs | N/A | No credential or token handled by this story |
+| LA-02 / LA-04 Audit | N/A (by decision) | Archiving a category is not one of LA-04's three named audited events, and no AC/FR asks for one (A11) |
+| PF-01 300 ms p95 | Required | One indexed lookup plus at most one column write, no slow I/O off the request path |
+| PF-02 Indexed lookups | Required (reasoned) | `categories.id` primary key; `categories.user_id` already indexed; `list_owned()`'s new `archived_at` predicate always runs alongside that already-indexed equality filter, so no dedicated index is added speculatively (A12) |
+| PF-03 DTO projection | Required | `CategoryArchiveRead` — six fields, no ORM graph |
+| PF-04 Bounded lists | N/A | Not a list endpoint |
+| TST-01/02 AC→TC coverage | Required | Every AC and EC mapped in `test_cases.md` before any test code |
+| DOD-02 Migration | Required | One new Alembic revision adding `categories.archived_at` (A1, A12) — `down_revision = b4f1e7a2c6d9` |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| — | — | **N/A (mobile deferred)** | No category-archive screen exists this round — the same treatment every prior Category Management story gave its own endpoint. `mobile/`'s fixture-driven prototype covers only UM-US-01's invite screen (`CLAUDE.md` §5). |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | Alembic revision — add `categories.archived_at`, nullable `DateTime(timezone=True)`, `down_revision = b4f1e7a2c6d9` (A1, A12) | `backend/migrations/versions/` | Open |
+| T-02 | `CategoryModel.archived_at` column (A1) | `backend/app/models/category.py` | Open |
+| T-03 | `CategoryArchiveRead` schema (A5) | `backend/app/schemas/category.py` | Open |
+| T-04 | `category_repo.archive_category(db, *, category)` — idempotent stamp (A1, A6, A8) | `backend/app/repositories/category_repo.py` | Open |
+| T-05 | `category_repo.list_owned()` — add `archived_at IS NULL` predicate to both queries (A3) | `backend/app/repositories/category_repo.py` | Open |
+| T-06 | Add `TransactionCategoryArchivedError`, `BudgetCategoryArchivedError` (A2, A9) | `backend/app/core/errors.py` | Open |
+| T-07 | `category_service.archive_category(db, *, owner, category_id) -> CategoryArchiveRead` (A1, A2, A5, A6, A8) | `backend/app/services/category_service.py` | Open |
+| T-08 | `transaction_service.create_transaction()` — insert archived-category check after the existing category-ownership check (and after the existing WM-US-05 wallet-archived check), new fixed order (A2) | `backend/app/services/transaction_service.py` | Open |
+| T-09 | `budget_service.create_budget()` — insert archived-category check after the existing category-ownership check (and after the existing WM-US-05 wallet-archived check), new fixed order (A2) | `backend/app/services/budget_service.py` | Open |
+| T-10 | `DELETE /api/v1/categories/{category_id}` router — `200`, `CategoryArchiveRead` (A5, A10) | `backend/app/api/v1/categories.py` | Open |
+| T-11 | Integration tests written from `test_cases.md`, including the archived-category-block cases against the already-existing `POST /transactions`/`POST /budgets` endpoints (A2) | `backend/tests/integration/test_cm_us_05_delete_category.py` | Open |
+
+**Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
+was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`) before this gate is claimed —
+see the gate message for the pasted output. By eye/grep: four lanes only (`UI`, `API`, `Svc`, `Store`),
+no `Repo`/`DB` lane, no `SELECT`/`INSERT`/`UPDATE … WHERE`/`JOIN`/`rowcount`/table-and-column syntax in
+any arrow label, no `;` or `#` in any label (DG-06), and the one `UI→API` request (`DELETE
+/categories/:id`) is answered by exactly one of the two terminal branches, each carrying an HTTP status
+back to `UI` (DG-05). One workflow only (DG-07).

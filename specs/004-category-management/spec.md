@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(implemented, verified — 391 passed)* · CM-US-04 *(implemented, verified — 526 total passing)* · CM-US-03 *(spec + design + test cases written — not yet implemented)*
+> **Stories in this file:** CM-US-01 *(implemented, verified — 219 passed, 99% coverage)* · CM-US-02 *(implemented, verified — 391 passed)* · CM-US-04 *(implemented, verified — 526 total passing)* · CM-US-03 *(spec + design + test cases written — not yet implemented)* · CM-US-05 *(spec + design + test cases written — not yet implemented)*
 
 ---
 
@@ -1164,3 +1164,445 @@ category CM-US-01 creates and that CM-US-04 does not require to be set.
 - **No audit event.** Constitution LA-04 names exactly three audited event families; viewing one
   category is no closer to any of them than creating one (CM-US-01 A8), listing them (CM-US-02 A5), or
   updating one (CM-US-04 A9) already were. No AC or FR here asks for one.
+
+---
+
+## CM-US-05: Delete a Category
+
+> **IDs in this section are local to CM-US-05** (`AC-NN`/`EC-NN`/`FR-NN`/`BR-NN`/`SC-NN`), continuing
+> the demonstrated convention: every second-or-later story in this file restarts its own
+> `AC`/`EC`/`FR`/`BR`/`SC` locally, while `test_cases.md`'s `TC-NN` and `QF-NN` run continuously across
+> the epic file. `test_cases.md`'s `TC-NN` below continues from `TC-74`, and `QF-NN` from `QF-15` —
+> confirmed by direct count against that file's actual current end (`TC-73`, `QF-14`, both CM-US-03's
+> own last entries, confirmed with `grep -oE '^### TC-[0-9]+' test_cases.md | sort -t- -k2 -n | tail`
+> and the equivalent for `QF-`) before writing this section, not assumed from any prior summary or from
+> this dispatch's own brief.
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+**SRS §6 Feature-04 — searched in full; no entry at all for this story**
+> The same situation CM-US-02/03/04 were each already in: `### Feature-04: Category Management`
+> contains exactly one story, `#### US-04-01: Create a Category [MVP]` (quoted in full in this file's
+> CM-US-01 section), immediately followed by `### Feature-05: Budget Management`. There is no
+> `US-04-05` header of any kind — confirmed directly by re-reading SRS §6 Feature-04 in full for this
+> dispatch. This story is grounded the same way CM-US-02/03/04 were: in SRS §1.5's conceptual domain
+> model and SRS §2 FR-04's text directly, and in SDS §5.4.5 — not in a bare story header that does not
+> exist.
+
+**SDS §5.4.5 CM-US-05: Delete a Category (USER)**
+> * **Goal:** Remove an unused transaction category.
+
+Confirmed directly from `SDS.md` itself, not assumed from any briefing summary. **This is a materially
+different verb from WM-US-05's own SDS §5.3.5 goal** ("**Soft-delete or archive** an unused wallet
+container") — Category's own goal reads "**Remove**," the identical verb BM-US-05's own §5.5.5 goal
+("Remove an active budget tracker") and TM-US-05's own §5.6.5 goal ("Remove a transaction") both
+already use, and both of which this codebase reads literally as hard deletion (BM-US-05 `plan.md` A2;
+TM-US-05 `plan.md` A2). Read in isolation, this verb argues *for* following Budget's/Transaction's own
+hard-delete precedent, not Wallet's soft-delete one — the opposite textual signal from Wallet's own
+goal. The word "**unused**," however, is present in Category's own goal exactly as it was in Wallet's
+("an unused wallet container" / "an unused transaction category") — the identical textual anchor
+WM-US-05's own design turned on for its second design question. See *Assumptions & Dependencies* for
+why the verb is not actually what controls this story's central decision, and why "unused" still does.
+
+**SDS §2.2 Domain Object**
+> **Category:** Classification for monetary activities (`id`, `user_id`, `name`, `type`, `icon`).
+
+**The structural fact this story's whole design turns on — confirmed directly against the real models,
+not assumed from the ERD**
+> `backend/app/models/transaction.py`: `category_id: Mapped[str] = mapped_column(String(36),
+> ForeignKey("categories.id"), nullable=False, index=True)`
+> `backend/app/models/budget.py`: `category_id: Mapped[str] = mapped_column(String(36),
+> ForeignKey("categories.id"), nullable=False, index=True)`
+
+Both `transactions.category_id` and `budgets.category_id` are real, live, `NOT NULL` foreign keys into
+`categories.id` — confirmed directly by reading both model files in full, including their
+`__table_args__`, and neither carries `ON DELETE CASCADE`. This is the identical structural shape
+WM-US-05's own Source section confirmed for `wallets.id` (two live inbound foreign keys, from the same
+two entities), and the opposite of BM-US-05's/TM-US-05's own entities (`budgets.id`/`transactions.id`
+have no inbound foreign key at all, which is exactly why a hard `DELETE` was safe for both). A hard
+delete of a `categories` row referenced by an existing Transaction or Budget would either raise a
+foreign-key integrity error outright, or — on a database/configuration that does not enforce the
+constraint — silently orphan real financial history with a dangling `category_id` pointing at nothing.
+**This is the fact that controls this story's design, not the verb SDS §5.4.5 happens to use.** The
+same verb ("Remove") produced a safe hard delete for Budget/Transaction only because *their own*
+entities carry no inbound foreign key at all; here it would not, for the identical reason WM-US-05 was
+never a hard delete despite Wallet otherwise being "just another entity with a `DELETE` story."
+Category's situation is structurally Wallet's, not Budget's/Transaction's, regardless of which verb its
+own one-sentence SDS goal happens to use.
+
+**`specs/003-wallet-management/plan.md` WM-US-05 — read in full as the closest-shape precedent for
+*mechanics and for this exact verb-vs-structure question*, not copied blindly**
+> A1: "Soft-delete via a new, nullable `wallets.archived_at` timestamp column — not a boolean, and not
+> a status-style enum." · A2: "Archiving blocks new Transactions and Budgets ... SDS §5.3.5's own goal
+> text calls the wallet being archived 'unused' ..." · A7: "No cascade to `budgets` or `transactions`
+> rows — confirmed directly that both carry a live `wallet_id` foreign key ... with neither `ON DELETE
+> CASCADE` nor any other automatic cascade behaviour."
+
+This story reuses WM-US-05's own `archived_at`-timestamp design, its idempotent-archive mechanic, its
+`list_owned()` exclusion mechanic, and its cross-epic "blocks new activity" mechanic — adapted to
+Category's own fields and call sites, not re-derived from scratch, and not copied where Category's own
+situation actually differs (see *Assumptions & Dependencies* for the one place it does: Category has no
+field analogous to `balance` for the archive operation to leave untouched).
+
+**`backend/app/models/category.py`, `backend/app/repositories/category_repo.py`,
+`backend/app/core/errors.py` — confirmed directly**
+> No model in this codebase other than `wallets` (WM-US-05) has an `archived_at`/soft-delete column of
+> any kind. `category_repo.get_owned_by_id()` already exists (CM-US-01, reused unchanged by CM-US-03/
+> CM-US-04) and already collapses "no such category" and "exists, owned by someone else" to the
+> identical `None`; `CategoryNotFoundError` already exists (CM-US-04). Both are reused unchanged.
+
+**`backend/app/services/transaction_service.py::create_transaction`,
+`backend/app/services/budget_service.py::create_budget` — confirmed directly, including the WM-US-05
+check already present in both**
+> Both already carry a wallet-archived-state check (WM-US-05 A2), inserted immediately after each
+> function's own wallet-ownership lookup. Both then look up the referenced category by
+> `category_repo.get_owned_by_id()` and check only its *ownership* — neither checks any further
+> precondition on the category itself yet. This story's own new check is the category-side counterpart
+> of WM-US-05's own wallet-side check, inserted at the equivalent position in each function's own fixed
+> order, immediately after the existing category-ownership lookup and before each function's own next
+> existing step.
+
+**constitution.md NC-04, VL-06, SEC-08, PF-02, PF-03, API-03, API-04**
+> NC-04: Columns snake_case; timestamps `created_at` / `updated_at` / `expires_at` [and, by WM-US-05's
+> own precedent, `archived_at`].
+> VL-06: Referenced entities are verified to exist and be active before use — `404` if absent, `409` if
+> present but in the wrong state.
+> SEC-08: Queries for user-owned data filter on the authenticated `user_id` at the repository layer.
+> API-03: HTTP status codes: `200` read/update · `404` not found · `409` business conflict.
+> API-04: Error codes are prefixed by resource.
+
+### Out of scope for this story
+
+CM-US-01 (create, implemented) · CM-US-02 (list, implemented) · CM-US-03 (view, implemented) ·
+CM-US-04 (update, implemented) · WM-US-*, BM-US-*, TM-US-*, UM-US-04/05, DC-US-01/02 · Features 05–11 ·
+SRS §6 Feature-10/11 placeholders.
+
+Deliberately excluded even though adjacent: **un-archiving a category** — no AC, FR, or source
+document names a reversal operation, and inventing one would be a second, unrequested endpoint;
+**blocking CM-US-04's own rename/retype/icon-change operation against an archived category** (reasoned
+through explicitly, not merely declined — see *Assumptions & Dependencies*); **adding an "include
+archived" filter to CM-US-02's own list** — this story settles only the default-exclusion behavior its
+own design question requires, not a second, unrequested query parameter; and any mobile/UI screen, for
+the same reason every prior Category Management story gave its own endpoint — no SRS UXR names one
+this round, and `mobile/` stays a fixture-driven prototype scoped to UM-US-01 only (`CLAUDE.md` §5).
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User**, I want to archive one of my own categories that I no longer use, so that
+it stops cluttering my active category list and can no longer be attached to new financial activity,
+while every Transaction and Budget that already reference it stay exactly as they were.
+
+**Acceptance Criteria**:
+
+**AC-01: Successfully archive a category the caller owns**
+**Given** an authenticated User who owns a category that is not yet archived,
+**When** the User requests to delete (archive) that category by its own identifier,
+**Then** the system marks the category archived, leaves its own row and its name, type, and icon
+unchanged, and returns a success result carrying the category's identifier, owner identifier, name,
+type, icon, and the time it was archived.
+
+**AC-02: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller attempts to archive a category,
+**Then** the system denies the request before evaluating the category reference at all, archives
+nothing, and returns an unauthenticated error.
+
+**AC-03: Reject an archive request for a category that does not exist**
+**Given** an authenticated User,
+**When** the submitted category reference matches no category at all,
+**Then** the system archives nothing and returns a not-found error.
+
+**AC-04: Reject an archive request for a category owned by a different User**
+**Given** an authenticated User,
+**When** the submitted category reference matches a category owned by a different User,
+**Then** the system archives nothing and returns the same not-found outcome AC-03 describes — the
+response gives no indication of which of the two happened.
+
+**AC-05: A repeated archive request against an already-archived category succeeds again, without
+changing the recorded archive time**
+**Given** an authenticated User who owns a category that is already archived,
+**When** the User submits a second archive request for that same category,
+**Then** the system returns the same success result AC-01 describes, the category remains archived,
+and the time it was archived is identical to the time recorded by the first successful request — never
+updated to the time of the second request.
+
+**AC-06: An archived category is excluded from the caller's default category list**
+**Given** an authenticated User who owns one active category and one archived category,
+**When** the User requests their list of categories,
+**Then** the response contains only the active category, and the reported total reflects only the
+active category — the archived category is absent from both the items and the total.
+
+**AC-07: An archived category remains individually viewable by its own identifier**
+**Given** an authenticated User who owns an archived category,
+**When** the User requests that category by its own identifier,
+**Then** the system returns the category's detail exactly as View a Category (CM-US-03) already
+defines it, succeeding rather than reporting the category as not found.
+
+**AC-08: Reject a new Transaction submitted against an archived category**
+**Given** an authenticated User who owns an archived category,
+**When** the User attempts to create a Transaction referencing that category,
+**Then** the system creates nothing and returns a business-conflict error identifying the category as
+archived.
+
+**AC-09: Reject a new Budget submitted against an archived category**
+**Given** an authenticated User who owns an archived category,
+**When** the User attempts to create a Budget referencing that category,
+**Then** the system creates nothing and returns a business-conflict error identifying the category as
+archived.
+
+**AC-10: Return exactly the documented fields for a successful archive**
+**Given** an authenticated User successfully archives one of their own categories,
+**When** the system returns the success result,
+**Then** the result carries exactly the category's identifier, owner identifier, name, type, icon, and
+the time it was archived — no other field, and no data belonging to any other User.
+
+### Edge Cases
+
+**EC-01**: **A category reference that is not even a well-formed identifier** — a value such as
+`"not-a-real-id"` is refused with the same not-found outcome as a well-formed but non-existent
+reference (AC-03), the identical treatment CM-US-03 EC-01/CM-US-04 EC-08 already established for this
+same kind of reference.
+
+**EC-02**: **A caller who owns a different category of their own, attempting to archive another User's
+category** — refused with the identical outcome AC-04 describes; owning some category never entitles a
+caller to act on another User's category, the identical scoping CM-US-03 EC-02/CM-US-04 EC-11 already
+established.
+
+**EC-03**: **An ADMIN-role caller attempting to archive a category they do not own** — refused exactly
+as any other caller would be; no role elevates visibility or authority through this endpoint, mirroring
+CM-US-02 EC-04/CM-US-03 EC-03 for their own multi- and single-category operations.
+
+**EC-04**: **Archiving a category with existing Transactions or Budgets already recorded against it** —
+the archive succeeds; none of that existing history is altered, re-pointed, or removed. Only *new*
+activity against the category is refused (AC-08, AC-09) — past activity is never affected. *(There is
+no Category-specific analogue to WM-US-05's own EC-05 — "an archived wallet's stored balance is
+unaffected" — because Category carries no mutable, monetary-shaped field of its own for an archive
+operation to leave untouched; AC-01's own claim that name, type, and icon are unchanged already covers
+everything Category has. See *Assumptions & Dependencies* for why this is a reduction, not an omission.)*
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **allow** an authenticated User of any role to archive a category they
+  own, identified by its own identifier (SDS §5.4.5).
+- **FR-02**: The system must **deny** the operation to unauthenticated callers, evaluating credentials
+  before the category reference is examined at all (constitution API-08; mirrors CM-US-01 FR-02,
+  CM-US-03 FR-02, CM-US-04 FR-02).
+- **FR-03**: The system must **require** the submitted category reference to resolve to a category
+  owned by the authenticated caller, and **refuse** the request with an identical outcome whether no
+  such category exists at all or it exists and is owned by a different User (AC-03, AC-04, EC-01,
+  EC-02; constitution SEC-08, VL-06).
+- **FR-04**: The system must **mark** a category archived by recording the time it was archived,
+  without altering its name, type, or icon, and without removing its own row (AC-01, EC-04).
+- **FR-05**: The system must **treat a repeated archive request against an already-archived category as
+  a success**, returning the identical result, and must **never** overwrite the originally recorded
+  archive time with the time of a later request (AC-05).
+- **FR-06**: The system must **exclude** an archived category from the caller's default category list
+  (CM-US-02), for both the returned items and the reported total (AC-06).
+- **FR-07**: The system must **continue to return** an archived category's full detail, unchanged,
+  through View a Category (CM-US-03), identified by its own identifier (AC-07).
+- **FR-08**: The system must **refuse** a new Transaction that references an archived category, with a
+  business-conflict error, creating nothing (AC-08).
+- **FR-09**: The system must **refuse** a new Budget that references an archived category, with a
+  business-conflict error, creating nothing (AC-09).
+- **FR-10**: The system must **return**, on a successful archive, exactly the category's identifier,
+  owner identifier, name, type, icon, and the time it was archived (AC-10).
+
+#### Business Rules
+
+- **BR-01**: A category's ownership for this operation is established the same way CM-US-01 BR-01,
+  CM-US-03 BR-01, and CM-US-04 BR-01 already established it — directly by the category's own
+  `user_id` column. A category reference that does not resolve to a row the caller owns is refused
+  identically whether no such row exists at all or it exists and belongs to a different User (FR-03).
+- **BR-02**: Archiving is recorded as a timestamp, not a boolean flag — the timestamp doubles as both
+  the marker that a category is archived and the record of when, and is set at most once: a later
+  archive request against an already-archived category never overwrites it (FR-05, BR-02 itself).
+- **BR-03**: Archiving a category never removes its row and never changes its name, type, or icon —
+  only its archived state changes (FR-04).
+- **BR-04**: An archived category is excluded from the caller's default category list but remains
+  individually viewable by its own identifier — this story does not hide a category's own detail from
+  a caller who already knows how to find it directly, only from the undirected default list (FR-06,
+  FR-07).
+- **BR-05**: An archived category may not be referenced by a new Transaction or by a new Budget (FR-08,
+  FR-09). This restriction does not reach CM-US-04's own name/type/icon update operation, which is
+  unaffected by a category's archived state (see *Assumptions & Dependencies*).
+
+#### Key Entities
+
+- **Category**: A label a User defines to classify money movement as one kind of income or expense
+  (SRS §1.5). Carries `id`, `user_id`, `name`, `type`, and `icon` (SDS §2.2, §4.3.3; CM-US-01, CM-US-04),
+  and — new in this story — a record of whether, and when, it has been archived. This is the second
+  Category Management story to introduce a new concept onto the Category entity itself, after CM-US-04
+  added `icon`.
+- **Transaction**: Reused from Feature-06, unchanged in shape. This story adds a new precondition to
+  its own creation (TM-US-01), already extended once by WM-US-05 for wallet archiving — a referenced
+  category must also not be archived — but reads and writes no Transaction field itself, and removes no
+  Transaction row.
+- **Budget**: Reused from Feature-05, unchanged in shape. This story adds the identical new precondition
+  to its own creation (BM-US-01) that it adds to Transaction's, for the same reason.
+- **User**: Reused from Feature-01/Feature-02 with no new column. The authenticated caller's own
+  ownership of the category being archived is the only scope this story ever checks (constitution
+  SEC-08).
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: An authenticated User can archive one of their own categories in one call, and the result
+  confirms both the archived state and when it occurred.
+- **SC-02**: No category can be archived without an authenticated caller.
+- **SC-03**: A category can never be archived by a User who does not own it — whether because the
+  reference does not exist at all, or because it belongs to someone else, the request is refused
+  identically either way.
+- **SC-04**: Archiving a category never changes its own name, type, or icon, and never removes its row
+  or any history recorded against it.
+- **SC-05**: An archived category disappears from the caller's default category list but remains
+  reachable by its own identifier, and can never again be the target of a new Transaction or a new
+  Budget.
+- **SC-06**: Repeating the archive request against an already-archived category is always safe — it
+  never fails, and it never moves the recorded archive time.
+
+### Assumptions & Dependencies
+
+- **Login (SS-US-01) and Create a Category (CM-US-01) are already implemented**, and **List Categories
+  (CM-US-02), View a Category (CM-US-03), and Update a Category (CM-US-04) are also already
+  implemented**. Every acceptance criterion here presupposes at least one category already on record,
+  owned by the authenticated caller, and this story is the first in the epic that can exercise a
+  complete chain of every prior Category Management story's own already-shipped behavior (list, view,
+  update) as part of its own verification — the identical dependency shape WM-US-05 accumulated on its
+  own four predecessors.
+
+- **The design question this story turns on first: what does "Remove an unused transaction category"
+  mean concretely, given that Category's own SDS goal uses "Remove," not "soft-delete or archive"?
+  Reasoned through in full, not defaulted to either sibling's precedent by verb-matching alone.**
+
+  Two readings compete on text alone. Read against BM-US-05's/TM-US-05's own goals ("Remove an active
+  budget tracker" / "Remove a transaction"), both already settled as literal hard deletion, Category's
+  identical verb argues for a hard `DELETE /categories/{id}`. Read against WM-US-05's own goal
+  ("Soft-delete or archive an unused wallet container"), Category's shared word "unused" argues for the
+  identical soft-delete treatment Wallet received. **The verb alone is not decisive — the structural
+  fact resolves it.** `backend/app/models/transaction.py` and `backend/app/models/budget.py` both
+  confirm `category_id` is a real, live, `NOT NULL` foreign key into `categories.id`, with neither
+  `ON DELETE CASCADE` nor any other automatic cascade — the identical shape WM-US-05's own Source
+  section confirmed for `wallets.id`, and the precise opposite of `budgets.id`/`transactions.id` (no
+  inbound foreign key at all), which is *why* "Remove" was safe to read literally for those two
+  entities. The same verb does not carry the same safe meaning here: a literal hard delete of a
+  `categories` row already referenced by a Transaction or a Budget would either violate referential
+  integrity outright or silently orphan real financial history — exactly the hazard that made Wallet's
+  own "Remove"-adjacent goal text resolve to soft-delete rather than hard delete. **Decision: identical
+  to WM-US-05 — a new, nullable `categories.archived_at` timestamp column.** `NULL` (the default) means
+  active; a non-`NULL` value means archived and records the moment, mirroring WM-US-05 `plan.md` A1's
+  own rejection of a boolean (cannot prove AC-05's idempotency guarantee by itself) and of a
+  `users.status`-style enum (Category's archive concept is two-state and one-directional, exactly as
+  Wallet's is — no third state and no reversal operation is named by any source here either).
+  `archived_at` also matches constitution NC-04's own timestamp-naming idiom directly, the identical
+  basis WM-US-05 cited. This is a new column the SDS §4.3.3 ERD does not list — the identical gap
+  CM-US-01 G1 already corrected once for `icon` and CM-US-04 A5 added the column for — but, as WM-US-05
+  itself reasoned for `wallets`, "soft-delete or archive" (and, here, "Remove an unused ... category,"
+  once the verb's surface reading is set aside in favor of what the schema actually permits) is this
+  story's own explicit, stated goal: the capability cannot exist at all without some persisted marker,
+  so adding the one column it requires executes the SDS's own instruction rather than inventing a
+  capability beyond it. Full column/DTO/repository detail: `plan.md` A1.
+
+- **The second design question: does archiving a category block new Transactions or Budgets from being
+  created against it? Reasoned through explicitly, exactly as WM-US-05 reasoned through the identical
+  question for Wallet, because the same textual anchor is present here too.**
+
+  SDS §5.4.5's own goal text names the category being archived "**unused**" — the identical word
+  WM-US-05's own goal used for Wallet, and the word that settled WM-US-05's own identical question. If
+  archiving left a category exactly as usable as before, the word "archived" (and "unused," which
+  describes the category *before* this operation even runs) would describe nothing the system actually
+  enforces — a caller could keep logging Transactions and Budgets against a category the system calls
+  "archived," with the label carrying no operational meaning at all. Constitution VL-06's own "`409` if
+  present but in the wrong state" branch already has its first real case from WM-US-05 (a wallet in the
+  "archived" state); this story gives that same branch a second, independent case — a category in the
+  "archived" state — through the identical two call sites WM-US-05 already touched for Wallet.
+
+  **Decision: yes, archiving blocks new Transactions and Budgets, mirroring WM-US-05 A2 exactly, at the
+  identical call sites, already carrying WM-US-05's own check:**
+
+  - `transaction_service.create_transaction` (`backend/app/services/transaction_service.py`) already
+    carries the fixed order **wallet ownership → wallet archived-state → category ownership →
+    category-type consistency → balance sufficiency** (WM-US-05 A2). This story extends that order by
+    one more step, inserted immediately after the existing category-ownership lookup and before the
+    existing category-type-consistency check: **wallet ownership → wallet archived-state → category
+    ownership → category archived-state → category-type consistency → balance sufficiency.** A new
+    error, `TransactionCategoryArchivedError` (`409 TRANSACTION_CATEGORY_ARCHIVED`), is raised when the
+    category resolves and is owned by the caller but its `archived_at` is not `NULL`.
+  - `budget_service.create_budget` (`backend/app/services/budget_service.py`) gains the identical check
+    in the identical relative position, extending its own already-WM-US-05-extended order the same way:
+    **wallet ownership → wallet archived-state → category ownership → category archived-state →
+    duplicate-budget check.** A new error, `BudgetCategoryArchivedError` (`409
+    BUDGET_CATEGORY_ARCHIVED`), is raised the same way.
+
+  This is a smaller footprint than WM-US-05's own cross-epic change, not a larger one: both call sites
+  already carry an archived-*wallet* check from WM-US-05 at the equivalent position in their own fixed
+  order, so this story's own archived-*category* check is one more `if` branch next to one already
+  there, using data (`category.archived_at`) the existing category-ownership lookup already fetches —
+  no new query, no new repository call, and no reordering of any existing step. **Neither service's own
+  sequence diagram is redrawn**, for the identical reason WM-US-05 A2 already gave: both already show
+  `API→Svc: create(input)` as a single opaque call per DG-03's own convention, which does not enumerate
+  every internal service precondition; the new branch is documented in prose in this story's own
+  error-flow and business-rule tables instead. **Tests for this refusal live in this story's own test
+  file** (`test_cm_us_05_delete_category.py`), exercising the already-existing `POST /transactions`/
+  `POST /budgets` endpoints directly — not a retroactive edit to TM-US-01's/BM-US-01's own closed
+  `spec.md`/`plan.md`/`test_cases.md` sections (`CLAUDE.md` §1.1: existing entries are never renumbered
+  or rewritten).
+
+  **Why "archiving does not block new activity" was rejected, not merely not chosen.** The identical
+  reasoning WM-US-05 already gave applies verbatim: it would make "archived" a label with no enforced
+  consequence, contradicting the one substantive word ("unused") Category's own goal text actually
+  supplies, the same word that already settled this exact question once for Wallet.
+
+- **The third design question: does an archived category still appear in `GET /categories` (CM-US-02's
+  list) and `GET /categories/{id}` (CM-US-03's view)? Reasoned through for each endpoint separately,
+  mirroring WM-US-05's own identical two-endpoint reasoning.**
+
+  **`GET /categories` excludes an archived category by default**, for the identical reason WM-US-02's
+  own list excludes an archived wallet (WM-US-05 A3): `category_repo.list_owned()` gains one additional,
+  additive `WHERE` predicate — `CategoryModel.archived_at.is_(None)` — applied to *both* its existing
+  queries (the bounded page and the total count), so an archived category disappears from the caller's
+  default list without reopening CM-US-02's own pagination, ordering, or ownership-scoping decisions.
+  No opt-in "include archived" parameter is added — no source asks for one, and inventing it would be
+  scope creep this codebase's own "fewest invented rules" discipline (CM-US-02 A8, WM-US-04 A1)
+  repeatedly declines.
+
+  **`GET /categories/{category_id}` is completely unaffected — no code change.** An archived category
+  continues to resolve through View a Category exactly as before (AC-07, FR-07): a caller who already
+  knows a category's id can still see what it is and was, the same reasoning CM-US-03 A2 itself already
+  used to reuse `CategoryRead` unchanged for its own single-resource read. `get_owned_by_id()` in
+  particular must **not** start filtering by `archived_at` — this story's own archive operation (see
+  below) reuses that same function to find an *already*-archived category, which is exactly what makes
+  FR-05's idempotency guarantee possible at all — the identical constraint WM-US-05 A4 placed on
+  `wallet_repo.get_owned_by_id()`.
+
+- **The one place Category's own situation genuinely differs from Wallet's: there is no field
+  analogous to `balance` for the archive operation to leave untouched, and no dedicated edge case is
+  invented to compensate.** WM-US-05 EC-05 exists specifically because `balance` is a monetary field a
+  careless implementation could plausibly disturb as a side effect of archiving (e.g. some imagined
+  "zero out an archived wallet" behavior nobody actually asked for, but worth a dedicated,
+  independently-verifiable assertion against). Category carries no such field: `id`, `user_id`, `name`,
+  `type`, and `icon` are its only attributes besides the new `archived_at`, and AC-01's own general
+  claim — name, type, and icon are unchanged by archiving — already covers all three with nothing left
+  over for a narrower, monetary-specific edge case to add. This is recorded here as a deliberate
+  reduction from Wallet's own edge-case count (four rather than five), not a silently dropped case:
+  nothing is left unverified, there is simply nothing Category has that `balance` had.
+
+- **This story's archived-category restriction does not extend to CM-US-04's own update (rename/
+  retype/icon-change) operation — reasoned through explicitly, mirroring WM-US-05 A14's identical
+  reasoning for Wallet's own rename/retype operation.** `name`, `type`, and `icon` are cosmetic labels,
+  not financial exposure — none of the three carries monetary meaning the way a Transaction amount or a
+  Budget limit does. Allowing a rename, retype, or icon change on an archived category reintroduces
+  none of the harm archiving exists to prevent (new financial activity accumulating against a category
+  the caller has put away), no source names such a restriction, and `category_service.update_category()`
+  is therefore left completely untouched by this story — the identical "cosmetic fields stay editable"
+  conclusion WM-US-05 A14 reached for Wallet's own `name`/`type`, now reached independently for
+  Category's three mutable fields rather than copied by assumption. Category's `type` field, unlike
+  Wallet's free-text one, is a closed `INCOME`/`EXPENSE` enum (CM-US-01 A2) — but this does not change
+  the conclusion: BR-04 (CM-US-04) already established that a category's `type` carries no standing
+  consistency invariant against any Transaction or Budget that references it even while *active*, so an
+  archived category's `type` being retyped raises no new concern an active category's own retyping
+  did not already settle.
+
+- **No "system category" question to re-litigate.** CM-US-02 A7 already resolved that no ownerless
+  category exists in this codebase's domain model; this story only archives rows that already carry a
+  real `user_id`, exactly as every other Category Management story has.

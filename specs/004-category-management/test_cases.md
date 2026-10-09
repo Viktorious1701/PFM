@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** CM-US-01 *(TC-01…TC-17, all PASS)* · CM-US-02 *(TC-18…TC-34, all PASS)* · CM-US-04 *(TC-35…TC-63, all PASS)* · CM-US-03 *(TC-64…TC-73, all PASS)*
+> **Stories in this file:** CM-US-01 *(TC-01…TC-17, all PASS)* · CM-US-02 *(TC-18…TC-34, all PASS)* · CM-US-04 *(TC-35…TC-63, all PASS)* · CM-US-03 *(TC-64…TC-73, all PASS)* · CM-US-05 *(TC-74…TC-93, not yet run)*
 
 ---
 
@@ -1271,4 +1271,375 @@ in this codebase's fixtures ever acquires one).
 - **When:** The caller requests a category by an `id` that does not match any category in the system
 - **Then:** The response is `401` `NOT_AUTHENTICATED`, not `404` — mirrors WM-US-03 TC-70/TM-US-03's own ordering
 - **AC:** AC-02, FR-02
+- **Type:** integration
+
+---
+
+## CM-US-05: Delete a Category
+
+> **IDs in this section are local to CM-US-05** — except `TC-NN`, which continues this epic file's own
+> numbering: CM-US-03 used `TC-64`…`TC-73`, so this story continues from `TC-74`. **`QF-NN` also
+> continues here, from `QF-15`** — confirmed by direct count of this file's own entries, not assumed:
+> CM-US-01 used `QF-01`…`QF-04`, CM-US-02 used `QF-05`…`QF-07`, CM-US-04 used `QF-08`…`QF-13`, and
+> CM-US-03 used `QF-14`, so this file's own last `QF` entry is `QF-14`.
+
+### Quality Findings
+
+#### QF-15
+
+**Description.** `spec.md` AC-05/FR-05 require a repeated archive request against an already-archived
+category to succeed again *without* moving the recorded archive time — the identical risk WM-US-05's
+own QF-14 already flagged for Wallet. A test asserting only "the second request also returns `200`"
+would not distinguish that from a latent bug where `category_repo.archive_category()` overwrites
+`archived_at` with a fresh timestamp on every call — both would look identical if only the status code
+and the mere presence of a timestamp are checked.
+
+**Impact.** A future refactor that dropped `archive_category()`'s own `if category.archived_at is None`
+guard (`plan.md` A6) and unconditionally re-stamped the column on every call would silently turn this
+story's idempotency guarantee into something else — "the time of the *most recent* archive request" —
+and a loosely-written test would not catch it.
+
+**Recommendation.** `TC-82` captures the exact `archived_at` value from the **first** successful archive
+request, issues a **second** archive request against the same category some time later, and asserts the
+second response's `archived_at` is byte-identical to the first — not merely present, and not merely
+unchanged in some looser sense.
+
+#### QF-16
+
+**Description.** `spec.md` AC-06/FR-06 require an archived category to be excluded from **both** the
+returned `items` **and** the reported `total` of `GET /categories` — the identical risk WM-US-05's own
+QF-15 already flagged for Wallet's own list. A test checking only that `items` excludes the archived
+category would not catch a copy-paste that added the new `WHERE` clause to the items query but not the
+count query, in which case `total` would silently over-count by exactly the number of archived
+categories.
+
+**Impact.** A weaker test suite could pass with a `total` that includes archived categories even though
+`items` correctly excludes them — wrong, but not obviously wrong from `items` alone.
+
+**Recommendation.** `TC-84` seeds one active and one archived category for the same caller and asserts
+**both** `items` (excludes the archived one) **and** `total` (counts only the active one) in the same
+test. `TC-85` extends this to a caller whose *only* category is archived, proving the list becomes
+empty with a `total` of `0`, not `1`.
+
+#### QF-17
+
+**Description.** `spec.md` AC-03/AC-04 require a category reference that does not exist at all and one
+that exists but belongs to a different User to produce "the same not-found outcome" — the identical
+ownership-collapse risk CM-US-03 QF-12/CM-US-04 QF-11/WM-US-05 QF-16 each already flagged for their own
+lookups, now applying to this story's own archive operation. A test that merely checks both cases
+return *some* `404` would not distinguish "genuinely identical" from "two different messages that both
+happen to carry status 404."
+
+**Impact.** A weaker test could pass even if a future change accidentally made the two cases
+distinguishable — the same class of minor information leak about another User's data those earlier
+findings already warned against.
+
+**Recommendation.** `TC-78` compares the full response body of the ownership-mismatch case against
+`TC-77`'s not-found-at-all case and asserts they match exactly — `error_code`, `message`, and `details`
+all identical, not merely the status code.
+
+#### QF-18
+
+**Description.** `spec.md` AC-08/AC-09 require a new Transaction or Budget referencing an archived
+category to be refused — but a test asserting only "the request did not return `201`" would not prove
+*which* precondition actually failed, nor that nothing was persisted. Because the archived-category
+check sits in the **middle** of each service's own existing, fixed check order (`plan.md` A2: wallet
+ownership → wallet archived-state → category ownership → category archived-state → …), a
+loosely-written test could pass even if the archived check were accidentally removed and a *different*,
+coincidental failure (a type mismatch or a duplicate budget, for instance) produced the only
+`409`/`422` the test happened to check for — the identical risk WM-US-05's own QF-17 already flagged
+for Wallet's own two cross-epic checks.
+
+**Impact.** A regression that silently dropped the new archived-category check entirely — allowing new
+financial activity against a "put away" category, exactly the operationally-meaningless-label risk
+`spec.md`'s own Assumptions section reasons through — could pass a test that only checks "some error
+came back."
+
+**Recommendation.** `TC-88`/`TC-89` each assert the exact `error_code`
+(`TRANSACTION_CATEGORY_ARCHIVED`/`BUDGET_CATEGORY_ARCHIVED`), the exact status (`409`), and — by direct
+inspection of the `transactions`/`budgets` tables through the test's own `db` session — that **no** new
+row was created, closing both "wrong reason" and "silently succeeded anyway" failure modes in one test.
+
+#### QF-19
+
+**Description.** `plan.md` A5 records that `CategoryRead` stays unchanged and `GET
+/categories/{category_id}` therefore gives no signal that a category is archived — a deliberate,
+accepted limitation, not an oversight, the identical shape WM-US-05's own QF-18 already flagged for
+Wallet. The risk is the opposite direction from every other finding in this file: a *future* change
+that widened `CategoryRead` to include `archived_at` (for understandable reasons — convenience,
+symmetry) would silently touch CM-US-01/02/03/04's own already-shipped, already-verified five-field
+response contracts (`TC-14`, `TC-19`, `TC-68`, and CM-US-04's own update response) without anyone
+re-deriving whether that was still safe. The risk is sharper here than it was for Wallet: `CategoryRead`
+has already been widened once before, by CM-US-04 A6, so a second widening is a smaller-looking,
+easier-to-rationalise change than the first one was.
+
+**Impact.** Without a positive assertion, a future, well-intentioned change could widen a shared DTO
+across four stories at once and no test in this file would flag it.
+
+**Recommendation.** `TC-87` asserts `GET /categories/{category_id}` for an **archived** category still
+returns *exactly* `CategoryRead`'s current five keys — no more — the same "assert the limit positively
+so a future accidental leak is caught" discipline WM-US-01 QF-04's own `TC-18` first established in this
+codebase, and WM-US-05's own `TC-84` already reused for Wallet.
+
+### Acceptance Criteria Classification
+
+No category-archive screen exists in `mobile/` this round, and no SRS UXR names one — the same basis
+every prior Category Management story used for its own all-`[API]` classification.
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Successfully archive a category the caller owns | **[API]** | No UI surface exists or is named by any UXR this round |
+| AC-02 | Deny access to unauthenticated callers | **[API]** | Backend authorization contract |
+| AC-03 | Reject an archive request for a category that does not exist | **[API]** | Persistence/ownership contract; bounded by QF-17 |
+| AC-04 | Reject an archive request for a category owned by a different User | **[API]** | Persistence/ownership contract; bounded by QF-17 |
+| AC-05 | A repeated archive request succeeds again, archive time unchanged | **[API]** | Idempotency contract; bounded by QF-15 |
+| AC-06 | An archived category is excluded from the caller's default category list | **[API]** | Cross-endpoint contract (CM-US-02); bounded by QF-16 |
+| AC-07 | An archived category remains individually viewable by its own identifier | **[API]** | Cross-endpoint contract (CM-US-03); bounded by QF-19 |
+| AC-08 | Reject a new Transaction submitted against an archived category | **[API]** | Cross-epic business-conflict contract; bounded by QF-18 |
+| AC-09 | Reject a new Budget submitted against an archived category | **[API]** | Cross-epic business-conflict contract; bounded by QF-18 |
+| AC-10 | Return exactly the documented fields for a successful archive | **[API]** | Response-payload contract |
+| EC-01 | A category reference that is not a well-formed identifier | **[API]** | Backend rule (no separate format validation) |
+| EC-02 | A caller who owns a different category attempts to archive another User's category | **[API]** | Persistence/ownership contract; bounded by QF-17 |
+| EC-03 | An ADMIN-role caller attempting to archive a category they do not own | **[API]** | Ownership contract independent of role |
+| EC-04 | Archiving a category with existing Transactions/Budgets already recorded against it | **[API]** | Backend rule (history is untouched) |
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) |
+|---|---|---|---|
+| AC-01 | [API] | TC-74, TC-75, TC-83 | — |
+| AC-02 | [API] | TC-76, TC-92 | — |
+| AC-03 | [API] | TC-77 | — |
+| AC-04 | [API] | TC-78 | — |
+| AC-05 | [API] | TC-82 | — |
+| AC-06 | [API] | TC-84, TC-85 | — |
+| AC-07 | [API] | TC-86, TC-87 | — |
+| AC-08 | [API] | TC-88 | — |
+| AC-09 | [API] | TC-89 | — |
+| AC-10 | [API] | TC-91 | — |
+| EC-01 | [API] | TC-79 | — |
+| EC-02 | [API] | TC-80 | — |
+| EC-03 | [API] | TC-81 | — |
+| EC-04 | [API] | TC-90 | — |
+
+> Every AC and EC has at least one integration TC. There is no `[BOTH]` or `[UI]` row — no
+> category-archive screen exists this round, and none is named by any SRS UXR. **Known coverage limits,
+> accepted:** `GET /categories/{category_id}` never reveals a category's archived state (`plan.md` A5)
+> — `TC-87` only proves the response shape does **not** leak it, not that a caller can detect it that
+> way, which this story's own design does not provide for. There is no Category-specific analogue to
+> WM-US-05's own `EC-05` ("archived wallet's stored balance unaffected") — Category carries no mutable
+> field analogous to `balance` for an archive operation to disturb, so `TC-83`'s own general
+> name/type/icon-unchanged assertion (under AC-01) already covers everything Category has (`spec.md`
+> Assumptions).
+
+### Test Implementation Map *(filled at step 4)*
+
+Will be implemented in `backend/tests/integration/test_cm_us_05_delete_category.py`, one test per
+`TC-NN`, mirroring `test_wm_us_05_delete_wallet.py`'s own red-then-green discipline: run red first with
+the implementation files stashed out, then green once restored. Not yet implemented — this dispatch is
+artifacts-only (steps 1–3).
+
+| TC | pytest node id (planned) | Result |
+|---|---|---|
+| TC-74 | `test_an_authenticated_owner_archives_a_category_200_other_fields_unchanged` | Not yet run |
+| TC-75 | `test_archiving_a_category_persists_the_new_state_on_the_same_single_row` | Not yet run |
+| TC-76 | `test_an_unauthenticated_caller_is_denied_with_401_and_nothing_is_archived` | Not yet run |
+| TC-77 | `test_a_category_id_matching_no_category_at_all_is_rejected_with_404` | Not yet run |
+| TC-78 | `test_a_category_belonging_to_a_different_user_gets_the_identical_404_as_not_found` | Not yet run |
+| TC-79 | `test_a_malformed_category_reference_gets_the_same_404_as_a_well_formed_unknown_one` | Not yet run |
+| TC-80 | `test_a_caller_who_owns_a_different_category_cannot_archive_another_users_category` | Not yet run |
+| TC-81 | `test_an_admin_role_caller_cannot_archive_another_users_category_through_this_endpoint` | Not yet run |
+| TC-82 | `test_a_repeated_archive_request_succeeds_again_with_the_identical_archive_time` | Not yet run |
+| TC-83 | `test_archiving_leaves_name_type_and_icon_unchanged_verified_against_storage` | Not yet run |
+| TC-84 | `test_an_archived_category_is_excluded_from_both_items_and_total_of_the_default_list` | Not yet run |
+| TC-85 | `test_a_caller_whose_only_category_is_archived_receives_an_empty_list_and_zero_total` | Not yet run |
+| TC-86 | `test_an_archived_category_can_still_be_viewed_directly_by_its_own_identifier` | Not yet run |
+| TC-87 | `test_viewing_an_archived_category_exposes_exactly_the_five_original_fields` | Not yet run |
+| TC-88 | `test_a_new_transaction_against_an_archived_category_is_rejected_with_409` | Not yet run |
+| TC-89 | `test_a_new_budget_against_an_archived_category_is_rejected_with_409` | Not yet run |
+| TC-90 | `test_archiving_a_category_with_existing_transactions_and_budgets_leaves_them_untouched` | Not yet run |
+| TC-91 | `test_the_response_exposes_exactly_the_six_documented_fields` | Not yet run |
+| TC-92 | `test_credentials_are_evaluated_before_the_category_reference_is_looked_up` | Not yet run |
+| TC-93 | `test_updating_an_archived_categorys_name_type_or_icon_via_patch_still_succeeds` | Not yet run |
+
+---
+
+### TC-74: An authenticated owner archives a category — 200 with the archived category, other fields unchanged
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category with `name` `"Old Groceries"`, `type` `"EXPENSE"`, `icon` `"shopping-cart"`, not yet archived
+- **When:** `DELETE /api/v1/categories/{id}` is sent
+- **Then:** The response is `200`; the body carries `id` unchanged, `name`/`type`/`icon` unchanged, and `archived_at` set to a real timestamp
+- **AC:** AC-01, FR-01, FR-04, FR-10
+- **Type:** integration
+
+### TC-75: Archiving a category persists the new state on the same single row
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category
+- **When:** The category is archived successfully
+- **Then:** Direct inspection of the `categories` row for that id shows `archived_at` set to a non-NULL value; exactly one row still exists for that category id
+- **AC:** AC-01, FR-04
+- **Type:** integration
+
+### TC-76: An unauthenticated caller is denied with 401
+
+- **US:** CM-US-05
+- **Given:** A caller presenting no `Authorization` header
+- **When:** An archive request is submitted against an existing category belonging to some other, real User
+- **Then:** The response is `401` with `error_code` `NOT_AUTHENTICATED`; the target category's `archived_at` remains `NULL`
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-77: A category_id matching no category at all is rejected with 404 CATEGORY_NOT_FOUND
+
+- **US:** CM-US-05
+- **Given:** An authenticated User
+- **When:** `DELETE /api/v1/categories/{id}` is sent with a `category_id` that matches no category in the system
+- **Then:** The response is `404` with `error_code` `CATEGORY_NOT_FOUND`; nothing is archived
+- **AC:** AC-03, FR-03
+- **Type:** integration
+
+### TC-78: A category_id belonging to a different User is rejected with the identical outcome as TC-77
+
+- **US:** CM-US-05
+- **Given:** Two authenticated Users `A` and `B`, where `B` owns a category
+- **When:** `A` submits a `DELETE` against `B`'s `category_id`
+- **Then:** The response is `404`; its `error_code`, `message`, and `details` are identical to TC-77's response; `B`'s category remains unarchived
+- **AC:** AC-04, FR-03 *(assertion technique per QF-17)*
+- **Type:** integration
+
+### TC-79: A malformed category reference gets the same 404 as a well-formed but non-existent one
+
+- **US:** CM-US-05
+- **Given:** An authenticated User
+- **When:** `DELETE /api/v1/categories/not-a-real-id` is sent
+- **Then:** The response is `404` `CATEGORY_NOT_FOUND`, identical to TC-77's response
+- **AC:** EC-01, FR-03
+- **Type:** integration
+
+### TC-80: A caller who owns a different category of their own cannot archive another User's category
+
+- **US:** CM-US-05
+- **Given:** Two authenticated Users `A` (owns category `CA`) and `B` (owns category `CB`)
+- **When:** `A` submits a `DELETE` against `CB`'s `category_id`
+- **Then:** The response is `404` `CATEGORY_NOT_FOUND`, identical to TC-77/TC-78's responses; `CB` remains unarchived, and `A`'s own `CA` is unaffected
+- **AC:** EC-02, FR-03
+- **Type:** integration
+
+### TC-81: An ADMIN-role caller cannot archive another User's category through this endpoint
+
+- **US:** CM-US-05
+- **Given:** An authenticated User whose role is `ADMIN`, and a second User (any role) who owns a category of their own
+- **When:** The ADMIN submits a `DELETE` against the other User's `category_id`
+- **Then:** The response is `404` `CATEGORY_NOT_FOUND` — the same outcome any non-ADMIN caller would get; no role grants authority through this endpoint
+- **AC:** EC-03, FR-03
+- **Type:** integration
+
+### TC-82: A repeated archive request against an already-archived category succeeds again, with the identical archive time as the first request
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category; a first `DELETE` has already archived it, recording `archived_at` at time `T1`
+- **When:** The User submits a second `DELETE` against the same category
+- **Then:** The response is `200`, not `404` or `409`; the second response's `archived_at` equals `T1` exactly — not a new, later timestamp
+- **AC:** AC-05, FR-05 *(assertion technique per QF-15)*
+- **Type:** integration
+
+### TC-83: Archiving a category leaves name, type, and icon unchanged, verified against the stored row directly
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category with `name` `"Old Groceries"`, `type` `"EXPENSE"`, `icon` `"shopping-cart"`
+- **When:** The category is archived successfully
+- **Then:** A direct read of the `categories` row through the test's own `db` session confirms `name`/`type`/`icon` are identical to their pre-archive values
+- **AC:** AC-01, FR-04, BR-03
+- **Type:** integration
+
+### TC-84: An archived category is excluded from both the items and the total of the caller's default category list
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns one active category and one category that has already been archived
+- **When:** The User requests `GET /api/v1/categories`
+- **Then:** The response's `items` contains only the active category, and `total` is `1` — the archived category appears in neither
+- **AC:** AC-06, FR-06 *(assertion technique per QF-16)*
+- **Type:** integration
+
+### TC-85: A caller whose only category is archived receives an empty list and a zero total
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns exactly one category, already archived
+- **When:** The User requests `GET /api/v1/categories`
+- **Then:** The response's `items` is empty and `total` is `0`, not `1`
+- **AC:** AC-06, FR-06 *(assertion technique per QF-16)*
+- **Type:** integration
+
+### TC-86: An archived category can still be viewed directly by its own identifier
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category that has already been archived
+- **When:** The User requests `GET /api/v1/categories/{id}` for that category
+- **Then:** The response is `200`, not `404`; the body carries the category's full, unchanged detail exactly as CM-US-03 already defines it
+- **AC:** AC-07, FR-07
+- **Type:** integration
+
+### TC-87: Viewing an archived category still exposes exactly the five fields CM-US-04 already established — no archived indicator leaks into CategoryRead
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category that has already been archived
+- **When:** The User requests `GET /api/v1/categories/{id}` for that category
+- **Then:** The response body's keys are exactly `id`, `user_id`, `name`, `type`, `icon` — no more, and in particular no `archived_at`, `is_archived`, or any other archived-state field
+- **AC:** AC-07, FR-07 *(assertion technique per QF-19)*
+- **Type:** integration
+
+### TC-88: A new Transaction referencing an archived category is rejected with 409 TRANSACTION_CATEGORY_ARCHIVED; nothing is created
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category that has already been archived, and an existing wallet of their own
+- **When:** The User submits `POST /api/v1/transactions` referencing the archived category
+- **Then:** The response is `409` with `error_code` `TRANSACTION_CATEGORY_ARCHIVED`; direct inspection of the `transactions` table confirms no new row was created
+- **AC:** AC-08, FR-08 *(assertion technique per QF-18)*
+- **Type:** integration
+
+### TC-89: A new Budget referencing an archived category is rejected with 409 BUDGET_CATEGORY_ARCHIVED; nothing is created
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category that has already been archived, and an existing wallet of their own
+- **When:** The User submits `POST /api/v1/budgets` referencing the archived category
+- **Then:** The response is `409` with `error_code` `BUDGET_CATEGORY_ARCHIVED`; direct inspection of the `budgets` table confirms no new row was created
+- **AC:** AC-09, FR-09 *(assertion technique per QF-18)*
+- **Type:** integration
+
+### TC-90: Archiving a category with existing Transactions and Budgets already recorded against it succeeds, and leaves that history untouched
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category with one existing Transaction and one existing Budget already recorded against it
+- **When:** The category is archived successfully
+- **Then:** The response is `200`; the existing Transaction and Budget rows are unchanged — same ids, same `category_id`, same amounts — and remain retrievable through their own already-existing endpoints exactly as before
+- **AC:** EC-04, FR-04
+- **Type:** integration
+
+### TC-91: The response exposes exactly the six documented fields
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category
+- **When:** The category is archived successfully
+- **Then:** The response body's keys are exactly `id`, `user_id`, `name`, `type`, `icon`, `archived_at` — no more, and in particular no other invented field
+- **AC:** AC-10, FR-10
+- **Type:** integration
+
+### TC-92: Credentials are evaluated before the category reference is looked up
+
+- **US:** CM-US-05
+- **Given:** A caller presenting no credentials
+- **When:** An archive request is submitted against a `category_id` that does not match any category in the system
+- **Then:** The response is `401` `NOT_AUTHENTICATED`, not `404` — mirrors CM-US-03 TC-73/WM-US-05 TC-90's own ordering
+- **AC:** AC-02, FR-02
+- **Type:** integration
+
+### TC-93: Updating an archived category's name, type, or icon through CM-US-04's own PATCH still succeeds
+
+- **US:** CM-US-05
+- **Given:** An authenticated User who owns a category that has already been archived
+- **When:** The User submits `PATCH /api/v1/categories/{id}` with a new `name`
+- **Then:** The response is `200`, not `409`; the category's `name` changes exactly as CM-US-04 already defines, and its `archived_at` remains unchanged — demonstrating `spec.md` BR-05's own scope limit: this story's archived-category restriction reaches only new Transactions and new Budgets, never CM-US-04's own update operation
+- **AC:** BR-05
 - **Type:** integration
