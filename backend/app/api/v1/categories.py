@@ -96,3 +96,27 @@ def update_category(
     )
     db.commit()
     return result
+
+
+@router.get(
+    "/{category_id}",
+    response_model=CategoryRead,
+    status_code=status.HTTP_200_OK,
+    summary="View a category",
+    description=(
+        "Returns the full detail -- identifier, owner, name, type, and icon "
+        "-- of one of the authenticated caller's own categories, identified "
+        "by its own id."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "CATEGORY_NOT_FOUND"},
+    },
+)
+def get_category(
+    category_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> CategoryRead:
+    """Pure read -- no db.commit() (plan.md A6)."""
+    return category_service.get_category(db, owner=current_user, category_id=category_id)

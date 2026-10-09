@@ -47,6 +47,28 @@ def create_category(
     )
 
 
+def get_category(db: Session, *, owner: UserModel, category_id: str) -> CategoryRead:
+    """spec CM-US-03 AC-01, FR-03 (plan.md A2, A3). Looks up the category
+    scoped to the caller; no further precondition follows ownership -- a view
+    changes nothing, the same shape `wallet_service.get_wallet()` (WM-US-03)
+    and `transaction_service.get_transaction()` (TM-US-03) already
+    established for their own single-resource reads, and the same
+    ownership-scoped lookup `update_category()` (CM-US-04) already uses
+    before mutating.
+    """
+    category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
+    if category is None:
+        raise CategoryNotFoundError()
+
+    return CategoryRead(
+        id=category.id,
+        user_id=category.user_id,
+        name=category.name,
+        type=category.type,
+        icon=category.icon,
+    )
+
+
 def update_category(
     db: Session,
     *,

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-04 · SDS §5.4 (CM)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** CM-US-01 *(TC-01…TC-17, all PASS)* · CM-US-02 *(TC-18…TC-34, all PASS)* · CM-US-04 *(TC-35…TC-63, all PASS)* · CM-US-03 *(TC-64…TC-73, test cases written — not yet implemented)*
+> **Stories in this file:** CM-US-01 *(TC-01…TC-17, all PASS)* · CM-US-02 *(TC-18…TC-34, all PASS)* · CM-US-04 *(TC-35…TC-63, all PASS)* · CM-US-03 *(TC-64…TC-73, all PASS)*
 
 ---
 
@@ -1155,24 +1155,31 @@ CM-US-01/CM-US-02/CM-US-04 each used for their own all-`[API]` classification.
 
 ### Test Implementation Map *(filled at step 4)*
 
-**Not yet implemented.** This dispatch covers only the Spec, Design, and Quality steps (`CLAUDE.md`
-§2, steps 1–3) — `backend/tests/integration/test_cm_us_03_view_category.py` does not exist yet, and
-neither does the route or service function it would exercise. Every `TC-NN` below is pending its own
-pytest node id and a PASS/FAIL/BLOCKED result, to be filled in at the Implement step together with the
-real coverage percentage, per constitution DOD-07.
+All under `backend/tests/integration/test_cm_us_03_view_category.py`. Run one with
+`uv run pytest -k <fragment>`.
 
 | TC | pytest node id | Result |
 |---|---|---|
-| TC-64 | *(pending)* | Pending |
-| TC-65 | *(pending)* | Pending |
-| TC-66 | *(pending)* | Pending |
-| TC-67 | *(pending)* | Pending |
-| TC-68 | *(pending)* | Pending |
-| TC-69 | *(pending)* | Pending |
-| TC-70 | *(pending)* | Pending |
-| TC-71 | *(pending)* | Pending |
-| TC-72 | *(pending)* | Pending |
-| TC-73 | *(pending)* | Pending |
+| TC-64 | `test_an_authenticated_user_views_a_category_they_own` | PASS |
+| TC-65 | `test_a_category_id_matching_no_category_at_all_is_rejected_with_404` | PASS |
+| TC-66 | `test_another_users_category_is_refused_with_a_body_identical_to_not_found` | PASS |
+| TC-67 | `test_an_unauthenticated_caller_is_denied_with_401` | PASS |
+| TC-68 | `test_a_malformed_category_reference_gets_the_same_404_as_a_well_formed_unknown_one` | PASS |
+| TC-69 | `test_an_admin_role_caller_cannot_view_another_users_category` | PASS |
+| TC-70 | `test_a_category_with_no_icon_ever_set_still_views_successfully` | PASS |
+| TC-71 | `test_the_response_exposes_exactly_the_five_documented_fields` | PASS |
+| TC-72 | `test_a_caller_who_owns_a_different_category_cannot_view_another_users_category` | PASS |
+| TC-73 | `test_credentials_are_evaluated_before_the_category_reference_is_looked_up` | PASS |
+
+Full suite: `611 passed` (601 pre-existing + 10 new). `ruff check`/`ruff format --check` clean, `mypy
+app` clean. Coverage: `app/services/category_service.py` and `app/api/v1/categories.py` — the two files
+this story touched — are both at **100%** (constitution DOD-03's floor is 80%); overall project
+coverage is 99%. No migration this story — `alembic heads` is unchanged (`b4f1e7a2c6d9`). No defect
+found in the implementation while writing these tests — every TC passed against the first version of
+the code; the one correction needed was in the test file itself (TC-64 initially tried to submit `icon`
+on `POST /categories`, which `CategoryCreate` has no field for and silently ignores per CM-US-01
+A6/EC-05 — fixed to set the icon through a real `PATCH` call first, matching how every other category
+in this codebase's fixtures ever acquires one).
 
 ---
 
