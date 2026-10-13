@@ -67,7 +67,12 @@ export default function LoginScreen() {
   };
 
   return (
-    <Screen testID={LoginIds.screen} note="SS-US-01 · POST /api/v1/auth/login">
+    <Screen
+      testID={LoginIds.screen}
+      title="Sign In"
+      note="SS-US-01 · POST /api/v1/auth/login"
+      background="opaque"
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Sign in to PFM</Text>
         <Text style={styles.description}>

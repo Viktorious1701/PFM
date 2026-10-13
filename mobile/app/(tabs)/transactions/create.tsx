@@ -311,7 +311,11 @@ export default function CreateTransactionScreen() {
   );
 
   return (
-    <Screen testID={TransactionCreateIds.screen} note="TM-US-01 · POST /api/v1/transactions">
+    <Screen
+      testID={TransactionCreateIds.screen}
+      title="Log Transaction"
+      note="TM-US-01 · POST /api/v1/transactions"
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Log Transaction</Text>
       </View>

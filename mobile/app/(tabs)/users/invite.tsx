@@ -93,7 +93,7 @@ export default function InviteUserScreen() {
   };
 
   return (
-    <Screen testID={InviteIds.screen} note="UM-US-01 · POST /api/v1/users/invite">
+    <Screen testID={InviteIds.screen} title="Invite Member" note="UM-US-01 · POST /api/v1/users/invite">
       <View style={styles.header}>
         <Text style={styles.title}>Invite Family Member</Text>
         <Text style={styles.description}>

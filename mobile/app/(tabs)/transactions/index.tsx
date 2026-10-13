@@ -61,7 +61,6 @@ import {
   TransportGlyph,
   UtilitiesGlyph,
 } from '../../../src/components/icons/Glyphs';
-import { NullscapesScene } from '../../../src/components/icons/NullscapesScene';
 import { TornEdge } from '../../../src/components/icons/TornEdge';
 import { PickerSheet, type PickerOption } from '../../../src/components/PickerSheet';
 import { Screen } from '../../../src/components/Screen';
@@ -216,6 +215,7 @@ export default function TransactionsScreen() {
     <Screen
       scroll={false}
       testID={TransactionsIds.screen}
+      title="Transactions"
       note="TM-US-02 · GET /api/v1/transactions"
     >
       <View style={styles.body}>
@@ -266,7 +266,6 @@ export default function TransactionsScreen() {
               }
               ListEmptyComponent={
                 <View style={styles.centerFill}>
-                  <NullscapesScene style={styles.emptyScene} />
                   <Text style={styles.emptyText}>
                     No transactions yet. Tap "+ New Slip" to log your first one.
                   </Text>
@@ -556,7 +555,6 @@ const styles = StyleSheet.create({
   list: { flex: 1 },
   listContent: { paddingBottom: 96, flexGrow: 1 },
   centerFill: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xl },
-  emptyScene: { marginBottom: space.lg },
   emptyText: {
     fontFamily: font.family.body,
     fontSize: font.size.body,

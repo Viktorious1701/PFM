@@ -60,7 +60,7 @@ export default function UsersScreen() {
   }, []);
 
   return (
-    <Screen testID={UsersIds.screen} note="UM-US-03 · GET /api/v1/users — not built yet">
+    <Screen testID={UsersIds.screen} title="Family" note="UM-US-03 · GET /api/v1/users — not built yet">
       <Link href="/(tabs)/users/invite" style={styles.cta} testID={UsersIds.inviteCta}>
         📧 Invite a family member
       </Link>

@@ -3,24 +3,27 @@
  *
  * Layout still follows the SDS §3.2 wireframe's information set — net balance,
  * wallet summary, budget health, recent activity, a prominent log-transaction
- * call to action — restyled entirely in the Cash & Carry system (DESIGN.md).
- * Only the visual system changed here; nothing about which figures appear or
- * what they mean moved.
+ * call to action. This screen's visual system is "Nullscapes" — the dark,
+ * icy-blue, Space Grotesk component language validated in the design canvas's
+ * `Components.dc.html` swatch sheet (buttons, wallet cards, transaction rows,
+ * budget bars), shared via `src/theme/nullscapes.ts` now that every tab uses
+ * it (not just this screen).
+ *
+ * The animated Nullscapes background itself is NOT mounted here any more —
+ * it moved to `app/(tabs)/_layout.tsx`, mounted once as a sibling of
+ * `<Tabs>`, so it persists across every tab switch and animates a "camera
+ * zoom" synced to the active tab (`src/lib/tabCameraScale.ts`) instead of
+ * being a per-screen illustration.
  *
  * Every figure on this screen is a hard-coded demo value, unchanged from the
  * prior version. Features 03–11 (wallets, budgets, transactions) are out of
  * scope for this round, so there is nothing real to read — hence the DEMO
- * markers and the prototype banner. Budget colours come from
- * src/theme/tokens.ts so health stays consistent with UXR-02 (🟢 healthy ·
- * 🟡 warning · 🔴 exceeded).
+ * markers and the prototype banner.
  *
- * Per DESIGN.md's "One rule carried over": the budget thermometer's
- * category/percent text stays `ink` — the status hue rides the fill only —
- * so colour is never the only channel and the label clears WCAG AA on its
- * own. The recent-transaction amount's colour is likewise a supplement to
- * the `+`/`-` sign already shown, never the sole signal.
+ * Budget colour still rides the fill only (never the sole channel of
+ * meaning) — the percent figure next to it says the same thing in text,
+ * carried over from the original UXR-02 rule.
  */
-import { LinearGradient } from 'expo-linear-gradient';
 import { Link } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
@@ -28,19 +31,18 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../src/components/Screen';
 import { GroceriesGlyph, SalaryGlyph, TransportGlyph } from '../../src/components/icons/Glyphs';
-import { NullscapesScene } from '../../src/components/icons/NullscapesScene';
 import { PostmarkIcon } from '../../src/components/icons/PostmarkIcon';
-import { TornEdge } from '../../src/components/icons/TornEdge';
 import { DashboardIds } from '../../src/constants/elementIds';
-import { budgetHealth, color, font, gradient, radius, shadow, space } from '../../src/theme/tokens';
+import { ns, nsBudgetAccent, nsFont } from '../../src/theme/nullscapes';
+import { budgetHealth } from '../../src/theme/tokens';
 
 /** Demo data. Replaced by GET /api/v1/wallets + /budgets when those stories land. */
 const DEMO = {
   netBalance: '$12,450.00',
   wallets: [
-    { name: 'Checking', balance: '$10,000.00' },
-    { name: 'Cash', balance: '$450.00' },
-    { name: 'Savings', balance: '$2,000.00' },
+    { name: 'Checking', balance: '$10,000.00', kind: 'BANK' },
+    { name: 'Cash', balance: '$450.00', kind: 'CASH' },
+    { name: 'Savings', balance: '$2,000.00', kind: 'BANK' },
   ],
   budgets: [
     { category: 'Dining Out', used: 160, limit: 200 },
@@ -62,75 +64,78 @@ export default function DashboardScreen() {
   const [ledgerOpen, setLedgerOpen] = useState(false);
 
   return (
-    <View style={styles.immersiveRoot}>
-      <NullscapesScene style={styles.immersiveBackground} />
       <Screen
         testID={DashboardIds.screen}
-        note="Layout from SDS §3.2, restyled Cash & Carry — every figure below is demo data"
-        background="transparent"
+        title="Dashboard"
+        note="Layout from SDS §3.2, Nullscapes component language — every figure below is demo data"
       >
         <HeroTicket direction={direction} onChangeDirection={setDirection} />
 
-      <BalanceTape amount={DEMO.netBalance} />
+        <BalanceTape amount={DEMO.netBalance} />
 
-      <Pressable
-        style={styles.ledgerToggle}
-        onPress={() => setLedgerOpen((open) => !open)}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: ledgerOpen }}
-      >
-        <Text style={styles.ledgerToggleLabel}>{ledgerOpen ? '▾' : '▸'} Ledger Book</Text>
-        <Text style={styles.ledgerToggleHint}>
-          {ledgerOpen ? 'Tap to close' : 'Wallets, budgets & recent activity'}
-        </Text>
-      </Pressable>
+        <Pressable
+          style={styles.ledgerToggle}
+          onPress={() => setLedgerOpen((open) => !open)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: ledgerOpen }}
+        >
+          <Text style={styles.ledgerToggleLabel}>{ledgerOpen ? '▾' : '▸'} Ledger Book</Text>
+          <Text style={styles.ledgerToggleHint}>
+            {ledgerOpen ? 'Tap to close' : 'Wallets, budgets & recent activity'}
+          </Text>
+        </Pressable>
 
-      {ledgerOpen ? (
-        <View style={styles.ledgerBody}>
-          <Section title="My Wallets · DEMO">
-            <View style={styles.walletRow}>
-              {DEMO.wallets.map((w) => (
-                <View key={w.name} style={styles.walletCard}>
-                  <Text style={styles.walletName}>{w.name}</Text>
-                  <Text style={styles.walletBalance}>{w.balance}</Text>
-                </View>
-              ))}
-            </View>
-          </Section>
+        {ledgerOpen ? (
+          <View style={styles.ledgerBody}>
+            <Section title="My Wallets · DEMO">
+              <View style={styles.walletRow}>
+                {DEMO.wallets.map((w) => (
+                  <View key={w.name} style={styles.walletCard}>
+                    <View style={styles.walletCardHeader}>
+                      <Text style={styles.walletName}>{w.name}</Text>
+                      <View style={styles.walletKindChip}>
+                        <Text style={styles.walletKindLabel}>{w.kind}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.walletBalance}>{w.balance}</Text>
+                  </View>
+                ))}
+              </View>
+            </Section>
 
-          <Section title="Budget Health · DEMO">
-            <View testID={DashboardIds.budgetAlert} style={styles.budgetList}>
-              {DEMO.budgets.map((b) => (
-                <BudgetThermometer key={b.category} {...b} />
-              ))}
-            </View>
-          </Section>
+            <Section title="Budget Health · DEMO">
+              <View testID={DashboardIds.budgetAlert} style={styles.budgetList}>
+                {DEMO.budgets.map((b) => (
+                  <BudgetThermometer key={b.category} {...b} />
+                ))}
+              </View>
+            </Section>
 
-          <Section title="Recent Transactions · DEMO">
-            <View style={styles.recentList}>
-              {DEMO.recent.map((t) => (
-                <View key={t.label} style={styles.recentRow}>
-                  <Text style={styles.recentLabel}>{t.label}</Text>
-                  <Text
-                    style={[
-                      styles.recentAmount,
-                      { color: t.kind === 'INCOME' ? color.income : color.expense },
-                    ]}
-                  >
-                    {t.amount}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </Section>
-        </View>
-      ) : null}
+            <Section title="Recent Transactions · DEMO">
+              <View style={styles.recentList}>
+                {DEMO.recent.map((t) => (
+                  <View key={t.label} style={styles.recentRow}>
+                    <Text style={styles.recentLabel}>{t.label}</Text>
+                    <Text
+                      style={[
+                        styles.recentAmount,
+                        { color: t.kind === 'INCOME' ? ns.mint : ns.danger },
+                      ]}
+                    >
+                      {t.amount}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </Section>
+          </View>
+        ) : null}
       </Screen>
-    </View>
   );
 }
 
-/** stat-tile's replacement — the "ticket" hero: torn top, toggle, amount, stamp. */
+/** The "ticket" hero: IN/OUT toggle, amount, category glyphs, log-entry CTA —
+ * the Nullscapes glass card (`Components.dc.html`'s card/button treatment). */
 function HeroTicket({
   direction,
   onChangeDirection,
@@ -139,63 +144,53 @@ function HeroTicket({
   onChangeDirection: (direction: Direction) => void;
 }) {
   const isOut = direction === 'OUT';
-  const stampColors = isOut ? gradient.expenseStamp : gradient.incomeStamp;
+  const tone = isOut ? ns.danger : ns.mint;
 
   return (
-    <View style={styles.heroWrap}>
-      <TornEdge />
-      <View style={styles.heroBody}>
-        <View style={styles.toggleRow}>
-          <ToggleSegment
-            label="IN"
-            active={!isOut}
-            tone={color.income}
-            onPress={() => onChangeDirection('IN')}
-          />
-          <ToggleSegment
-            label="OUT"
-            active={isOut}
-            tone={color.expense}
-            onPress={() => onChangeDirection('OUT')}
-          />
-        </View>
-
-        <View style={styles.amountBlock}>
-          <Text style={styles.amountCurrency}>$</Text>
-          <Text style={styles.amountFigure}>0.00</Text>
-        </View>
-        <View style={styles.ruleLine} />
-        <Text style={styles.amountHint}>Amount entry — TM-US-01, not built yet</Text>
-
-        <View style={styles.glyphRow}>
-          <PostmarkIcon>
-            <GroceriesGlyph color={color.text} />
-          </PostmarkIcon>
-          <PostmarkIcon>
-            <TransportGlyph color={color.text} />
-          </PostmarkIcon>
-          <PostmarkIcon>
-            <SalaryGlyph color={color.text} />
-          </PostmarkIcon>
-        </View>
-
-        <Link href="/(tabs)/transactions/create" asChild>
-          <Pressable
-            testID={DashboardIds.logTransactionCta}
-            accessibilityRole="button"
-            style={({ pressed }) => (pressed ? styles.stampPressed : null)}
-          >
-            <LinearGradient
-              colors={stampColors}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.stampButton}
-            >
-              <Text style={styles.stampLabel}>STAMP IT {isOut ? '· OUT' : '· IN'}</Text>
-            </LinearGradient>
-          </Pressable>
-        </Link>
+    <View style={styles.heroBody}>
+      <View style={styles.toggleRow}>
+        <ToggleSegment
+          label="IN"
+          active={!isOut}
+          tone={ns.mint}
+          onPress={() => onChangeDirection('IN')}
+        />
+        <ToggleSegment
+          label="OUT"
+          active={isOut}
+          tone={ns.danger}
+          onPress={() => onChangeDirection('OUT')}
+        />
       </View>
+
+      <View style={styles.amountBlock}>
+        <Text style={styles.amountCurrency}>$</Text>
+        <Text style={styles.amountFigure}>0.00</Text>
+      </View>
+      <View style={styles.ruleLine} />
+      <Text style={styles.amountHint}>Amount entry — TM-US-01, not built yet</Text>
+
+      <View style={styles.glyphRow}>
+        <PostmarkIcon inactiveColor={ns.mintBorder}>
+          <GroceriesGlyph color={ns.inkSoft} />
+        </PostmarkIcon>
+        <PostmarkIcon inactiveColor={ns.mintBorder}>
+          <TransportGlyph color={ns.inkSoft} />
+        </PostmarkIcon>
+        <PostmarkIcon inactiveColor={ns.mintBorder}>
+          <SalaryGlyph color={ns.inkSoft} />
+        </PostmarkIcon>
+      </View>
+
+      <Link href="/(tabs)/transactions/create" asChild>
+        <Pressable
+          testID={DashboardIds.logTransactionCta}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.ctaButton, { borderColor: tone }, pressed ? styles.ctaPressed : null]}
+        >
+          <Text style={[styles.ctaLabel, { color: tone }]}>LOG ENTRY · {isOut ? 'OUT' : 'IN'}</Text>
+        </Pressable>
+      </Link>
     </View>
   );
 }
@@ -216,14 +211,17 @@ function ToggleSegment({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      style={[styles.toggleSegment, active ? { backgroundColor: tone } : null]}
+      style={[
+        styles.toggleSegment,
+        active ? { backgroundColor: tone, shadowColor: tone } : null,
+      ]}
     >
       <Text style={[styles.toggleLabel, active ? styles.toggleLabelActive : null]}>{label}</Text>
     </Pressable>
   );
 }
 
-/** Net-balance strip below the hero — styled like a strip of tape tacked onto the ledger. */
+/** Net-balance strip below the hero — a slim glass chip, not a paper tape. */
 function BalanceTape({ amount }: { amount: string }) {
   return (
     <View style={styles.tapeWrap}>
@@ -238,12 +236,6 @@ function BalanceTape({ amount }: { amount: string }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View style={styles.section}>
-      {/* `sectionTitle`'s ink text has no card of its own to sit on — on
-          the immersive Dashboard that means it would render directly
-          against the Nullscapes background (near-black on near-black is
-          unreadable). An opaque backing chip keeps one rule everywhere on
-          this screen — ink text only ever sits on paper — instead of a
-          second, Dashboard-specific inverse text color to remember. */}
       <View style={styles.sectionTitleChip}>
         <Text style={styles.sectionTitle}>{title}</Text>
       </View>
@@ -263,10 +255,10 @@ function BudgetThermometer({
   limit: number;
 }) {
   const percent = Math.round((used / limit) * 100);
-  const palette = color.budget[budgetHealth(percent)];
+  const accent = nsBudgetAccent[budgetHealth(percent)];
 
   return (
-    <View style={styles.budgetItem}>
+    <View style={[styles.budgetItem, { borderColor: `${accent}4D` }]}>
       <View style={styles.budgetHeader}>
         <Text style={styles.budgetCategory}>{category}</Text>
         <Text style={styles.budgetPercent}>{percent}%</Text>
@@ -275,7 +267,7 @@ function BudgetThermometer({
         <View
           style={[
             styles.budgetFill,
-            { width: `${Math.min(percent, 100)}%`, backgroundColor: palette.accent },
+            { width: `${Math.min(percent, 100)}%`, backgroundColor: accent, shadowColor: accent },
           ]}
         />
       </View>
@@ -287,130 +279,123 @@ function BudgetThermometer({
 }
 
 const styles = StyleSheet.create({
-  // Nullscapes immersive background (Dashboard only — confirmed scope).
-  // Mounted locally, not in the root layout: `expo-router/js-tabs` keeps
-  // inactive tab screens mounted (hidden, not torn down), so there is no
-  // tab-switch remount cost a global mount point would need to solve.
-  immersiveRoot: { flex: 1 },
-  immersiveBackground: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-
-  // Hero ticket — DESIGN.md "Components → hero ticket." Cash & Carry's own
-  // flat, hairline-only depth rule is scoped to paper-on-paper (DESIGN.md
-  // "Elevation & Depth"); floating opaque paper over the immersive
-  // background is the "reserved for transient overlays" case `shadow`
-  // already names in tokens.ts — a deliberate, singular exception, not a
-  // quiet departure from the flat rule everywhere else in the app.
-  heroWrap: {},
+  // Hero ticket — now a Nullscapes glass card: `Components.dc.html`'s
+  // card treatment (bg #10141B, mint-tinted hairline, radius 10) instead of
+  // the Cash & Carry paper ticket + torn edge.
   heroBody: {
-    backgroundColor: color.surface,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: color.border,
-    borderBottomLeftRadius: radius.md,
-    borderBottomRightRadius: radius.md,
-    paddingHorizontal: space.lg,
-    paddingTop: space.sm,
-    paddingBottom: space.lg,
-    ...shadow.overlay,
+    backgroundColor: ns.card,
+    borderWidth: 1,
+    borderColor: ns.cardBorder,
+    borderRadius: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    gap: 4,
   },
   toggleRow: {
     flexDirection: 'row',
     borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: radius.sm,
+    borderColor: ns.hairline,
+    borderRadius: 8,
     overflow: 'hidden',
-    marginBottom: space.lg,
+    marginBottom: 20,
   },
   toggleSegment: {
     flex: 1,
-    paddingVertical: space.sm,
+    paddingVertical: 12,
     alignItems: 'center',
-    backgroundColor: color.surface,
+    backgroundColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
   },
   toggleLabel: {
-    fontFamily: font.family.bodyMedium,
-    fontSize: font.size.md,
-    color: color.text,
-    letterSpacing: 1,
+    fontFamily: nsFont.semibold,
+    fontSize: 13,
+    color: ns.muted,
+    letterSpacing: 1.5,
   },
-  toggleLabelActive: { color: color.primaryText },
+  toggleLabelActive: { color: '#05070A' },
   amountBlock: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'center',
-    gap: space.xs,
+    gap: 6,
   },
   amountCurrency: {
-    fontFamily: font.family.heading,
-    fontSize: font.size.xl,
-    color: color.textMuted,
+    fontFamily: nsFont.semibold,
+    fontSize: 20,
+    color: ns.mutedFaint,
     marginBottom: 4,
   },
   amountFigure: {
-    fontFamily: font.family.heading,
+    fontFamily: nsFont.bold,
     fontSize: 46,
-    color: color.textMuted,
+    color: ns.inkSoft,
     letterSpacing: 1,
   },
   ruleLine: {
     borderBottomWidth: 1,
-    borderBottomColor: color.border,
-    marginTop: space.xs,
-    marginHorizontal: space.xl,
+    borderBottomColor: ns.hairline,
+    marginTop: 8,
+    marginHorizontal: 32,
   },
   amountHint: {
-    fontFamily: font.family.bodyItalic,
-    fontSize: font.size.xs,
-    color: color.textMuted,
+    fontFamily: nsFont.regular,
+    fontSize: 11,
+    fontStyle: 'italic',
+    color: ns.mutedFaint,
     textAlign: 'center',
-    marginTop: space.xs,
-    marginBottom: space.lg,
+    marginTop: 8,
+    marginBottom: 20,
   },
   glyphRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: space.xl,
-    marginBottom: space.lg,
+    gap: 28,
+    marginBottom: 20,
   },
-  stampButton: {
-    borderRadius: radius.stamp,
-    paddingVertical: space.md,
+  // Primary log-entry CTA — outline button in the direction's tone, matching
+  // `Components.dc.html`'s "VIEW DETAILS" secondary-button treatment (a
+  // solid glow button in two different hues per press would fight itself,
+  // so the direction's own color carries the state instead of the fill).
+  ctaButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.03)',
   },
-  stampPressed: { opacity: 0.85 },
-  stampLabel: {
-    fontFamily: font.family.heading,
-    color: color.primaryText,
-    fontSize: font.size.lg,
+  ctaPressed: { opacity: 0.75 },
+  ctaLabel: {
+    fontFamily: nsFont.semibold,
+    fontSize: 14,
     letterSpacing: 1.5,
   },
 
-  // Balance tape — a strip of tape tacked below the ticket.
+  // Balance tape — a slim glass chip, mint-labelled, bright figure.
   tapeWrap: {
     alignSelf: 'center',
-    backgroundColor: color.surfaceSunken,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: color.textMuted,
-    paddingVertical: space.sm,
-    paddingHorizontal: space.xxl,
-    transform: [{ rotate: '-1deg' }],
+    backgroundColor: ns.card,
+    borderWidth: 1,
+    borderColor: ns.cardBorder,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 28,
     gap: 2,
-    ...shadow.overlay,
   },
   tapeLabel: {
-    fontFamily: font.family.bodyItalic,
-    fontSize: font.size.xs,
-    color: color.textMuted,
+    fontFamily: nsFont.medium,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: ns.mint,
     textAlign: 'center',
+    textTransform: 'uppercase',
   },
   tapeAmount: {
-    fontFamily: font.family.heading,
-    fontSize: font.size.title,
-    color: color.text,
+    fontFamily: nsFont.bold,
+    fontSize: 24,
+    color: ns.ink,
     textAlign: 'center',
   },
 
@@ -419,90 +404,110 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: color.surface,
+    backgroundColor: ns.card,
     borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: radius.md,
-    paddingVertical: space.md,
-    paddingHorizontal: space.lg,
-    ...shadow.overlay,
+    borderColor: ns.cardBorder,
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
   },
-  ledgerToggleLabel: { fontFamily: font.family.heading, fontSize: font.size.lg, color: color.text },
+  ledgerToggleLabel: { fontFamily: nsFont.semibold, fontSize: 15, color: ns.ink },
   ledgerToggleHint: {
-    fontFamily: font.family.body,
-    fontSize: font.size.xs,
-    color: color.textMuted,
+    fontFamily: nsFont.regular,
+    fontSize: 11,
+    color: ns.mutedFaint,
     flexShrink: 1,
     textAlign: 'right',
-    marginLeft: space.md,
+    marginLeft: 12,
   },
-  ledgerBody: { gap: space.lg },
+  ledgerBody: { gap: 20 },
 
-  section: { gap: space.sm },
+  section: { gap: 10 },
   sectionTitleChip: {
     alignSelf: 'flex-start',
-    backgroundColor: color.surface,
-    borderRadius: radius.sm,
-    paddingHorizontal: space.sm,
-    paddingVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  sectionTitle: { fontFamily: font.family.headingSemibold, fontSize: 20, color: color.text },
+  sectionTitle: {
+    fontFamily: nsFont.medium,
+    fontSize: 11,
+    letterSpacing: 2,
+    color: ns.mint,
+    textTransform: 'uppercase',
+  },
 
-  walletRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  // wallet-card — DESIGN.md: Ledger Paper card, hairline, name muted body, balance heading.
+  walletRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  // wallet-card — `Components.dc.html`'s wallet-card swatch, verbatim.
   walletCard: {
     flexGrow: 1,
-    minWidth: 100,
-    padding: space.md,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
+    minWidth: 110,
+    padding: 16,
+    borderRadius: 10,
+    backgroundColor: ns.card,
     borderWidth: 1,
-    borderColor: color.border,
-    gap: 2,
-    ...shadow.overlay,
+    borderColor: ns.cardBorder,
+    gap: 8,
   },
-  walletName: { fontFamily: font.family.body, fontSize: font.size.sm, color: color.textMuted },
+  walletCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  walletName: {
+    fontFamily: nsFont.medium,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: ns.muted,
+    textTransform: 'uppercase',
+  },
+  walletKindChip: {
+    borderWidth: 1,
+    borderColor: ns.mintBorder,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  walletKindLabel: { fontFamily: nsFont.medium, fontSize: 8, letterSpacing: 1, color: ns.mint },
   walletBalance: {
-    fontFamily: font.family.headingSemibold,
-    fontSize: font.size.xl,
-    color: color.text,
+    fontFamily: nsFont.bold,
+    fontSize: 20,
+    color: ns.ink,
   },
 
-  budgetList: { gap: space.sm },
-  // budget-thermometer — DESIGN.md: category/percent stay ink; the status hue
-  // lives only in the fill (never the sole channel of meaning) — UXR-02.
+  budgetList: { gap: 10 },
+  // budget-thermometer — category/percent stay bright ink; the status hue
+  // lives only in the fill and the card's own hairline, never the sole
+  // channel of meaning (the percent figure says the same thing in text).
   budgetItem: {
-    padding: space.md,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceSunken,
-    gap: space.xs + 2,
-    ...shadow.overlay,
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: ns.card,
+    borderWidth: 1,
+    gap: 8,
   },
   budgetHeader: { flexDirection: 'row', justifyContent: 'space-between' },
-  budgetCategory: { fontFamily: font.family.bodyMedium, fontSize: font.size.sm, color: color.text },
-  budgetPercent: { fontFamily: font.family.bodyMedium, fontSize: font.size.sm, color: color.text },
+  budgetCategory: { fontFamily: nsFont.medium, fontSize: 13, color: ns.ink },
+  budgetPercent: { fontFamily: nsFont.medium, fontSize: 13, color: ns.ink },
   budgetTrack: {
-    height: 8,
-    borderRadius: radius.sm,
-    backgroundColor: 'rgba(43,36,32,0.12)',
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: ns.track,
     overflow: 'hidden',
   },
-  budgetFill: { height: 8, borderRadius: radius.sm },
-  budgetDetail: { fontFamily: font.family.body, fontSize: font.size.xs, color: color.textMuted },
+  budgetFill: {
+    height: '100%',
+    borderRadius: 3,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+  },
+  budgetDetail: { fontFamily: nsFont.regular, fontSize: 10, color: ns.mutedFaint },
 
-  recentList: { gap: space.xs },
+  recentList: { gap: 1, backgroundColor: ns.cardBorder, borderRadius: 10, overflow: 'hidden' },
   // transaction-row — sign shown alongside colour, so colour is a supplement.
   recentRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: space.sm,
-    paddingHorizontal: space.md,
-    backgroundColor: color.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.border,
-    ...shadow.overlay,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: ns.card,
   },
-  recentLabel: { fontFamily: font.family.body, fontSize: font.size.body, color: color.text },
-  recentAmount: { fontFamily: font.family.bodyMedium, fontSize: font.size.body },
+  recentLabel: { fontFamily: nsFont.regular, fontSize: 13, color: ns.ink },
+  recentAmount: { fontFamily: nsFont.semibold, fontSize: 14 },
 });

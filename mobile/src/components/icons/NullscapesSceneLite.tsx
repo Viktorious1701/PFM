@@ -23,7 +23,7 @@
  * aspect-ratio box) and, via the host component, as a full-bleed
  * background (passing `style={StyleSheet.absoluteFillObject}`).
  */
-import { useEffect } from 'react';
+import { memo, useEffect } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, {
   Easing,
@@ -33,6 +33,7 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, G, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 
@@ -142,12 +143,23 @@ function buildParticles(count: number, seed: number): Particle[] {
 }
 const PARTICLES = buildParticles(6, 41);
 
-export function NullscapesSceneLite({ style }: { style?: ViewStyle }): React.JSX.Element {
+// Memoized for the same reason as `NullscapesSceneRich` — see its own
+// doc-comment. This is also the Skia web fallback AND the whole app's `low`
+// detail tier, so it's mounted exactly as persistently as Rich is.
+function NullscapesSceneLiteImpl({
+  style,
+  tabScale,
+}: {
+  style?: ViewStyle;
+  tabScale?: SharedValue<number>;
+}): React.JSX.Element {
   const reduceMotion = useReducedMotion();
   const breathe = useSharedValue(0.85);
   const ringRotate = useSharedValue(0);
   const suckT = useSharedValue(0);
   const groupOpacities = GROUP_KEYFRAMES.map(() => useSharedValue(0.6));
+  const ownTabScale = useSharedValue(1);
+  const scale = tabScale ?? ownTabScale;
 
   useEffect(() => {
     if (reduceMotion) {
@@ -210,6 +222,17 @@ export function NullscapesSceneLite({ style }: { style?: ViewStyle }): React.JSX
 
   const groupProps = groupOpacities.map((g) => useAnimatedProps(() => ({ opacity: g.value })));
 
+  // The cross-tab "camera zoom" (`src/lib/tabCameraScale.ts`). SVG's
+  // `transform` attribute has no separate origin concept the way Skia's
+  // `Group` does, so "scale about a point" is hand-rolled as the standard
+  // translate/scale/translate trick — same hand-built-STRING pattern as
+  // `ringProps`/`particleProps` above, for the same reason: Reanimated's
+  // convenience `scale`/`origin` props on `Animated.createAnimatedComponent`
+  // leak through as invalid literal DOM attributes on web.
+  const tabZoomProps = useAnimatedProps(() => ({
+    transform: `translate(${CX} ${CY}) scale(${scale.value}) translate(${-CX} ${-CY})`,
+  }));
+
   // Same full-bleed-vs-boxed split as `NullscapesSceneRich.tsx` — see its
   // doc comment: `styles.wrap`'s own `width:'100%'` + `aspectRatio` would
   // otherwise win over the Dashboard's absolute-fill `style` override on
@@ -234,6 +257,7 @@ export function NullscapesSceneLite({ style }: { style?: ViewStyle }): React.JSX
           </RadialGradient>
         </Defs>
 
+        <AnimatedG animatedProps={tabZoomProps}>
         <Rect x={0} y={0} width={VIEW_W} height={VIEW_H} fill={SKY_TOP} />
         <Rect x={0} y={60} width={VIEW_W} height={120} fill={SKY_HORIZON} opacity={0.35} />
 
@@ -280,10 +304,13 @@ export function NullscapesSceneLite({ style }: { style?: ViewStyle }): React.JSX
         />
         <Polygon points={FAR} fill={SPIKE_FAR_FILL} stroke={SPIKE_FAR_RIM} strokeWidth={1} />
         <Polygon points={NEAR} fill={SPIKE_NEAR_FILL} stroke={SPIKE_NEAR_RIM} strokeWidth={1} />
+        </AnimatedG>
       </Svg>
     </View>
   );
 }
+
+export const NullscapesSceneLite = memo(NullscapesSceneLiteImpl);
 
 const styles = StyleSheet.create({
   wrap: { width: '100%', aspectRatio: VIEW_W / VIEW_H, borderRadius: 4, overflow: 'hidden' },

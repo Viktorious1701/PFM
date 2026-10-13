@@ -28,14 +28,18 @@
  * file already used for `jitter`). 8 independently-timed groups across 80
  * blocks reads as organic, uncoordinated flicker without 80 timelines.
  *
- * Only ever reached via the host component (`NullscapesScene.tsx`): on
- * native, imported with a deferred `require()`; on web, loaded through
- * `WithSkiaWeb` (CanvasKit/WASM, asynchronous) with `NullscapesSceneLite`
- * as the fallback. Never import this file directly from anything under
- * `app/` — expo-router eagerly evaluates every file there to build its
- * route table, before CanvasKit has had a chance to load on web.
+ * Only ever reached via the host component (`NullscapesScene.tsx`), and only
+ * on native (iOS/Android), imported there with a deferred `require()`. Web
+ * is forced onto `NullscapesSceneLite` unconditionally — see
+ * `NullscapesScene.tsx`'s own doc comment for why: this file's cover-scale
+ * transform (below) never redrew after its initial paint once loaded via
+ * `WithSkiaWeb`'s `React.lazy()`+`Suspense` on web, a reproducible bug
+ * tried four different ways with no fix found. Never import this file
+ * directly from anything under `app/` — expo-router eagerly evaluates
+ * every file there to build its route table, and this file pulls in
+ * Skia's native bindings as a side effect of being imported at all.
  */
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { StyleSheet, View, type ViewStyle, type LayoutChangeEvent } from 'react-native';
 import { Canvas, Circle, Group, LinearGradient, Path, Rect } from '@shopify/react-native-skia';
 import {
@@ -46,6 +50,7 @@ import {
   withRepeat,
   withSequence,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 
 import { buildSpikeRow, mulberry32, VIEW_H, VIEW_W } from './NullscapesSceneLite';
@@ -140,12 +145,25 @@ function buildParticles(count: number, seed: number): Particle[] {
 }
 const PARTICLES = buildParticles(10, 5);
 
-export function NullscapesSceneRich({ style }: { style?: ViewStyle }): React.JSX.Element {
+// Memoized: mounted once as a sibling of `<Tabs>` now (`app/(tabs)/_layout.tsx`),
+// so `TabsLayout` re-rendering for unrelated reasons must not force a full
+// reconciliation of this scene's 80-100+ element tree — its `style`/`tabScale`
+// props are both stable references (`StyleSheet.absoluteFillObject`, the
+// `tabNearScale` singleton), so memo is a real, cheap bail-out here.
+function NullscapesSceneRichImpl({
+  style,
+  tabScale,
+}: {
+  style?: ViewStyle;
+  tabScale?: SharedValue<number>;
+}): React.JSX.Element {
   const reduceMotion = useReducedMotion();
   const breathe = useSharedValue(0.85);
   const ringRotateA = useSharedValue(0);
   const ringRotateB = useSharedValue(0);
   const suckT = useSharedValue(0);
+  const ownTabScale = useSharedValue(1);
+  const scale = tabScale ?? ownTabScale;
   // One shared opacity value per flicker group (8 total) — not per block.
   const groupOpacities = GROUP_KEYFRAMES.map(() => useSharedValue(0.6));
 
@@ -231,16 +249,52 @@ export function NullscapesSceneRich({ style }: { style?: ViewStyle }): React.JSX
   // gets the scene's original small top-left region painted, leaving the rest
   // blank — the boxed empty-state call sites hid this because their box's CSS
   // size (from `width:'100%'` + `aspectRatio`) happens to stay close to 400x260.
-  // Measure the actual box via `onLayout` and reproduce "cover" (xMidYMid slice)
-  // by hand: scale by the larger of the two ratios, then center the overflow.
+  // Measure the actual box and reproduce "cover" (xMidYMid slice) by hand:
+  // scale by the larger of the two ratios, then center the overflow.
+  //
+  // This cover-scale is computed ONCE, from `useState`/`onLayout`, and the
+  // `<Canvas>` below is given `key={size.width}x${size.height}` so React
+  // fully REMOUNTS it — a brand new Skia root/commit, not a prop update —
+  // the moment the real size is known, rather than updating the existing
+  // instance's transform in place.
+  //
+  // This is a deliberate workaround, not the "proper" fix: three different
+  // update-in-place mechanisms were tried and each traced all the way
+  // through (a wrapping `View`'s `onLayout` feeding `useState`; the same
+  // feeding a Reanimated shared value instead; `<Canvas>`'s own purpose-built
+  // `onSize` shared-value prop) — all three produced correctly-recomputed
+  // scale values (confirmed via diagnostic logging reaching this component's
+  // render output, and confirmed via a render-count log that the component
+  // does re-render multiple times, ruling out a "renders once" theory too)
+  // yet the Canvas never visually redrew afterward, still only ever painting
+  // the original unscaled 400x260 region — a reproducible but unexplained
+  // Skia/Suspense interaction (no matching upstream issue found). A full
+  // remount sidesteps it: Skia only ever has to get the FIRST paint of a
+  // given instance right, which it reliably does, instead of relying on an
+  // in-place update after the fact.
   const [size, setSize] = useState({ width: VIEW_W, height: VIEW_H });
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
-    if (width > 0 && height > 0) setSize({ width, height });
+    if (width > 0 && height > 0 && (width !== size.width || height !== size.height)) {
+      setSize({ width, height });
+    }
   };
-  const sceneScale = Math.max(size.width / VIEW_W, size.height / VIEW_H);
-  const sceneOffsetX = (size.width - VIEW_W * sceneScale) / 2;
-  const sceneOffsetY = (size.height - VIEW_H * sceneScale) / 2;
+  const canvasKey = `${size.width}x${size.height}`;
+  const coverScale = Math.max(size.width / VIEW_W, size.height / VIEW_H);
+  const coverOffsetX = (size.width - VIEW_W * coverScale) / 2;
+  const coverOffsetY = (size.height - VIEW_H * coverScale) / 2;
+
+  // The cross-tab "camera zoom" (`src/lib/tabCameraScale.ts`) stays
+  // shared-value-driven — it changes continuously after mount without ever
+  // needing a remount, the same way the already-working ring rotation and
+  // particle motion in this same file do.
+  const tabZoomTransform = useDerivedValue(() => [
+    { translateX: CX },
+    { translateY: CY },
+    { scale: scale.value },
+    { translateX: -CX },
+    { translateY: -CY },
+  ]);
 
   return (
     <View
@@ -249,8 +303,9 @@ export function NullscapesSceneRich({ style }: { style?: ViewStyle }): React.JSX
       importantForAccessibility="no-hide-descendants"
       onLayout={onLayout}
     >
-      <Canvas style={styles.canvas}>
-        <Group transform={[{ translateX: sceneOffsetX }, { translateY: sceneOffsetY }, { scale: sceneScale }]}>
+      <Canvas key={canvasKey} style={styles.canvas}>
+        <Group transform={[{ translateX: coverOffsetX }, { translateY: coverOffsetY }, { scale: coverScale }]}>
+        <Group transform={tabZoomTransform}>
         <Path path={`M 0,0 L ${VIEW_W},0 L ${VIEW_W},${VIEW_H} L 0,${VIEW_H} Z`} color={SKY_TOP} />
         <Path path={`M 0,60 L ${VIEW_W},60 L ${VIEW_W},180 L 0,180 Z`} color={SKY_HORIZON} opacity={0.35} />
 
@@ -323,6 +378,7 @@ export function NullscapesSceneRich({ style }: { style?: ViewStyle }): React.JSX
         <Path path={NEAR_PATH} color={SPIKE_NEAR_FILL} />
         <Path path={NEAR_PATH} color={SPIKE_NEAR_RIM} style="stroke" strokeWidth={1} />
         </Group>
+        </Group>
       </Canvas>
     </View>
   );
@@ -333,5 +389,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   canvas: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
 });
+
+export const NullscapesSceneRich = memo(NullscapesSceneRichImpl);
 
 export default NullscapesSceneRich;

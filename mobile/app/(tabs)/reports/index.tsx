@@ -161,7 +161,7 @@ export default function ReportsScreen() {
   }, [authLoading]);
 
   return (
-    <Screen testID={ReportsIds.screen} note="FR-US-01 · GET /api/v1/reports/summary">
+    <Screen testID={ReportsIds.screen} title="Reports" note="FR-US-01 · GET /api/v1/reports/summary">
       <View style={styles.header}>
         <Text style={styles.title}>Financial Summary</Text>
         <Text style={styles.description}>Income, expenses, and where your money went this month.</Text>

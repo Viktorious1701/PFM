@@ -28,7 +28,6 @@ import type { WalletRead } from '../../../src/api/types';
 import { listWallets } from '../../../src/api/wallets';
 import { Banner } from '../../../src/components/Banner';
 import { Button } from '../../../src/components/Button';
-import { NullscapesScene } from '../../../src/components/icons/NullscapesScene';
 import { Screen } from '../../../src/components/Screen';
 import { WalletsIds } from '../../../src/constants/elementIds';
 import { useAuth } from '../../../src/store/auth';
@@ -126,7 +125,7 @@ export default function WalletsScreen() {
   const groups = useMemo(() => (wallets ? groupWalletsByType(wallets) : []), [wallets]);
 
   return (
-    <Screen testID={WalletsIds.screen} note="WM-US-02 · GET /api/v1/wallets">
+    <Screen testID={WalletsIds.screen} title="Wallets" note="WM-US-02 · GET /api/v1/wallets">
       <Button
         title="+ Add Wallet"
         testID={WalletsIds.addCta}
@@ -145,7 +144,6 @@ export default function WalletsScreen() {
 
       {wallets && wallets.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <NullscapesScene style={styles.emptyScene} />
           <Text style={styles.empty} testID={WalletsIds.empty}>
             No wallets yet — add your first one to get started.
           </Text>
@@ -230,7 +228,6 @@ function WalletFolderCard({ wallet, index }: { wallet: WalletRead; index: number
 const styles = StyleSheet.create({
   loading: { paddingVertical: space.xl },
   emptyWrap: { paddingTop: space.md },
-  emptyScene: { marginBottom: space.md },
   empty: {
     fontFamily: font.family.body,
     fontSize: font.size.body,

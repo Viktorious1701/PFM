@@ -8,7 +8,7 @@
  */
 import { StyleSheet, Text, View } from 'react-native';
 
-import { color, font, radius, space } from '../theme/tokens';
+import { ns, nsFont } from '../theme/nullscapes';
 
 export function PrototypeBanner({ note }: { note?: string }) {
   return (
@@ -21,20 +21,25 @@ export function PrototypeBanner({ note }: { note?: string }) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: color.prototype.bg,
-    borderLeftWidth: 4,
-    borderLeftColor: color.prototype.border,
-    paddingVertical: space.sm,
-    paddingHorizontal: space.md,
+    backgroundColor: ns.card,
+    borderWidth: 1,
+    borderColor: ns.cardBorder,
+    borderLeftWidth: 3,
+    borderLeftColor: ns.warning,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     gap: 2,
   },
   label: {
-    color: color.prototype.fg,
-    fontFamily: font.family.bodyMedium,
-    fontSize: font.size.xs,
-    letterSpacing: 0.4,
+    color: ns.warning,
+    fontFamily: nsFont.semibold,
+    fontSize: 11,
+    letterSpacing: 0.6,
   },
-  note: { color: color.prototype.fg, fontFamily: font.family.body, fontSize: font.size.xs },
+  note: { color: ns.muted, fontFamily: nsFont.regular, fontSize: 11 },
 });
 
-export const prototypeBannerRadius = radius.sm;
+export const prototypeBannerRadius = 8;

@@ -95,7 +95,12 @@ export default function ActivateScreen() {
   };
 
   return (
-    <Screen testID={ActivateIds.screen} note="UM-US-02 · POST /api/v1/users/activate">
+    <Screen
+      testID={ActivateIds.screen}
+      title="Activate Account"
+      note="UM-US-02 · POST /api/v1/users/activate"
+      background="opaque"
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Complete Account Activation</Text>
         <Text style={styles.description}>

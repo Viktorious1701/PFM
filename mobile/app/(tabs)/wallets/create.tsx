@@ -92,7 +92,7 @@ export default function CreateWalletScreen() {
   };
 
   return (
-    <Screen testID={CreateWalletIds.screen} note="WM-US-01 · POST /api/v1/wallets">
+    <Screen testID={CreateWalletIds.screen} title="Add Wallet" note="WM-US-01 · POST /api/v1/wallets">
       <View style={styles.header}>
         <Text style={styles.title}>Add a Wallet</Text>
         <Text style={styles.description}>

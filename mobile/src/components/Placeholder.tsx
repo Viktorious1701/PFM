@@ -1,13 +1,18 @@
 /**
- * Shared placeholder body for every skeleton screen.
+ * Shared placeholder body for every skeleton screen (currently Budgets only).
  *
  * Exists so each screen file states *what will fill it* rather than carrying
  * throwaway markup that someone later mistakes for a real implementation.
  * Delete this component once the screens are built.
+ *
+ * Renders via `Screen` (not a bare `View`) so every skeleton screen gets the
+ * same Nullscapes header/background/prototype-banner treatment as a built
+ * screen, instead of a visually inconsistent one-off container.
  */
 import { StyleSheet, Text, View } from 'react-native';
 
-import { color, font, radius, space } from '../theme/tokens';
+import { ns, nsFont } from '../theme/nullscapes';
+import { Screen } from './Screen';
 
 type Props = {
   /** Screen title, e.g. "Invite a user". */
@@ -22,33 +27,42 @@ type Props = {
 
 export function Placeholder({ title, story, endpoint, purpose }: Props) {
   return (
-    <View style={styles.container}>
-      <Text style={styles.badge}>SKELETON — not implemented</Text>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.purpose}>{purpose}</Text>
-      <View style={styles.meta}>
-        <Text style={styles.metaLine}>Story: {story}</Text>
-        {endpoint ? <Text style={styles.metaLine}>Endpoint: {endpoint}</Text> : null}
+    <Screen title={title} note={story}>
+      <View style={styles.card}>
+        <Text style={styles.badge}>SKELETON — not implemented</Text>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.purpose}>{purpose}</Text>
+        <View style={styles.meta}>
+          <Text style={styles.metaLine}>Story: {story}</Text>
+          {endpoint ? <Text style={styles.metaLine}>Endpoint: {endpoint}</Text> : null}
+        </View>
       </View>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: space.xxl, gap: space.md, backgroundColor: color.surface },
+  card: {
+    backgroundColor: ns.card,
+    borderWidth: 1,
+    borderColor: ns.cardBorder,
+    borderRadius: 10,
+    padding: 20,
+    gap: 10,
+  },
   badge: {
     alignSelf: 'flex-start',
-    backgroundColor: color.prototype.bg,
-    color: color.prototype.fg,
-    fontSize: font.size.xs,
-    fontWeight: font.weight.bold,
-    paddingHorizontal: space.sm,
-    paddingVertical: space.xs,
-    borderRadius: radius.sm,
+    backgroundColor: 'rgba(255,196,110,0.12)',
+    color: ns.warning,
+    fontFamily: nsFont.semibold,
+    fontSize: 11,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
     overflow: 'hidden',
   },
-  title: { fontFamily: font.family.heading, fontSize: font.size.title, color: color.text },
-  purpose: { fontFamily: font.family.body, fontSize: font.size.md, lineHeight: 22, color: color.textMuted },
-  meta: { marginTop: space.sm, gap: space.xs },
-  metaLine: { fontSize: font.size.sm, color: color.textMuted, fontFamily: 'monospace' },
+  title: { fontFamily: nsFont.bold, fontSize: 22, color: ns.ink },
+  purpose: { fontFamily: nsFont.regular, fontSize: 14, lineHeight: 20, color: ns.muted },
+  meta: { marginTop: 8, gap: 4 },
+  metaLine: { fontSize: 12, color: ns.mutedFaint, fontFamily: 'monospace' },
 });
