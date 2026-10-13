@@ -1434,33 +1434,36 @@ every prior Category Management story used for its own all-`[API]` classificatio
 
 ### Test Implementation Map *(filled at step 4)*
 
-Will be implemented in `backend/tests/integration/test_cm_us_05_delete_category.py`, one test per
-`TC-NN`, mirroring `test_wm_us_05_delete_wallet.py`'s own red-then-green discipline: run red first with
-the implementation files stashed out, then green once restored. Not yet implemented — this dispatch is
-artifacts-only (steps 1–3).
+Implemented in `backend/tests/integration/test_cm_us_05_delete_category.py`, one test per `TC-NN`,
+following `test_wm_us_05_delete_wallet.py`'s own red-then-green discipline: run red first with the
+implementation files stashed out (confirmed via a real `git stash push -u -- <implementation files>`,
+leaving this test file in place — all 20 tests failed with `405 Method Not Allowed`, since the `DELETE`
+route did not exist yet), then popped and run green (all 20 passed) once the implementation files were
+restored. All 20 tests pass; the full existing suite (`uv run pytest -m "not smtp"`) also passes
+unchanged at 631 passed, 1 deselected.
 
-| TC | pytest node id (planned) | Result |
+| TC | pytest node id | Result |
 |---|---|---|
-| TC-74 | `test_an_authenticated_owner_archives_a_category_200_other_fields_unchanged` | Not yet run |
-| TC-75 | `test_archiving_a_category_persists_the_new_state_on_the_same_single_row` | Not yet run |
-| TC-76 | `test_an_unauthenticated_caller_is_denied_with_401_and_nothing_is_archived` | Not yet run |
-| TC-77 | `test_a_category_id_matching_no_category_at_all_is_rejected_with_404` | Not yet run |
-| TC-78 | `test_a_category_belonging_to_a_different_user_gets_the_identical_404_as_not_found` | Not yet run |
-| TC-79 | `test_a_malformed_category_reference_gets_the_same_404_as_a_well_formed_unknown_one` | Not yet run |
-| TC-80 | `test_a_caller_who_owns_a_different_category_cannot_archive_another_users_category` | Not yet run |
-| TC-81 | `test_an_admin_role_caller_cannot_archive_another_users_category_through_this_endpoint` | Not yet run |
-| TC-82 | `test_a_repeated_archive_request_succeeds_again_with_the_identical_archive_time` | Not yet run |
-| TC-83 | `test_archiving_leaves_name_type_and_icon_unchanged_verified_against_storage` | Not yet run |
-| TC-84 | `test_an_archived_category_is_excluded_from_both_items_and_total_of_the_default_list` | Not yet run |
-| TC-85 | `test_a_caller_whose_only_category_is_archived_receives_an_empty_list_and_zero_total` | Not yet run |
-| TC-86 | `test_an_archived_category_can_still_be_viewed_directly_by_its_own_identifier` | Not yet run |
-| TC-87 | `test_viewing_an_archived_category_exposes_exactly_the_five_original_fields` | Not yet run |
-| TC-88 | `test_a_new_transaction_against_an_archived_category_is_rejected_with_409` | Not yet run |
-| TC-89 | `test_a_new_budget_against_an_archived_category_is_rejected_with_409` | Not yet run |
-| TC-90 | `test_archiving_a_category_with_existing_transactions_and_budgets_leaves_them_untouched` | Not yet run |
-| TC-91 | `test_the_response_exposes_exactly_the_six_documented_fields` | Not yet run |
-| TC-92 | `test_credentials_are_evaluated_before_the_category_reference_is_looked_up` | Not yet run |
-| TC-93 | `test_updating_an_archived_categorys_name_type_or_icon_via_patch_still_succeeds` | Not yet run |
+| TC-74 | `tests/integration/test_cm_us_05_delete_category.py::test_an_authenticated_owner_archives_a_category_200_other_fields_unchanged` | PASS |
+| TC-75 | `tests/integration/test_cm_us_05_delete_category.py::test_archiving_a_category_persists_the_new_state_on_the_same_single_row` | PASS |
+| TC-76 | `tests/integration/test_cm_us_05_delete_category.py::test_an_unauthenticated_caller_is_denied_with_401_and_nothing_is_archived` | PASS |
+| TC-77 | `tests/integration/test_cm_us_05_delete_category.py::test_a_category_id_matching_no_category_at_all_is_rejected_with_404` | PASS |
+| TC-78 | `tests/integration/test_cm_us_05_delete_category.py::test_a_category_belonging_to_a_different_user_gets_the_identical_404_as_not_found` | PASS |
+| TC-79 | `tests/integration/test_cm_us_05_delete_category.py::test_a_malformed_category_reference_gets_the_same_404_as_a_well_formed_unknown_one` | PASS |
+| TC-80 | `tests/integration/test_cm_us_05_delete_category.py::test_a_caller_who_owns_a_different_category_cannot_archive_another_users_category` | PASS |
+| TC-81 | `tests/integration/test_cm_us_05_delete_category.py::test_an_admin_role_caller_cannot_archive_another_users_category_through_this_endpoint` | PASS |
+| TC-82 | `tests/integration/test_cm_us_05_delete_category.py::test_a_repeated_archive_request_succeeds_again_with_the_identical_archive_time` | PASS |
+| TC-83 | `tests/integration/test_cm_us_05_delete_category.py::test_archiving_leaves_name_type_and_icon_unchanged_verified_against_storage` | PASS |
+| TC-84 | `tests/integration/test_cm_us_05_delete_category.py::test_an_archived_category_is_excluded_from_both_items_and_total_of_the_default_list` | PASS |
+| TC-85 | `tests/integration/test_cm_us_05_delete_category.py::test_a_caller_whose_only_category_is_archived_receives_an_empty_list_and_zero_total` | PASS |
+| TC-86 | `tests/integration/test_cm_us_05_delete_category.py::test_an_archived_category_can_still_be_viewed_directly_by_its_own_identifier` | PASS |
+| TC-87 | `tests/integration/test_cm_us_05_delete_category.py::test_viewing_an_archived_category_exposes_exactly_the_five_original_fields` | PASS |
+| TC-88 | `tests/integration/test_cm_us_05_delete_category.py::test_a_new_transaction_against_an_archived_category_is_rejected_with_409` | PASS |
+| TC-89 | `tests/integration/test_cm_us_05_delete_category.py::test_a_new_budget_against_an_archived_category_is_rejected_with_409` | PASS |
+| TC-90 | `tests/integration/test_cm_us_05_delete_category.py::test_archiving_a_category_with_existing_transactions_and_budgets_leaves_them_untouched` | PASS |
+| TC-91 | `tests/integration/test_cm_us_05_delete_category.py::test_the_response_exposes_exactly_the_six_documented_fields` | PASS |
+| TC-92 | `tests/integration/test_cm_us_05_delete_category.py::test_credentials_are_evaluated_before_the_category_reference_is_looked_up` | PASS |
+| TC-93 | `tests/integration/test_cm_us_05_delete_category.py::test_updating_an_archived_categorys_name_type_or_icon_via_patch_still_succeeds` | PASS |
 
 ---
 

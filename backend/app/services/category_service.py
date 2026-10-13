@@ -11,11 +11,12 @@ LA-04's three named audited events, and no AC or FR in spec.md asks for one.
 
 from sqlalchemy.orm import Session
 
+from app.core import clock
 from app.core.errors import CategoryNotFoundError
 from app.models.category import CategoryType
 from app.models.user import UserModel
 from app.repositories import category_repo
-from app.schemas.category import CategoryListRead, CategoryRead
+from app.schemas.category import CategoryArchiveRead, CategoryListRead, CategoryRead
 
 
 def create_category(
@@ -126,4 +127,31 @@ def list_categories(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+def archive_category(db: Session, *, owner: UserModel, category_id: str) -> CategoryArchiveRead:
+    """spec AC-01, AC-05, FR-03, FR-04, FR-05 (plan.md A1, A2, A5, A6, A8).
+    Looks up the category scoped to the caller -- reusing
+    category_repo.get_owned_by_id() unchanged -- then archives it.
+    Idempotent (A6): a category that is already archived is returned as-is,
+    its original archived_at preserved. No precondition beyond ownership --
+    this is the operation that *sets* the archived state VL-06's 409 branch
+    later checks for (A2), not one blocked by it.
+    """
+    category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
+    if category is None:
+        raise CategoryNotFoundError()
+
+    category = category_repo.archive_category(db, category=category)
+    # archive_category() always leaves archived_at set, whether by this call
+    # or an earlier one (A6) -- never None once it returns.
+    assert category.archived_at is not None
+    return CategoryArchiveRead(
+        id=category.id,
+        user_id=category.user_id,
+        name=category.name,
+        type=category.type,
+        icon=category.icon,
+        archived_at=clock.ensure_aware(category.archived_at),
     )

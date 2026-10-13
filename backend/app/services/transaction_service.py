@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core import clock
 from app.core.errors import (
+    TransactionCategoryArchivedError,
     TransactionCategoryNotFoundError,
     TransactionCategoryTypeMismatchError,
     TransactionInsufficientBalanceError,
@@ -47,9 +48,11 @@ def create_transaction(
     (spec AC-01, AC-02, FR-18, BR-02).
 
     Fixed check order — wallet ownership, then wallet archived-state (WM-US-05
-    plan.md A2), then category ownership, then category-type consistency,
-    then (EXPENSE only) balance sufficiency — so a request that fails more
-    than one reports only the first (plan.md A4, extended by WM-US-05 A2).
+    plan.md A2), then category ownership, then category archived-state
+    (CM-US-05 plan.md A2), then category-type consistency, then (EXPENSE
+    only) balance sufficiency — so a request that fails more than one
+    reports only the first (plan.md A4, extended by WM-US-05 A2, extended
+    again by CM-US-05 A2).
     """
     wallet = wallet_repo.get_owned_by_id(db, wallet_id=wallet_id, user_id=owner.id)
     if wallet is None:
@@ -60,6 +63,8 @@ def create_transaction(
     category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
     if category is None:
         raise TransactionCategoryNotFoundError()
+    if category.archived_at is not None:
+        raise TransactionCategoryArchivedError()
 
     # spec BR-03, plan.md A3/A7: compared by value — TransactionType and
     # CategoryType are deliberately separate enum classes with matching

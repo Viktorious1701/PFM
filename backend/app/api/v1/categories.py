@@ -4,7 +4,13 @@
 from fastapi import APIRouter, Query, status
 
 from app.core.deps import CurrentUserDep, DbDep
-from app.schemas.category import CategoryCreate, CategoryListRead, CategoryRead, CategoryUpdate
+from app.schemas.category import (
+    CategoryArchiveRead,
+    CategoryCreate,
+    CategoryListRead,
+    CategoryRead,
+    CategoryUpdate,
+)
 from app.services import category_service
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -120,3 +126,32 @@ def get_category(
 ) -> CategoryRead:
     """Pure read -- no db.commit() (plan.md A6)."""
     return category_service.get_category(db, owner=current_user, category_id=category_id)
+
+
+@router.delete(
+    "/{category_id}",
+    response_model=CategoryArchiveRead,
+    status_code=status.HTTP_200_OK,
+    summary="Archive (delete) a category",
+    description=(
+        "Archives one of the authenticated caller's own categories, "
+        "identified by its own id. The category's row, name, type, and "
+        "icon are left unchanged, and it remains viewable through "
+        "GET /categories/{category_id}; it is excluded from "
+        "GET /categories by default, and can no longer be referenced by a "
+        "new Transaction or Budget. Archiving an already-archived category "
+        "succeeds again without changing the recorded archive time."
+    ),
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        404: {"description": "CATEGORY_NOT_FOUND"},
+    },
+)
+def archive_category(
+    category_id: str,
+    db: DbDep,
+    current_user: CurrentUserDep,
+) -> CategoryArchiveRead:
+    result = category_service.archive_category(db, owner=current_user, category_id=category_id)
+    db.commit()
+    return result

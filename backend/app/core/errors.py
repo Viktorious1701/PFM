@@ -290,3 +290,30 @@ class BudgetWalletArchivedError(AppError):
     status_code = 409
     error_code = "BUDGET_WALLET_ARCHIVED"
     default_message = "The referenced wallet is archived and cannot receive new budgets."
+
+
+# --- CM-US-05: Delete a Category --------------------------------------------
+
+
+class TransactionCategoryArchivedError(AppError):
+    """spec CM-US-05 AC-08 / FR-08. Constitution VL-06's "409 if present but
+    in the wrong state" branch, applied to a category referenced by a new
+    Transaction. Distinct from TransactionCategoryNotFoundError (TM-US-01),
+    which covers the category failing to resolve at all -- this category
+    resolves and is owned by the caller, but is archived (plan.md A2).
+    """
+
+    status_code = 409
+    error_code = "TRANSACTION_CATEGORY_ARCHIVED"
+    default_message = "The referenced category is archived and cannot receive new transactions."
+
+
+class BudgetCategoryArchivedError(AppError):
+    """spec CM-US-05 AC-09 / FR-09. Same basis as
+    TransactionCategoryArchivedError, applied to a category referenced by a
+    new Budget.
+    """
+
+    status_code = 409
+    error_code = "BUDGET_CATEGORY_ARCHIVED"
+    default_message = "The referenced category is archived and cannot receive new budgets."

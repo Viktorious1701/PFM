@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core import clock
 from app.core.errors import (
     BudgetAlreadyExistsError,
+    BudgetCategoryArchivedError,
     BudgetCategoryNotFoundError,
     BudgetNotFoundError,
     BudgetWalletArchivedError,
@@ -40,9 +41,10 @@ def create_budget(
     AC-01, FR-13, BR-02).
 
     Fixed check order — wallet ownership, then wallet archived-state (WM-US-05
-    plan.md A2), then category ownership, then the duplicate-budget check —
-    so a request that fails more than one reports only the first (plan.md
-    A6; test_cases QF-06; extended by WM-US-05 A2).
+    plan.md A2), then category ownership, then category archived-state
+    (CM-US-05 plan.md A2), then the duplicate-budget check — so a request
+    that fails more than one reports only the first (plan.md A6; test_cases
+    QF-06; extended by WM-US-05 A2, extended again by CM-US-05 A2).
     """
     wallet = wallet_repo.get_owned_by_id(db, wallet_id=wallet_id, user_id=owner.id)
     if wallet is None:
@@ -53,6 +55,8 @@ def create_budget(
     category = category_repo.get_owned_by_id(db, category_id=category_id, user_id=owner.id)
     if category is None:
         raise BudgetCategoryNotFoundError()
+    if category.archived_at is not None:
+        raise BudgetCategoryArchivedError()
 
     # spec BR-04, plan.md A2: never from the request payload.
     period = clock.utcnow().date().replace(day=1)

@@ -4,6 +4,8 @@ Constitution: VL-01 (Pydantic is the source of truth), PF-03 (DTO projection),
 NC-05 (enum serialisation).
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.category import CategoryType
@@ -118,3 +120,21 @@ class CategoryListRead(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class CategoryArchiveRead(BaseModel):
+    """Response DTO for DELETE /categories/{category_id} (CM-US-05 plan.md
+    A5). CategoryRead's own five fields, reused unchanged, plus archived_at
+    -- a new, dedicated envelope rather than widening CategoryRead a second
+    time (it was already widened once, by CM-US-04 A6, to add icon, and that
+    widening is reused unchanged across four already-shipped call sites).
+    Mirrors WalletArchiveRead's own precedent (WM-US-05 plan.md A5) of
+    adding a new envelope rather than mutating the shared Read DTO.
+    """
+
+    id: str
+    user_id: str
+    name: str
+    type: CategoryType
+    icon: str | None
+    archived_at: datetime

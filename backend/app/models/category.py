@@ -13,8 +13,9 @@ column lands here rather than at creation time.
 """
 
 import enum
+from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, String
+from sqlalchemy import DateTime, Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -53,6 +54,13 @@ class CategoryModel(Base):
     # sets it through PATCH /categories/{category_id}. Bounded at 50, not
     # name's own 100 -- an icon is a short identifier/slug, not a label.
     icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # spec AC-01/AC-05/FR-04/FR-05, plan.md A1: NULL means active; a non-NULL
+    # value means archived and records the moment -- set at most once
+    # (archive_category() never overwrites an existing value, A6).
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<CategoryModel id={self.id} user_id={self.user_id} name={self.name}>"

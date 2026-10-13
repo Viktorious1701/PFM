@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core import clock
 from app.models.category import CategoryModel, CategoryType
 
 
@@ -83,18 +84,48 @@ def list_owned(
     this order carries no chronological meaning. Mirrors
     `wallet_repo.list_owned()` exactly (WM-US-02) — the same single-table
     shape, no join.
+
+    CM-US-05 A3: both queries also exclude archived categories
+    (`CategoryModel.archived_at.is_(None)`), so an archived category
+    disappears from the caller's default list (CM-US-05 AC-06) without
+    reopening this story's own pagination, ordering, or ownership-scoping
+    decisions -- the identical kind of additive WHERE predicate this
+    function's own ownership scope already required to apply to both
+    queries together.
     """
     total = (
         db.scalar(
-            select(func.count()).select_from(CategoryModel).where(CategoryModel.user_id == user_id)
+            select(func.count())
+            .select_from(CategoryModel)
+            .where(
+                CategoryModel.user_id == user_id,
+                CategoryModel.archived_at.is_(None),
+            )
         )
         or 0
     )
     items = db.scalars(
         select(CategoryModel)
-        .where(CategoryModel.user_id == user_id)
+        .where(
+            CategoryModel.user_id == user_id,
+            CategoryModel.archived_at.is_(None),
+        )
         .order_by(CategoryModel.id.asc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
     return items, total
+
+
+def archive_category(db: Session, *, category: CategoryModel) -> CategoryModel:
+    """spec AC-01, AC-05, FR-04, FR-05 (plan.md A1, A6). Idempotent: stamps
+    `archived_at` with the current time only if the category is not already
+    archived -- a repeat call leaves the original timestamp untouched
+    rather than overwriting it with a fresh one. Flushed, not committed
+    (AR-06) -- the router owns the transaction boundary.
+    """
+    if category.archived_at is None:
+        category.archived_at = clock.utcnow()
+        db.add(category)
+        db.flush()
+    return category

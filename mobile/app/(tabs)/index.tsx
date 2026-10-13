@@ -28,10 +28,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../src/components/Screen';
 import { GroceriesGlyph, SalaryGlyph, TransportGlyph } from '../../src/components/icons/Glyphs';
+import { NullscapesScene } from '../../src/components/icons/NullscapesScene';
 import { PostmarkIcon } from '../../src/components/icons/PostmarkIcon';
 import { TornEdge } from '../../src/components/icons/TornEdge';
 import { DashboardIds } from '../../src/constants/elementIds';
-import { budgetHealth, color, font, gradient, radius, space } from '../../src/theme/tokens';
+import { budgetHealth, color, font, gradient, radius, shadow, space } from '../../src/theme/tokens';
 
 /** Demo data. Replaced by GET /api/v1/wallets + /budgets when those stories land. */
 const DEMO = {
@@ -61,11 +62,14 @@ export default function DashboardScreen() {
   const [ledgerOpen, setLedgerOpen] = useState(false);
 
   return (
-    <Screen
-      testID={DashboardIds.screen}
-      note="Layout from SDS §3.2, restyled Cash & Carry — every figure below is demo data"
-    >
-      <HeroTicket direction={direction} onChangeDirection={setDirection} />
+    <View style={styles.immersiveRoot}>
+      <NullscapesScene style={styles.immersiveBackground} />
+      <Screen
+        testID={DashboardIds.screen}
+        note="Layout from SDS §3.2, restyled Cash & Carry — every figure below is demo data"
+        background="transparent"
+      >
+        <HeroTicket direction={direction} onChangeDirection={setDirection} />
 
       <BalanceTape amount={DEMO.netBalance} />
 
@@ -121,7 +125,8 @@ export default function DashboardScreen() {
           </Section>
         </View>
       ) : null}
-    </Screen>
+      </Screen>
+    </View>
   );
 }
 
@@ -233,7 +238,15 @@ function BalanceTape({ amount }: { amount: string }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      {/* `sectionTitle`'s ink text has no card of its own to sit on — on
+          the immersive Dashboard that means it would render directly
+          against the Nullscapes background (near-black on near-black is
+          unreadable). An opaque backing chip keeps one rule everywhere on
+          this screen — ink text only ever sits on paper — instead of a
+          second, Dashboard-specific inverse text color to remember. */}
+      <View style={styles.sectionTitleChip}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
       {children}
     </View>
   );
@@ -274,7 +287,19 @@ function BudgetThermometer({
 }
 
 const styles = StyleSheet.create({
-  // Hero ticket — DESIGN.md "Components → hero ticket."
+  // Nullscapes immersive background (Dashboard only — confirmed scope).
+  // Mounted locally, not in the root layout: `expo-router/js-tabs` keeps
+  // inactive tab screens mounted (hidden, not torn down), so there is no
+  // tab-switch remount cost a global mount point would need to solve.
+  immersiveRoot: { flex: 1 },
+  immersiveBackground: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+
+  // Hero ticket — DESIGN.md "Components → hero ticket." Cash & Carry's own
+  // flat, hairline-only depth rule is scoped to paper-on-paper (DESIGN.md
+  // "Elevation & Depth"); floating opaque paper over the immersive
+  // background is the "reserved for transient overlays" case `shadow`
+  // already names in tokens.ts — a deliberate, singular exception, not a
+  // quiet departure from the flat rule everywhere else in the app.
   heroWrap: {},
   heroBody: {
     backgroundColor: color.surface,
@@ -287,6 +312,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.lg,
     paddingTop: space.sm,
     paddingBottom: space.lg,
+    ...shadow.overlay,
   },
   toggleRow: {
     flexDirection: 'row',
@@ -373,6 +399,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.xxl,
     transform: [{ rotate: '-1deg' }],
     gap: 2,
+    ...shadow.overlay,
   },
   tapeLabel: {
     fontFamily: font.family.bodyItalic,
@@ -398,6 +425,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: space.md,
     paddingHorizontal: space.lg,
+    ...shadow.overlay,
   },
   ledgerToggleLabel: { fontFamily: font.family.heading, fontSize: font.size.lg, color: color.text },
   ledgerToggleHint: {
@@ -411,6 +439,13 @@ const styles = StyleSheet.create({
   ledgerBody: { gap: space.lg },
 
   section: { gap: space.sm },
+  sectionTitleChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: color.surface,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.sm,
+    paddingVertical: 2,
+  },
   sectionTitle: { fontFamily: font.family.headingSemibold, fontSize: 20, color: color.text },
 
   walletRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
@@ -424,6 +459,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: color.border,
     gap: 2,
+    ...shadow.overlay,
   },
   walletName: { fontFamily: font.family.body, fontSize: font.size.sm, color: color.textMuted },
   walletBalance: {
@@ -440,6 +476,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: color.surfaceSunken,
     gap: space.xs + 2,
+    ...shadow.overlay,
   },
   budgetHeader: { flexDirection: 'row', justifyContent: 'space-between' },
   budgetCategory: { fontFamily: font.family.bodyMedium, fontSize: font.size.sm, color: color.text },
@@ -464,6 +501,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: color.border,
+    ...shadow.overlay,
   },
   recentLabel: { fontFamily: font.family.body, fontSize: font.size.body, color: color.text },
   recentAmount: { fontFamily: font.family.bodyMedium, fontSize: font.size.body },

@@ -35,6 +35,14 @@ import {
   Text,
   View,
 } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg from 'react-native-svg';
 
 import { toApiError } from '../../../src/api/errors';
@@ -53,6 +61,7 @@ import {
   TransportGlyph,
   UtilitiesGlyph,
 } from '../../../src/components/icons/Glyphs';
+import { NullscapesScene } from '../../../src/components/icons/NullscapesScene';
 import { TornEdge } from '../../../src/components/icons/TornEdge';
 import { PickerSheet, type PickerOption } from '../../../src/components/PickerSheet';
 import { Screen } from '../../../src/components/Screen';
@@ -257,6 +266,7 @@ export default function TransactionsScreen() {
               }
               ListEmptyComponent={
                 <View style={styles.centerFill}>
+                  <NullscapesScene style={styles.emptyScene} />
                   <Text style={styles.emptyText}>
                     No transactions yet. Tap "+ New Slip" to log your first one.
                   </Text>
@@ -396,23 +406,117 @@ function FilterChip({
   );
 }
 
-/** Gradient stamp FAB — a local constant per plan.md's minimal-footprint
- * decision, not added to `tokens.ts`. A second, distinct entry point to
- * `/(tabs)/transactions/create` alongside the Dashboard's own stamp button. */
-const FAB_GRADIENT = [color.primaryHover, color.primary] as const;
+/** Ink/glitch world — local to this one control (surface brief:
+ * `.impeccable/surfaces/mobile-app-tabs-transactions-index-tsx.md`). Not
+ * added to `tokens.ts`: this is the first flagship of a world that has not
+ * replaced Cash & Carry everywhere yet (direction contract FORM/scope).
+ * OWN-WORLD v2: rest stays near-black ink; the press-glitch now glows icy
+ * blue-white (Nullscapes) instead of flat slate — color only shows up at
+ * the moment of disruption, so it reads as the control "charging," not as
+ * decoration sitting on the control at all times. */
+const GLITCH_INK = '#14171A';
+const GLITCH_INK_LIGHT = '#262B30';
+const GLITCH_GLOW = 'rgba(146, 212, 255, 0.5)';
+const GLITCH_GLOW_BRIGHT = 'rgba(214, 241, 255, 0.95)';
+const FAB_GRADIENT = [GLITCH_INK_LIGHT, GLITCH_INK] as const;
 
+/** "+ NEW SLIP" stamps a moment into the ledger: pressing it fires a brief
+ * structured-displacement glitch (two offset ghost copies + a scanline
+ * flash) before settling, rather than the generic scale-and-fade every
+ * other finance app's add button uses (direction contract THESIS).
+ * `useReducedMotion` swaps this for the plain opacity-only press feedback
+ * `fabPressed` already provides (animate.md Accessibility and control). */
 function Fab({ onPress, testID }: { onPress: () => void; testID?: string }) {
+  const reduceMotion = useReducedMotion();
+  const ghostA = useSharedValue({ x: 0, y: 0 });
+  const ghostB = useSharedValue({ x: 0, y: 0 });
+  const ghostOpacity = useSharedValue(0);
+  const scanlineOpacity = useSharedValue(0);
+
+  const triggerGlitch = useCallback(() => {
+    if (reduceMotion) return;
+    const step = (duration: number) => ({ duration, easing: Easing.linear });
+    ghostOpacity.value = withSequence(withTiming(1, step(20)), withTiming(0, step(110)));
+    ghostA.value = withSequence(
+      withTiming({ x: -5, y: -3 }, step(30)),
+      withTiming({ x: 4, y: 2 }, step(30)),
+      withTiming({ x: 0, y: 0 }, step(70)),
+    );
+    ghostB.value = withSequence(
+      withTiming({ x: 5, y: -4 }, step(30)),
+      withTiming({ x: -3, y: 3 }, step(30)),
+      withTiming({ x: 0, y: 0 }, step(70)),
+    );
+    scanlineOpacity.value = withSequence(
+      withTiming(0.8, step(15)),
+      withTiming(0, step(15)),
+      withTiming(0.6, step(15)),
+      withTiming(0, step(90)),
+    );
+  }, [reduceMotion, ghostA, ghostB, ghostOpacity, scanlineOpacity]);
+
+  const ghostAStyle = useAnimatedStyle(() => ({
+    opacity: ghostOpacity.value,
+    transform: [{ translateX: ghostA.value.x }, { translateY: ghostA.value.y }],
+  }));
+  const ghostBStyle = useAnimatedStyle(() => ({
+    opacity: ghostOpacity.value,
+    transform: [{ translateX: ghostB.value.x }, { translateY: ghostB.value.y }],
+  }));
+  const scanlineStyle = useAnimatedStyle(() => ({ opacity: scanlineOpacity.value }));
+
   return (
     <Pressable
       testID={testID}
       onPress={onPress}
+      onPressIn={triggerGlitch}
       accessibilityRole="button"
       accessibilityLabel="Log a new transaction"
       style={({ pressed }) => [styles.fabWrap, pressed ? styles.fabPressed : null]}
     >
-      <LinearGradient colors={FAB_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.fab}>
-        <Text style={styles.fabLabel}>+ NEW SLIP</Text>
-      </LinearGradient>
+      <View style={styles.fabStack}>
+        {!reduceMotion && (
+          <Animated.View
+            pointerEvents="none"
+            importantForAccessibility="no-hide-descendants"
+            style={[styles.fabGhost, ghostBStyle]}
+          />
+        )}
+        {!reduceMotion && (
+          <Animated.View
+            pointerEvents="none"
+            importantForAccessibility="no-hide-descendants"
+            style={[styles.fabGhost, ghostAStyle]}
+          />
+        )}
+        <LinearGradient colors={FAB_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.fab}>
+          <Text style={styles.fabLabel}>+ NEW SLIP</Text>
+        </LinearGradient>
+        {!reduceMotion && (
+          <>
+            <Animated.View
+              pointerEvents="none"
+              importantForAccessibility="no-hide-descendants"
+              style={[styles.fabScanlineHalo, styles.fabScanlineTop, scanlineStyle]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              importantForAccessibility="no-hide-descendants"
+              style={[styles.fabScanline, styles.fabScanlineTop, scanlineStyle]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              importantForAccessibility="no-hide-descendants"
+              style={[styles.fabScanlineHalo, styles.fabScanlineBottom, scanlineStyle]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              importantForAccessibility="no-hide-descendants"
+              style={[styles.fabScanline, styles.fabScanlineBottom, scanlineStyle]}
+            />
+          </>
+        )}
+      </View>
     </Pressable>
   );
 }
@@ -452,6 +556,7 @@ const styles = StyleSheet.create({
   list: { flex: 1 },
   listContent: { paddingBottom: 96, flexGrow: 1 },
   centerFill: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xl },
+  emptyScene: { marginBottom: space.lg },
   emptyText: {
     fontFamily: font.family.body,
     fontSize: font.size.body,
@@ -523,6 +628,7 @@ const styles = StyleSheet.create({
   // FAB — DESIGN.md's flat-depth rule: no shadow, a stamped-ticket radius.
   fabWrap: { position: 'absolute', right: 0, bottom: 0 },
   fabPressed: { opacity: 0.88 },
+  fabStack: { position: 'relative' },
   fab: {
     borderRadius: radius.stamp,
     paddingVertical: space.md,
@@ -536,4 +642,44 @@ const styles = StyleSheet.create({
     color: color.primaryText,
     letterSpacing: 1,
   },
+  // Offset duplicate of the fab's own box (no label — the displaced
+  // silhouette alone reads as the glitch echo; a doubled label would also
+  // get double-announced to a screen reader). Fills fabStack exactly
+  // because fabStack's own size is set by the one normal-flow fab child.
+  fabGhost: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: GLITCH_GLOW,
+    borderRadius: radius.stamp,
+  },
+  // Two thin flashes rather than one full-height bar — a single bar across
+  // the whole control reads as a solid overlay, not a scanline. Each pairs
+  // a soft wide halo (fakes bloom on Android, where View shadowColor is
+  // ignored) with a bright 2px core, so the flash reads as glowing rather
+  // than a flat tinted stripe.
+  fabScanlineHalo: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 10,
+    marginTop: -4,
+    backgroundColor: GLITCH_GLOW,
+    borderRadius: radius.sm,
+  },
+  fabScanline: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: GLITCH_GLOW_BRIGHT,
+    shadowColor: GLITCH_GLOW_BRIGHT,
+    shadowOpacity: 0.9,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  fabScanlineTop: { top: '32%' },
+  fabScanlineBottom: { top: '62%' },
 });
