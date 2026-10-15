@@ -28,7 +28,8 @@
 import type { JSX, ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { color, font, radius, space, textStyle } from '../theme/tokens';
+import { ns, nsFont } from '../theme/nullscapes';
+import { space } from '../theme/tokens';
 
 export type PickerOption<T extends string> = { value: T; label: string };
 
@@ -123,23 +124,23 @@ const styles = StyleSheet.create({
   // the sheet) supplies the dim color, so the two can be separate elements
   // instead of one nesting inside the other.
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { backgroundColor: 'rgba(43,36,32,0.35)' },
+  backdrop: { backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
-    backgroundColor: color.surface,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
+    backgroundColor: ns.card,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderColor: color.border,
+    borderColor: ns.cardBorder,
     maxHeight: '70%',
     paddingTop: space.lg,
     paddingBottom: space.xl,
   },
   title: {
-    fontFamily: font.family.heading,
-    fontSize: font.size.lg,
-    color: color.text,
+    fontFamily: nsFont.semibold,
+    fontSize: 17,
+    color: ns.ink,
     paddingHorizontal: space.xl,
     marginBottom: space.sm,
   },
@@ -151,15 +152,15 @@ const styles = StyleSheet.create({
     paddingVertical: space.md,
     paddingHorizontal: space.xl,
     borderTopWidth: 1,
-    borderTopColor: color.border,
+    borderTopColor: ns.hairline,
   },
-  rowLabel: { ...textStyle.body },
-  rowLabelSelected: { fontFamily: font.family.bodyMedium },
-  rowCheck: { fontFamily: font.family.bodyMedium, fontSize: font.size.body, color: color.text },
+  rowLabel: { fontFamily: nsFont.regular, fontSize: 14, color: ns.muted },
+  rowLabelSelected: { fontFamily: nsFont.semibold, color: ns.ink },
+  rowCheck: { fontFamily: nsFont.semibold, fontSize: 14, color: ns.mint },
   footer: {
     paddingHorizontal: space.xl,
     paddingTop: space.md,
     borderTopWidth: 1,
-    borderTopColor: color.border,
+    borderTopColor: ns.hairline,
   },
 });

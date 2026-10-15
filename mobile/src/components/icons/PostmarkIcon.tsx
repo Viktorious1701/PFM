@@ -40,11 +40,16 @@ type PostmarkIconProps = {
   size?: number;
   /**
    * Ring stroke color when `active` is `false`. Defaults to `color.text`,
-   * reproducing the Dashboard's original always-on look. Ignored when
-   * `active` — the stamped ring is always solid `color.text` regardless of
-   * what is passed here.
+   * reproducing the Dashboard's original always-on look.
    */
   inactiveColor?: string;
+  /**
+   * Stamped fill color when `active` is `true`. Defaults to `color.text`
+   * (Iron-Gall Ink), the Cash & Carry "freshly pressed into the paper"
+   * look. Reports' `CategoryStampGrid` is currently the only caller that
+   * ever passes `active` — it overrides this to the Nullscapes mint accent.
+   */
+  activeColor?: string;
   children: ReactNode;
 };
 
@@ -52,12 +57,13 @@ export function PostmarkIcon({
   active = false,
   size = 44,
   inactiveColor = color.text,
+  activeColor = color.text,
   children,
 }: PostmarkIconProps) {
   return (
     <Svg width={size} height={size} viewBox={VIEWBOX}>
       {active ? (
-        <Circle cx={RING_CX} cy={RING_CY} r={RING_RADIUS} fill={color.text} stroke="none" />
+        <Circle cx={RING_CX} cy={RING_CY} r={RING_RADIUS} fill={activeColor} stroke="none" />
       ) : (
         <Circle
           cx={RING_CX}

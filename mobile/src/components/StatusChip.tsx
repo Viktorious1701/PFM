@@ -12,7 +12,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { UserStatus } from '../api/types';
-import { color, font, radius, space } from '../theme/tokens';
+import { ns, nsFont } from '../theme/nullscapes';
 
 const LABEL: Record<UserStatus, string> = {
   PENDING: 'Invited',
@@ -20,12 +20,16 @@ const LABEL: Record<UserStatus, string> = {
   DEACTIVATED: 'Deactivated',
 };
 
-export function StatusChip({ status, testID }: { status: UserStatus; testID?: string }) {
-  const palette = color.status[status];
+const DOT_COLOR: Record<UserStatus, string> = {
+  PENDING: ns.warning,
+  ACTIVE: ns.mint,
+  DEACTIVATED: ns.mutedFaint,
+};
 
+export function StatusChip({ status, testID }: { status: UserStatus; testID?: string }) {
   return (
-    <View testID={testID} style={[styles.chip, { backgroundColor: palette.bg }]}>
-      <View style={[styles.dot, { backgroundColor: palette.dot }]} />
+    <View testID={testID} style={styles.chip}>
+      <View style={[styles.dot, { backgroundColor: DOT_COLOR[status] }]} />
       <Text style={styles.label}>{LABEL[status]}</Text>
     </View>
   );
@@ -36,17 +40,20 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.xs,
-    paddingHorizontal: space.md,
-    paddingVertical: space.xs,
-    borderRadius: radius.full,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: ns.cardBorder,
+    backgroundColor: ns.card,
     overflow: 'hidden',
   },
   dot: { width: 6, height: 6, borderRadius: 3 },
   label: {
-    fontFamily: font.family.bodyMedium,
-    fontSize: font.size.sm,
-    color: color.text,
+    fontFamily: nsFont.medium,
+    fontSize: 12,
+    color: ns.ink,
     letterSpacing: 0.2,
   },
 });

@@ -32,6 +32,20 @@ export const ns = {
   buttonRing: 'rgba(207,243,255,0.25)',
   buttonGlow: 'rgba(174,220,255,0.25)',
 
+  // The press-glitch flash (ghost-echo pair + scanline) — validated first on
+  // the Transactions FAB, brighter than `buttonRing`/`buttonGlow` since it
+  // only shows for ~150ms at the moment of press, not as a resting glow.
+  //
+  // `buttonGlow`/`glitchGlow`/`glitchGlowBright` are the app's only
+  // blend-eligible tokens (`mixBlendMode: 'screen'` at the call site, never
+  // a flat `backgroundColor` composite) — confirmed against a reference
+  // Nullscapes scene built in an external level editor: of 51 defined color
+  // channels there, only 6–8 carried the engine's additive-blending flag,
+  // and every one was a saturated accent hue. Structural and atmospheric
+  // colors (`card`, `hairline`, `ink`, `track`, …) never blend.
+  glitchGlow: 'rgba(146, 212, 255, 0.5)',
+  glitchGlowBright: 'rgba(214, 241, 255, 0.95)',
+
   // Chrome — header/tab-bar, matching the validated zoom-traversal mockups
   // exactly ("Glitch-only theme, no Cash & Carry chrome").
   chromeBg: 'rgba(11,14,19,0.9)',

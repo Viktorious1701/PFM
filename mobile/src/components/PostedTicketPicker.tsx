@@ -27,7 +27,8 @@ import type { ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { color, font, radius, space } from '../theme/tokens';
+import { ns, nsFont } from '../theme/nullscapes';
+import { space } from '../theme/tokens';
 import { TornEdge } from './icons/TornEdge';
 
 export type PostedTicketOption<T extends string> = {
@@ -230,7 +231,7 @@ function Ticket<T extends string>({
         ]}
       >
         <View style={styles.tornEdge}>
-          <TornEdge fill={isSelected ? color.surfaceSunken : color.surface} height={8} teeth={6} />
+          <TornEdge fill={isSelected ? '#161B22' : ns.card} height={8} teeth={6} />
         </View>
 
         <Text style={styles.label} numberOfLines={1}>
@@ -300,27 +301,27 @@ function Ticket<T extends string>({
 
 const styles = StyleSheet.create({
   row: { gap: space.md, paddingTop: space.md, paddingBottom: space.xs, paddingHorizontal: space.xs },
-  emptyLabel: { fontFamily: font.family.body, fontSize: font.size.sm, color: color.textMuted },
+  emptyLabel: { fontFamily: nsFont.regular, fontSize: 13, color: ns.muted },
 
   ticket: {
     position: 'relative',
     minWidth: 108,
-    backgroundColor: color.surface,
+    backgroundColor: ns.card,
     borderWidth: 1,
-    borderColor: color.border,
-    borderRadius: radius.sm,
+    borderColor: ns.cardBorder,
+    borderRadius: 8,
     paddingTop: space.md,
     paddingHorizontal: space.sm,
     paddingBottom: space.sm,
   },
   ticketSelected: {
-    backgroundColor: color.surfaceSunken,
-    borderColor: color.borderInteractive,
+    backgroundColor: '#161B22',
+    borderColor: ns.mintBorder,
   },
   tornEdge: { position: 'absolute', top: -6, left: 0, right: 0, height: 8 },
 
-  label: { fontFamily: font.family.heading, fontSize: font.size.sm, color: color.text },
-  sublabel: { fontFamily: font.family.body, fontSize: font.size.xs, color: color.textMuted, marginTop: space.xs / 2 },
+  label: { fontFamily: nsFont.semibold, fontSize: 13, color: ns.ink },
+  sublabel: { fontFamily: nsFont.regular, fontSize: 11, color: ns.mutedFaint, marginTop: space.xs / 2 },
 
   nail: {
     position: 'absolute',
@@ -329,9 +330,9 @@ const styles = StyleSheet.create({
     width: 15,
     height: 15,
     borderRadius: 8,
-    backgroundColor: color.brassSoft,
+    backgroundColor: ns.mint,
     borderWidth: 1,
-    borderColor: color.brassDeep,
+    borderColor: ns.card,
   },
   trail: {
     position: 'absolute',
@@ -340,7 +341,7 @@ const styles = StyleSheet.create({
     width: 3,
     height: 42,
     borderRadius: 2,
-    backgroundColor: color.brassSoft,
+    backgroundColor: ns.mint,
   },
   burst: {
     position: 'absolute',
@@ -352,7 +353,7 @@ const styles = StyleSheet.create({
     marginTop: -2,
     borderRadius: 2,
     borderWidth: 1.5,
-    borderColor: color.expense,
+    borderColor: ns.mint,
   },
   mote: {
     position: 'absolute',
@@ -363,13 +364,13 @@ const styles = StyleSheet.create({
     marginLeft: -1.25,
     marginTop: -1.25,
     borderRadius: 1,
-    backgroundColor: color.brassDeep,
+    backgroundColor: ns.mint,
   },
 
   errorText: {
-    fontSize: font.size.sm,
-    color: color.error.fg,
-    fontFamily: font.family.bodyMedium,
+    fontSize: 13,
+    color: ns.danger,
+    fontFamily: nsFont.medium,
     marginTop: space.xs,
   },
 });

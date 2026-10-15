@@ -13,7 +13,22 @@
  * not behind just one screen, so every screen is meant to show it through by
  * default. `'opaque'` stays available for a screen that genuinely needs its
  * own solid fill, but nothing currently uses it.
+ *
+ * Bottom inset: the floating tab bar is `tabBarStyle: {position: 'absolute'}`
+ * (`app/(tabs)/_layout.tsx`), so react-navigation never reserves layout space
+ * for it — content pinned to its own container's bottom edge (e.g.
+ * Transactions' FAB, `fabWrap: {position:'absolute', bottom:0}`) renders
+ * underneath the bar and loses its hit area to it, confirmed as a real click
+ * bug (tapping the FAB navigated to another tab instead). Every in-tabs
+ * screen reserves `useBottomTabBarHeight()` as bottom padding so flex:1
+ * descendants — and anything absolutely positioned against one — shrink to
+ * stop above the bar instead of under it. That height already bakes in the
+ * safe-area bottom inset (`BottomTabBar.js`'s own `paddingBottom:
+ * spacing/2 + insets.bottom`), so it replaces `insets.bottom` rather than
+ * adding to it. The two out-of-Tabs screens (`background="opaque"`) have no
+ * floating tab bar at all, so they keep plain `insets.bottom`.
  */
+import { useBottomTabBarHeight } from 'expo-router/js-tabs';
 import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -50,32 +65,59 @@ type Props = {
 };
 
 export function Screen({ children, title, note, scroll = true, testID, background = 'transparent' }: Props) {
-  const insets = useSafeAreaInsets();
   const isOpaque = background === 'opaque';
 
-  const body = <View style={styles.body}>{children}</View>;
-
   return (
-    <View
-      style={[styles.container, { paddingBottom: insets.bottom }, isOpaque && styles.containerOpaque]}
-      testID={testID}
-    >
+    <View style={[styles.container, isOpaque && styles.containerOpaque]} testID={testID}>
       {isOpaque ? null : <NullscapesHeader title={title} />}
       {USE_MOCK_API ? <PrototypeBanner note={note} /> : null}
-      {scroll ? (
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          {body}
-        </ScrollView>
+      {isOpaque ? (
+        <OpaqueBody scroll={scroll}>{children}</OpaqueBody>
       ) : (
-        body
+        <TabBody scroll={scroll}>{children}</TabBody>
       )}
     </View>
+  );
+}
+
+/** `background="opaque"` screens (sign-in, activation): outside the Tabs
+ * group entirely, no floating tab bar to clear — plain safe-area inset. */
+function OpaqueBody({ scroll, children }: { scroll: boolean; children: ReactNode }) {
+  const insets = useSafeAreaInsets();
+  const body = <View style={styles.body}>{children}</View>;
+  return scroll ? (
+    <ScrollView
+      contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom }]}
+      keyboardShouldPersistTaps="handled"
+    >
+      {body}
+    </ScrollView>
+  ) : (
+    <View style={[styles.flexFill, { paddingBottom: insets.bottom }]}>{body}</View>
+  );
+}
+
+/** Every in-tabs screen: reserve the floating tab bar's real height (see the
+ * file-level doc comment) instead of just the safe-area inset. */
+function TabBody({ scroll, children }: { scroll: boolean; children: ReactNode }) {
+  const tabBarHeight = useBottomTabBarHeight();
+  const body = <View style={styles.body}>{children}</View>;
+  return scroll ? (
+    <ScrollView
+      contentContainerStyle={[styles.scrollContent, { paddingBottom: tabBarHeight }]}
+      keyboardShouldPersistTaps="handled"
+    >
+      {body}
+    </ScrollView>
+  ) : (
+    <View style={[styles.flexFill, { paddingBottom: tabBarHeight }]}>{body}</View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
   containerOpaque: { backgroundColor: color.bg },
+  flexFill: { flex: 1 },
   scrollContent: { flexGrow: 1 },
   body: { flex: 1, paddingHorizontal: 20, paddingVertical: 16, gap: 16 },
 });
