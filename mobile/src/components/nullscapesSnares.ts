@@ -10,3 +10,17 @@
  * than guessed. Each time is snapped to the actual onset peak.
  */
 export const SNARE_MS: readonly number[] = [4679, 6560, 8429, 10310, 12190, 14060, 15929, 19691, 21560, 23429, 25310, 27191, 29060, 30929, 34691, 36560, 38429, 40310, 42191, 44060, 45929, 49691, 51560, 55310, 57191, 59095, 62810, 64691, 66560, 70310, 72191, 74060, 75929, 77810, 79679, 81560, 83429, 85310, 87191, 89060, 90929, 94679, 98429, 100322, 102191, 104060, 105929, 107578, 109447, 111328, 114614, 117191, 119060, 120941, 122810, 124691, 126560, 128441, 130322, 132191, 134060, 135941, 137822, 141560, 143441, 145310, 154680, 156561, 158441, 160311, 162180, 167845, 169680, 173430, 175345, 179061, 180965, 182846, 184680, 186561, 188465, 190311, 192180, 194061, 195942, 197822, 199692, 201561];
+
+/**
+ * The climax: from the crash cymbal at 63.72 s (a high-band spike ~20 dB
+ * over the surrounding bars) to the moment the bass drops out into the
+ * breakdown at 76.75 s (sub-120 Hz falls ~45 dB in a quarter second).
+ * The moon's column holds across this whole window.
+ */
+export const CLIMAX_START_MS = 63720;
+export const CLIMAX_END_MS = 76750;
+
+/** One explosion per hit inside the climax: the crash itself, then every
+ * bar's snare. 68435 is filled in on the bar grid (midway between its
+ * neighbours) — the detector skipped that bar as ambiguous. */
+export const CLIMAX_BURST_MS: readonly number[] = [63720, 64691, 66560, 68435, 70310, 72191, 74060, 75929];

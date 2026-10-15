@@ -246,7 +246,8 @@ const styles = StyleSheet.create({
   brand: { ...label, color: moon.inkSoft, flexShrink: 1 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ghostButton: {
-    paddingVertical: 8,
+    height: 34,
+    justifyContent: 'center',
     paddingHorizontal: 16,
     borderRadius: 999,
     borderWidth: 1,
