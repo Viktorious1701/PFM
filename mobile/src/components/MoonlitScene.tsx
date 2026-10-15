@@ -13,18 +13,15 @@
  * blend: `mixBlendMode` on an SVG shape crashes on web, and moving them to
  * a blended overlay would break that occlusion order.
  */
-import { Fragment, memo, useEffect } from 'react';
+import { Fragment, memo } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedProps,
   useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withDelay,
-  withRepeat,
   withSequence,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, Line, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 
@@ -154,31 +151,30 @@ const PARTICLES: Particle[] = (() => {
   return out;
 })();
 
-const RAMP_MS = 180;
-const HOLD_MS = 90;
-const FADE_MS = 650;
-const REST_MS = 7000 - RAMP_MS - HOLD_MS - FADE_MS;
+// Short attack so the peak lands on the beat that triggered it (the
+// caller fires FLASH_LEAD_MS early); snares here are ~1.88s apart, so the
+// whole envelope finishes well before the next one. Reduced motion is
+// handled by the caller (it simply never fires).
+export const FLASH_LEAD_MS = 60;
+const RAMP_MS = FLASH_LEAD_MS;
+const HOLD_MS = 70;
+const FADE_MS = 600;
 
-function MoonlitSceneImpl({ style }: { style?: ViewStyle }) {
-  const reduceMotion = useReducedMotion();
-  const flash = useSharedValue(0);
+/** Starts one flash on `flash`. Called straight from the song's playback
+ * loop rather than through a React prop/state change: a state change
+ * re-rendered this whole ~800-element tree before the animation could
+ * start, measured at ~80-370ms late. */
+export function fireFlash(flash: SharedValue<number>): void {
+  flash.value = withSequence(
+    withTiming(1, { duration: RAMP_MS, easing: Easing.out(Easing.quad) }),
+    withTiming(1, { duration: HOLD_MS }),
+    withTiming(0, { duration: FADE_MS, easing: Easing.in(Easing.quad) }),
+  );
+}
 
-  useEffect(() => {
-    if (reduceMotion) {
-      flash.value = 0;
-      return;
-    }
-    flash.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: RAMP_MS, easing: Easing.out(Easing.quad) }),
-        withTiming(1, { duration: HOLD_MS }),
-        withTiming(0, { duration: FADE_MS, easing: Easing.in(Easing.quad) }),
-        withDelay(REST_MS, withTiming(0, { duration: 1 })),
-      ),
-      -1,
-      false,
-    );
-  }, [reduceMotion, flash]);
+/** `flash` is owned by the caller (see `app/index.tsx`) — the scene never
+ * flashes on its own. */
+function MoonlitSceneImpl({ style, flash }: { style?: ViewStyle; flash: SharedValue<number> }) {
 
   const highlightProps = useAnimatedProps(() => ({ strokeOpacity: flash.value * 0.5 }));
   const washStyle = useAnimatedStyle(() => ({ opacity: flash.value * 0.38 }));

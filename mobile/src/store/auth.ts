@@ -12,7 +12,7 @@
  * shortcut, active only while `EXPO_PUBLIC_API_MOCK=1` — with it unset (the
  * default once the backend is real), the real login flow takes over.
  */
-import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { login as loginRequest } from '../api/auth';
 import { setTokenProvider, setUnauthenticatedHandler } from '../api/client';
@@ -39,10 +39,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   // The client reads the token through a getter so this module can depend on it
-  // without the reverse import (see client.ts).
-  useEffect(() => {
-    setTokenProvider(() => token);
-  }, [token]);
+  // without the reverse import (see client.ts). The getter reads a ref kept
+  // current during render, not a value pushed in an effect: children's
+  // effects run before this provider's, so a screen that fetches on mount
+  // right after sign-in would otherwise send its first request with no token.
+  const tokenRef = useRef<string | null>(null);
+  tokenRef.current = token;
+  useState(() => setTokenProvider(() => tokenRef.current));
 
   const signOut = useCallback(async () => {
     setToken(null);

@@ -22,7 +22,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', HKD: 'H
  * length; the fraction is padded or truncated to exactly 2 digits rather
  * than assuming the wire value always already has exactly 2 places.
  */
-function parseCents(value: string): bigint {
+export function parseCents(value: string): bigint {
   const match = /^(-)?(\d+)(?:\.(\d+))?$/.exec(value.trim());
   if (!match) {
     throw new Error(`Not a valid Decimal-as-string money value: "${value}"`);
@@ -34,7 +34,7 @@ function parseCents(value: string): bigint {
 }
 
 /** Renders integer cents back to a fixed 2-decimal Decimal-as-string, e.g. `-105n` → `"-1.05"`. */
-function formatCents(cents: bigint): string {
+export function formatCents(cents: bigint): string {
   const negative = cents < 0n;
   const abs = negative ? -cents : cents;
   const whole = abs / 100n;
