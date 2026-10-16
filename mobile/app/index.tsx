@@ -14,13 +14,16 @@ import {
   useScenePan,
 } from '../src/components/MoonlitScene';
 import { useMoonBurst } from '../src/components/MoonBurst';
-import { CLIMAX_BURST_MS, CLIMAX_END_MS, CLIMAX_START_MS, SNARE_MS } from '../src/components/nullscapesSnares';
+import { SongProgress } from '../src/components/SongProgress';
+import { GlitchOverlay, type GlitchHandle } from '../src/components/GlitchOverlay';
+import { CLIMAX_BURST_MS, CLIMAX_END_MS, CLIMAX_START_MS, GLITCH_MS, SNARE_MS } from '../src/components/nullscapesSnares';
 import { Dashboard } from '../src/components/wallet/Dashboard';
 import { LoginPanel } from '../src/components/wallet/LoginPanel';
 import { useAuth } from '../src/store/auth';
 import { font } from '../src/theme/moonlit';
 
-const SONG = require('../assets/audio/creo-flow.mp3');
+// The song's first 1:33.5, looped (see SONG_MS in nullscapesSnares.ts).
+const SONG = require('../assets/audio/creo-flow-loop.mp3');
 
 // A snare counts as "just happened" only within this window — anything
 // older is skipped silently, so resuming after a stall or a seek never
@@ -51,6 +54,7 @@ export default function Index() {
   const { isAuthenticated, isLoading } = useAuth();
   const { pan, startPan } = useScenePan();
   const { burst, fireBurst, strike, release } = useMoonBurst();
+  const glitch = useRef<GlitchHandle>(null);
 
   // Which screen is on display lags the session by design: on sign-in or
   // sign-out the old screen stays up while it fades, the camera pans
@@ -112,6 +116,7 @@ export default function Index() {
     let lastMs = player.currentTime * 1000;
     let idx = nextIndex(SNARE_MS, lastMs);
     let burstIdx = nextIndex(CLIMAX_BURST_MS, lastMs);
+    let glitchIdx = nextIndex(GLITCH_MS, lastMs);
     let inClimax = false;
     const tick = () => {
       const ms = player.currentTime * 1000;
@@ -119,6 +124,7 @@ export default function Index() {
         // looped back to the start, or restarted
         idx = nextIndex(SNARE_MS, ms);
         burstIdx = nextIndex(CLIMAX_BURST_MS, ms);
+        glitchIdx = nextIndex(GLITCH_MS, ms);
       }
       lastMs = ms;
       const lead = ms + FLASH_LEAD_MS;
@@ -132,6 +138,10 @@ export default function Index() {
           fireFlash(flash);
         }
         burstIdx++;
+      }
+      while (glitchIdx < GLITCH_MS.length && ms >= GLITCH_MS[glitchIdx]) {
+        if (ms - GLITCH_MS[glitchIdx] <= MAX_LATE_MS) glitch.current?.fire();
+        glitchIdx++;
       }
       // Derived from the clock every frame, so a seek or restart into or
       // out of the climax brings the column with it.
@@ -166,10 +176,9 @@ export default function Index() {
   };
   const showPause = playing || restarting;
 
-  // `compact` is the dashboard header, where the row is tight on a phone:
-  // short "Play" and an icon-only restart. The sign-in screen has room for
-  // full labels.
-  const songControls = (compact: boolean) => (
+  // Play/Pause, restart, then the song's progress — the same row in the
+  // dashboard header and under the sign-in panel.
+  const songControls = (
     <View style={styles.songControls}>
       <Pressable
         testID="play-song"
@@ -183,19 +192,20 @@ export default function Index() {
             player.play();
           }
         }}
-        style={({ pressed }) => [styles.button, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.button, styles.playButton, pressed && styles.pressed]}
       >
-        <Text style={styles.label}>{showPause ? 'Pause' : compact ? 'Play' : 'Play Nullscapes'}</Text>
+        <Text style={styles.label}>{showPause ? 'Pause' : 'Play'}</Text>
       </Pressable>
       <Pressable
         testID="restart-song"
         accessibilityRole="button"
         accessibilityLabel="Restart Nullscapes from the beginning"
         onPress={() => void restart()}
-        style={({ pressed }) => [styles.button, compact && styles.iconButton, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.button, styles.iconButton, pressed && styles.pressed]}
       >
-        <Text style={[styles.label, compact && styles.icon]}>{compact ? '↺' : 'Restart'}</Text>
+        <Text style={[styles.label, styles.icon]}>↺</Text>
       </Pressable>
+      <SongProgress player={player} />
     </View>
   );
 
@@ -210,19 +220,22 @@ export default function Index() {
         ) : (
           <Animated.View style={[styles.overlay, contentStyle]}>
             {shown === 'dashboard' ? (
-              <Dashboard headerAction={songControls(true)} />
+              <Dashboard headerAction={songControls} />
             ) : (
               <KeyboardAvoidingView
                 style={styles.center}
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
               >
                 <LoginPanel />
-                <View style={styles.loginSong}>{songControls(false)}</View>
+                <View style={styles.loginSong}>{songControls}</View>
               </KeyboardAvoidingView>
             )}
           </Animated.View>
         )}
       </SafeAreaView>
+      {/* Above everything, UI included, and never takes a touch: the
+          glitch breaks the whole screen for its one second. */}
+      <GlitchOverlay ref={glitch} />
     </View>
   );
 }
@@ -231,8 +244,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: SKY },
   overlay: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', padding: 16, gap: 20 },
-  loginSong: { alignItems: 'center' },
-  songControls: { flexDirection: 'row', gap: 8 },
+  loginSong: { width: '100%', maxWidth: 380, alignSelf: 'center' },
+  songControls: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  playButton: { minWidth: 76, alignItems: 'center' },
   iconButton: { paddingHorizontal: 0, width: 34, alignItems: 'center' },
   icon: { fontSize: 15, letterSpacing: 0 },
   button: {

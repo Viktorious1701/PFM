@@ -1,5 +1,6 @@
 /**
- * Snare-hit times (ms) in `assets/audio/creo-flow.mp3` (official version),
+ * Snare-hit times (ms) in the song (official version; the app plays its
+ * first 1:33.5 as a loop, see SONG_MS),
  * used to fire the scene's flash in sync with the song. Generated offline:
  * percussive component (HPSS) -> 1.5-5 kHz onset flux on a 129 BPM beat
  * grid. The snare's beat within the bar is picked per bar from the
@@ -24,3 +25,19 @@ export const CLIMAX_END_MS = 76750;
  * bar's snare. 68435 is filled in on the bar grid (midway between its
  * neighbours) — the detector skipped that bar as ambiguous. */
 export const CLIMAX_BURST_MS: readonly number[] = [63720, 64691, 66560, 68435, 70310, 72191, 74060, 75929];
+
+/** Length (ms) of the looped track, `assets/audio/creo-flow-loop.mp3`: the
+ * song's first 1:33.5, cut in the near-silent gap after the fill at
+ * 1:33.4 — just before the aggressive section's bass comes in at 1:33.7 —
+ * so the loop goes quiet and the intro fades back in. The cut file is
+ * sample-aligned with the full track (the MP3 encoder's 1105-sample
+ * priming delay was trimmed from its head), so every time in this module
+ * holds for it. Hits past the cut never come up. */
+export const SONG_MS = 93500;
+
+/** The glitch: every 33 s of song time, skipping any that would land in or
+ * just before the climax (the one at 1:06 would cut across the column) —
+ * which, on the 1:33.5 loop, leaves the one at 0:33 each time round. */
+export const GLITCH_MS: readonly number[] = Array.from({ length: Math.floor(SONG_MS / 33000) }, (_, i) => (i + 1) * 33000).filter(
+  (t) => t < CLIMAX_START_MS - 1000 || t > CLIMAX_END_MS,
+);

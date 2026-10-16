@@ -11,6 +11,7 @@ import {
   Rajdhani_700Bold,
   useFonts,
 } from '@expo-google-fonts/rajdhani';
+import { CormorantGaramond_300Light } from '@expo-google-fonts/cormorant-garamond';
 import { Slot } from 'expo-router';
 
 import { AuthProvider } from '../src/store/auth';
@@ -22,6 +23,8 @@ export default function RootLayout() {
     Rajdhani_500Medium,
     Rajdhani_600SemiBold,
     Rajdhani_700Bold,
+    // the glitch's "get out of my head" line
+    CormorantGaramond_300Light,
   });
 
   // A font that fails to load falls back to the system face rather than

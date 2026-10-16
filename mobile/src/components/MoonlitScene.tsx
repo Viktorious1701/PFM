@@ -39,7 +39,7 @@ import Animated, {
 import Svg, { Circle, Defs, G, Line, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { BurstBack, BurstFront, type MoonBurst } from './MoonBurst';
-import { H, MOON_CX, MOON_CY, MOON_R, W } from './moonGeometry';
+import { GRASS, grassBlades, H, MOON_CX, MOON_CY, MOON_R, mulberry32, W, type GrassSpec } from './moonGeometry';
 
 
 export const SKY = '#15273f';
@@ -62,56 +62,15 @@ const HALO_STOPS: [number, string, number][] = [
   [1, 'rgb(90,120,160)', 0],
 ];
 
-function mulberry32(seed: number) {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 type Blade = {
   points: string;
   hl: { x1: number; y1: number; x2: number; y2: number; width: number };
 };
 
-type LayerOpts = {
-  seed: number;
-  baseY: number;
-  count: number;
-  minH: number;
-  maxH: number;
-  minW: number;
-  maxW: number;
-  leanDeg: number;
-  fill: string;
-  centerBoost: boolean;
-};
-
-// Same math and the same rand() call order as the prototype's
-// drawGrassLayer, including the unconditional `side` draw. Only one
-// period's blades (i = 0..count-1) are kept, then repeated at -W, 0, +W:
+// One period of blades from the shared grass spec, repeated at -W, 0, +W:
 // the layer tiles seamlessly, so a pan can slide it any distance.
-function buildLayer(o: LayerOpts): Blade[] {
-  const rand = mulberry32(o.seed);
-  const spacing = W / o.count;
-  const one: { x: number; h: number; w: number; tipDX: number; tipY: number; side: number }[] = [];
-  for (let i = -1; i <= o.count + 1; i++) {
-    const x = i * spacing + (rand() - 0.5) * spacing * 0.9;
-    const distFromMoon = Math.abs(x - MOON_CX) / (W * 0.5);
-    const boost = o.centerBoost ? Math.max(0, 1 - distFromMoon * 1.8) : 0;
-    const h = o.minH + rand() * (o.maxH - o.minH) + boost * (o.maxH * 0.9) * rand();
-    const w = o.minW + rand() * (o.maxW - o.minW);
-    const lean = (rand() - 0.5) * 2 * o.leanDeg;
-    const leanRad = (lean * Math.PI) / 180;
-    const side = rand() < 0.5 ? -1 : 1;
-    if (i >= 0 && i < o.count) {
-      one.push({ x, h, w, tipDX: Math.sin(leanRad) * h, tipY: o.baseY - h * Math.cos(leanRad), side });
-    }
-  }
+function buildLayer(o: GrassSpec): Blade[] {
+  const one = grassBlades(o);
   const out: Blade[] = [];
   for (const k of [-1, 0, 1]) {
     for (const b of one) {
@@ -142,29 +101,15 @@ type Layer = {
   leanScale: number;
 };
 
-const LAYERS: Layer[] = [
-  {
-    blades: buildLayer({
-      seed: 5, baseY: H * 0.88, count: 220, minH: H * 0.12, maxH: H * 0.3,
-      minW: 7, maxW: 18, leanDeg: 16, fill: '#2c4463', centerBoost: false,
-    }),
-    fill: '#2c4463', baseY: H * 0.88, speed: 0.25, leanScale: 0.3,
-  },
-  {
-    blades: buildLayer({
-      seed: 11, baseY: H * 0.98, count: 110, minH: H * 0.32, maxH: H * 0.52,
-      minW: 14, maxW: 34, leanDeg: 18, fill: '#1e3550', centerBoost: false,
-    }),
-    fill: '#1e3550', baseY: H * 0.98, speed: 0.5, leanScale: 0.6,
-  },
-  {
-    blades: buildLayer({
-      seed: 47, baseY: H * 1.05, count: 46, minH: H * 0.48, maxH: H * 0.72,
-      minW: 26, maxW: 64, leanDeg: 20, fill: '#14263c', centerBoost: true,
-    }),
-    fill: '#14263c', baseY: H * 1.05, speed: 1, leanScale: 1,
-  },
-];
+const PAN_SPEED = [0.25, 0.5, 1]; // far, mid, near
+const LEAN_SCALE = [0.3, 0.6, 1];
+const LAYERS: Layer[] = GRASS.map((spec, i) => ({
+  blades: buildLayer(spec),
+  fill: spec.fill,
+  baseY: spec.baseY,
+  speed: PAN_SPEED[i],
+  leanScale: LEAN_SCALE[i],
+}));
 const NEAR = LAYERS.length - 1;
 // Plain numbers for the per-frame worklets, so they never capture the
 // blade arrays.

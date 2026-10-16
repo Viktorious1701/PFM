@@ -5,7 +5,7 @@
  * backend — `GET /wallets` and `GET /reports/summary`.
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { toApiError } from '../../api/errors';
 import { getSummaryReport } from '../../api/reports';
@@ -38,6 +38,7 @@ function totalsByCurrency(wallets: WalletRead[]): [string, string][] {
 
 export function Dashboard({ headerAction }: { headerAction?: ReactNode }) {
   const { signOut } = useAuth();
+  const { width: windowWidth } = useWindowDimensions();
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,22 +56,36 @@ export function Dashboard({ headerAction }: { headerAction?: ReactNode }) {
     void load();
   }, [load]);
 
-  const header = (
+  // Wide: brand | song controls | sign out on one line. Narrow (phone):
+  // the song controls need the full width, so they get their own line.
+  const narrow = windowWidth < 600;
+  const signOutButton = (
+    <Pressable
+      testID="sign-out"
+      accessibilityRole="button"
+      onPress={() => void signOut()}
+      style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
+    >
+      <Text style={styles.ghostLabel}>Sign out</Text>
+    </Pressable>
+  );
+  const header = narrow ? (
+    <View style={styles.headerStack}>
+      <View style={styles.header}>
+        <Text style={styles.brand} numberOfLines={1}>
+          Family finance
+        </Text>
+        {signOutButton}
+      </View>
+      <View style={styles.headerSong}>{headerAction}</View>
+    </View>
+  ) : (
     <View style={styles.header}>
       <Text style={styles.brand} numberOfLines={1}>
         Family finance
       </Text>
-      <View style={styles.headerActions}>
-        {headerAction}
-        <Pressable
-          testID="sign-out"
-          accessibilityRole="button"
-          onPress={() => void signOut()}
-          style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.ghostLabel}>Sign out</Text>
-        </Pressable>
-      </View>
+      <View style={styles.headerSongWide}>{headerAction}</View>
+      {signOutButton}
     </View>
   );
 
@@ -244,7 +259,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   brand: { ...label, color: moon.inkSoft, flexShrink: 1 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerStack: { gap: 12 },
+  headerSong: { flexDirection: 'row' },
+  headerSongWide: { flex: 1, flexDirection: 'row', maxWidth: 440 },
   ghostButton: {
     height: 34,
     justifyContent: 'center',
