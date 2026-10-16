@@ -2,18 +2,19 @@
  * The wallet dashboard, top to bottom: total balance, every wallet with its
  * own balance, then this month's analysis (income vs. expenses on one scale,
  * net savings, and where the spending went). All figures come from the real
- * backend — `GET /wallets` and `GET /reports/summary`.
+ * backend — `GET /wallets` and `GET /reports/summary`. The Home tab; the
+ * header and tab bar around it are shared chrome (AppHeader, TabBar).
  */
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { toApiError } from '../../api/errors';
 import { getSummaryReport } from '../../api/reports';
 import type { SummaryReportRead, WalletRead } from '../../api/types';
 import { listWallets } from '../../api/wallets';
-import { useAuth } from '../../store/auth';
 import { font, moon } from '../../theme/moonlit';
-import { formatMoney, parseCents, sumMoney } from '../../utils/money';
+import { DEFAULT_CURRENCY, formatMoney, parseCents, sumMoney } from '../../utils/money';
+import { LoadError, Loading } from '../ui/moon';
 import { ExpenseDonut } from './ExpenseDonut';
 
 type Data = { wallets: WalletRead[]; summary: SummaryReportRead };
@@ -36,9 +37,7 @@ function totalsByCurrency(wallets: WalletRead[]): [string, string][] {
   return [...groups.entries()].map(([cur, values]) => [cur, sumMoney(values)]);
 }
 
-export function Dashboard({ headerAction }: { headerAction?: ReactNode }) {
-  const { signOut } = useAuth();
-  const { width: windowWidth } = useWindowDimensions();
+export function Dashboard() {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,60 +55,11 @@ export function Dashboard({ headerAction }: { headerAction?: ReactNode }) {
     void load();
   }, [load]);
 
-  // Wide: brand | song controls | sign out on one line. Narrow (phone):
-  // the song controls need the full width, so they get their own line.
-  const narrow = windowWidth < 600;
-  const signOutButton = (
-    <Pressable
-      testID="sign-out"
-      accessibilityRole="button"
-      onPress={() => void signOut()}
-      style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
-    >
-      <Text style={styles.ghostLabel}>Sign out</Text>
-    </Pressable>
-  );
-  const header = narrow ? (
-    <View style={styles.headerStack}>
-      <View style={styles.header}>
-        <Text style={styles.brand} numberOfLines={1}>
-          Family finance
-        </Text>
-        {signOutButton}
-      </View>
-      <View style={styles.headerSong}>{headerAction}</View>
-    </View>
-  ) : (
-    <View style={styles.header}>
-      <Text style={styles.brand} numberOfLines={1}>
-        Family finance
-      </Text>
-      <View style={styles.headerSongWide}>{headerAction}</View>
-      {signOutButton}
-    </View>
-  );
-
   if (!data) {
     return (
       <View style={styles.fill}>
-        <View style={styles.column}>{header}</View>
-        <View style={styles.state}>
-          {error ? (
-            <View style={[styles.panel, styles.statePanel]}>
-              <Text style={styles.stateText} accessibilityRole="alert">
-                {error}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void load()}
-                style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
-              >
-                <Text style={styles.ghostLabel}>Try again</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <ActivityIndicator color={moon.ink} size="large" accessibilityLabel="Loading your wallets" />
-          )}
+        <View style={styles.column}>
+          {error ? <LoadError message={error} onRetry={() => void load()} /> : <Loading label="Loading your wallets" />}
         </View>
       </View>
     );
@@ -119,7 +69,7 @@ export function Dashboard({ headerAction }: { headerAction?: ReactNode }) {
   const totals = totalsByCurrency(wallets);
   // The report has no currency of its own; it is in the wallets' currency
   // when they share one, which is the only case it is labelled with one.
-  const reportCurrency = totals.length === 1 ? totals[0][0] : 'USD';
+  const reportCurrency = totals.length === 1 ? totals[0][0] : DEFAULT_CURRENCY;
 
   const income = parseCents(summary.total_income);
   const expenses = parseCents(summary.total_expenses);
@@ -131,13 +81,11 @@ export function Dashboard({ headerAction }: { headerAction?: ReactNode }) {
   return (
     <ScrollView style={styles.fill} contentContainerStyle={styles.scroll}>
       <View style={styles.column}>
-        {header}
-
         {/* 1 · Total balance */}
         <View style={[styles.panel, styles.hero]} testID="total-balance">
           <Text style={styles.label}>Total balance</Text>
           {totals.length === 0 ? (
-            <Text style={styles.heroValue}>{formatMoney('0', 'USD')}</Text>
+            <Text style={styles.heroValue}>{formatMoney('0', DEFAULT_CURRENCY)}</Text>
           ) : (
             totals.map(([cur, sum]) => (
               <Text key={cur} style={[styles.heroValue, totals.length > 1 && styles.heroValueMulti]}>
@@ -249,7 +197,7 @@ const label = {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  scroll: { paddingBottom: 48 },
+  scroll: { paddingTop: 4, paddingBottom: 120 },
   column: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 16, gap: 22 },
   header: {
     flexDirection: 'row',

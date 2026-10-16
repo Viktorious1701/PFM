@@ -36,3 +36,9 @@ export async function createTransaction(payload: TransactionCreate): Promise<Tra
   const { data } = await client.post<TransactionRead>('/transactions', payload);
   return data;
 }
+
+/** `DELETE /api/v1/transactions/{id}` — removes it and reverses its effect
+ * on the wallet balance. Real backend only. */
+export async function deleteTransaction(id: string): Promise<void> {
+  await client.delete(`/transactions/${id}`);
+}

@@ -142,6 +142,13 @@ export type WalletRead = {
   balance: string;
 };
 
+/** `PATCH /api/v1/wallets/{id}` request — rename / retype only; currency
+ * and balance are not editable. */
+export type WalletUpdate = {
+  name?: string;
+  type?: string;
+};
+
 // ---------------------------------------------------------------------------
 // Category Management (CM) — SDS §2.2; backend app/schemas/category.py.
 // ---------------------------------------------------------------------------
@@ -226,6 +233,34 @@ export type TransactionListParams = {
   /** ISO-8601 instant — the server parses this as a `datetime`, not a bare date. */
   date_from?: string;
   date_to?: string;
+};
+
+// ---------------------------------------------------------------------------
+// Budget Management (BM) — backend app/schemas/budget.py.
+// ---------------------------------------------------------------------------
+
+/** `POST /api/v1/budgets` request: a monthly limit on one expense category
+ * within one wallet. */
+export type BudgetCreate = {
+  wallet_id: string;
+  category_id: string;
+  /** Decimal-as-string. */
+  amount_limit: string;
+};
+
+/** Row of `GET /api/v1/budgets`: the budget plus this period's progress,
+ * computed server-side. */
+export type BudgetProgressRead = {
+  id: string;
+  wallet_id: string;
+  category_id: string;
+  amount_limit: string;
+  /** ISO date, first of the budget's month. */
+  period: string;
+  amount_spent: string;
+  progress_percentage: string;
+  /** NORMAL <= 75% < WARNING < 100% <= EXCEEDED. */
+  status: 'NORMAL' | 'WARNING' | 'EXCEEDED';
 };
 
 // ---------------------------------------------------------------------------

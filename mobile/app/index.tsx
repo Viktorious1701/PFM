@@ -9,7 +9,7 @@ import {
   fireFlash,
   MoonlitScene,
   PAN_DELAY_MS,
-  PAN_MS,
+  panDuration,
   SKY,
   useScenePan,
 } from '../src/components/MoonlitScene';
@@ -17,6 +17,12 @@ import { useMoonBurst } from '../src/components/MoonBurst';
 import { SongProgress } from '../src/components/SongProgress';
 import { GlitchOverlay, type GlitchHandle } from '../src/components/GlitchOverlay';
 import { CLIMAX_BURST_MS, CLIMAX_END_MS, CLIMAX_START_MS, GLITCH_MS, SNARE_MS } from '../src/components/nullscapesSnares';
+import { AppHeader } from '../src/components/AppHeader';
+import { ActivityPage } from '../src/components/pages/ActivityPage';
+import { BudgetsPage } from '../src/components/pages/BudgetsPage';
+import { FamilyPage } from '../src/components/pages/FamilyPage';
+import { WalletsPage } from '../src/components/pages/WalletsPage';
+import { TabBar, type Tab } from '../src/components/TabBar';
 import { Dashboard } from '../src/components/wallet/Dashboard';
 import { LoginPanel } from '../src/components/wallet/LoginPanel';
 import { useAuth } from '../src/store/auth';
@@ -37,7 +43,18 @@ const CONTENT_OUT_MS = 220;
 const CONTENT_IN_MS = 320;
 const CONTENT_DRIFT = 24;
 
-type Screen = 'login' | 'dashboard';
+type TabKey = 'home' | 'wallets' | 'activity' | 'budgets' | 'family';
+type Screen = 'login' | TabKey;
+
+// Left to right along the meadow; sign-in sits just before the first.
+const TABS: readonly Tab<TabKey>[] = [
+  { key: 'home', label: 'Home' },
+  { key: 'wallets', label: 'Wallets' },
+  { key: 'activity', label: 'Activity' },
+  { key: 'budgets', label: 'Budgets' },
+  { key: 'family', label: 'Family' }, // ADMIN only
+];
+const TAB_ADMIN_ONLY: ReadonlySet<TabKey> = new Set(['family']);
 
 /** Index of the first hit in `times` not yet reached at time `ms`. */
 function nextIndex(times: readonly number[], ms: number): number {
@@ -51,27 +68,38 @@ export default function Index() {
   const { playing } = useAudioPlayerStatus(player);
   const flash = useSharedValue(0);
   const reduceMotion = useReducedMotion();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, isAdmin } = useAuth();
+  const tabs = TABS.filter((t) => isAdmin || !TAB_ADMIN_ONLY.has(t.key));
+  const [tab, setTab] = useState<TabKey>('home');
+  /** Where a screen sits along the meadow: sign-in 0, tabs 1..n. */
+  const position = (sc: Screen) => (sc === 'login' ? 0 : 1 + Math.max(0, tabs.findIndex((t) => t.key === sc)));
   const { pan, startPan } = useScenePan();
   const { burst, fireBurst, strike, release } = useMoonBurst();
   const glitch = useRef<GlitchHandle>(null);
 
-  // Which screen is on display lags the session by design: on sign-in or
-  // sign-out the old screen stays up while it fades, the camera pans
-  // (forward into the dashboard, back out to sign-in), and the new one
-  // fades in as the pan settles.
+  // Which screen is on display lags the request by design: on sign-in,
+  // sign-out or a tab change the old screen stays up while it fades, the
+  // camera pans by the distance between the two screens' places (forward
+  // to the right, back to the left), and the new one fades in as the pan
+  // settles. The header and tab bar stay put between tabs, and fade with
+  // the page only when crossing to or from sign-in.
   const [shown, setShown] = useState<Screen | null>(null);
   const contentOpacity = useSharedValue(1);
   const contentDrift = useSharedValue(0);
+  const chromeOpacity = useSharedValue(1);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const contentStyle = useAnimatedStyle(() => ({
     opacity: contentOpacity.value,
     transform: [{ translateX: contentDrift.value }],
   }));
+  const chromeStyle = useAnimatedStyle(() => ({ opacity: chromeOpacity.value }));
+
+  const target: Screen = !isAuthenticated ? 'login' : tabs.some((t) => t.key === tab) ? tab : 'home';
 
   useEffect(() => {
     if (isLoading) return;
-    const next: Screen = isAuthenticated ? 'dashboard' : 'login';
+    const next = target;
+    if (next === 'login' && tab !== 'home') setTab('home'); // sign back in to Home
     if (shown === null) {
       setShown(next);
       return;
@@ -79,26 +107,35 @@ export default function Index() {
     if (shown === next) return;
 
     timers.current.forEach(clearTimeout);
-    const dir = next === 'dashboard' ? 1 : -1;
+    const delta = position(next) - position(shown);
+    const dir = delta > 0 ? 1 : -1;
+    const steps = Math.abs(delta);
+    const pan = panDuration(steps);
     const out = reduceMotion ? 200 : CONTENT_OUT_MS;
-    const inStart = reduceMotion ? 200 : PAN_DELAY_MS + PAN_MS - CONTENT_IN_MS;
+    const inStart = reduceMotion ? 200 : PAN_DELAY_MS + pan - CONTENT_IN_MS;
     const inMs = reduceMotion ? 200 : CONTENT_IN_MS;
     const drift = reduceMotion ? 0 : CONTENT_DRIFT;
+    const crossesSignIn = shown === 'login' || next === 'login';
 
-    if (!reduceMotion) startPan(dir);
+    if (!reduceMotion) startPan(dir, steps);
     contentOpacity.value = withTiming(0, { duration: out });
     contentDrift.value = withTiming(-dir * drift, { duration: out });
+    if (crossesSignIn && shown !== 'login') chromeOpacity.value = withTiming(0, { duration: out });
     timers.current = [
       setTimeout(() => {
         setShown(next);
         contentDrift.value = dir * drift;
+        if (crossesSignIn && next !== 'login') chromeOpacity.value = 0;
       }, out),
       setTimeout(() => {
-        contentOpacity.value = withTiming(1, { duration: inMs, easing: Easing.out(Easing.cubic) });
-        contentDrift.value = withTiming(0, { duration: inMs, easing: Easing.out(Easing.cubic) });
+        const cfg = { duration: inMs, easing: Easing.out(Easing.cubic) };
+        contentOpacity.value = withTiming(1, cfg);
+        contentDrift.value = withTiming(0, cfg);
+        if (crossesSignIn && next !== 'login') chromeOpacity.value = withTiming(1, cfg);
       }, Math.max(out, inStart)),
     ];
-  }, [isLoading, isAuthenticated, shown, reduceMotion, startPan, contentOpacity, contentDrift]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, target, shown, reduceMotion, startPan, contentOpacity, contentDrift, chromeOpacity]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -218,19 +255,43 @@ export default function Index() {
             <ActivityIndicator color="#eaf0ff" />
           </View>
         ) : (
-          <Animated.View style={[styles.overlay, contentStyle]}>
-            {shown === 'dashboard' ? (
-              <Dashboard headerAction={songControls} />
-            ) : (
-              <KeyboardAvoidingView
-                style={styles.center}
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              >
-                <LoginPanel />
-                <View style={styles.loginSong}>{songControls}</View>
-              </KeyboardAvoidingView>
-            )}
-          </Animated.View>
+          <>
+            {shown !== 'login' ? (
+              <Animated.View style={chromeStyle}>
+                <AppHeader song={songControls} />
+              </Animated.View>
+            ) : null}
+            <Animated.View style={[styles.overlay, contentStyle]}>
+              {shown === 'login' ? (
+                <KeyboardAvoidingView style={styles.center} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+                  <LoginPanel />
+                  <View style={styles.loginSong}>{songControls}</View>
+                </KeyboardAvoidingView>
+              ) : shown === 'home' ? (
+                <Dashboard />
+              ) : shown === 'wallets' ? (
+                <WalletsPage />
+              ) : shown === 'activity' ? (
+                <ActivityPage />
+              ) : shown === 'budgets' ? (
+                <BudgetsPage />
+              ) : (
+                <FamilyPage />
+              )}
+            </Animated.View>
+            {shown !== 'login' ? (
+              <Animated.View style={[StyleSheet.absoluteFill, chromeStyle]} pointerEvents="box-none">
+                <TabBar
+                  tabs={tabs}
+                  active={target === 'login' ? (shown as TabKey) : (target as TabKey)}
+                  onSelect={setTab}
+                  glideDelayMs={PAN_DELAY_MS}
+                  glideFor={panDuration}
+                  instant={!!reduceMotion}
+                />
+              </Animated.View>
+            ) : null}
+          </>
         )}
       </SafeAreaView>
       {/* Above everything, UI included, and never takes a touch: the

@@ -14,6 +14,7 @@ export const moon = {
   income: '#6FE3C9',
   expense: '#FF9B9B',
   danger: '#FF9B9B',
+  warning: '#FFC46E',
   field: 'rgba(6,13,24,0.6)',
   fieldBorder: 'rgba(223,232,251,0.22)',
   focus: '#a9c8ff',

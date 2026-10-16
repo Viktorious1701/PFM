@@ -11,8 +11,20 @@
  * grouping display in `formatMoney`, which is presentation, not arithmetic.
  */
 
+/** The app's default currency: new wallets start in it, and it labels
+ * figures that have no wallet currency of their own. */
+export const DEFAULT_CURRENCY = 'VND';
+
+/** Currencies offered when adding a wallet, default first. */
+export const CURRENCIES = ['VND', 'USD', 'EUR', 'HKD'] as const;
+
 /** `formatMoney`'s currency-symbol map. Anything else falls back to `"<CODE> "`. */
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', HKD: 'HK$' };
+
+/** True for currencies with no minor unit in everyday use (the đồng). */
+export function isWholeUnitCurrency(currency: string): boolean {
+  return currency === 'VND';
+}
 
 /**
  * Parses a Decimal-as-string wire value into integer cents as a `bigint` —
@@ -46,6 +58,13 @@ export function formatCents(cents: bigint): string {
  * Formats a Decimal-as-string amount with a currency symbol and thousands
  * grouping, e.g. `formatMoney('1250.75', 'USD')` → `"$1,250.75"`.
  *
+ * VND follows Vietnamese convention: dot thousands separators, "đ" after
+ * the number, and no decimals — `formatMoney('1250000.00', 'VND')` →
+ * `"1.250.000 đ"`. ("đ" rather than "₫": the app's font has no ₫ glyph,
+ * and "đ" is the everyday way amounts are written.) A fractional part is
+ * still shown if one is ever stored (`"1.250.000,50 đ"`), never silently
+ * rounded away.
+ *
  * `opts.signed` prefixes a non-negative result with `+` — used only by the
  * Reports screen's net-savings figure. Every other call site uses the
  * default unsigned form, where a negative value's own `-` sign is what
@@ -62,9 +81,15 @@ export function formatMoney(value: string, currency: string, opts?: { signed?: b
   // has already had its precision-sensitive fractional part split off, and
   // a DECIMAL(15,2)'s integer part (<= 13 digits) is far under
   // Number.MAX_SAFE_INTEGER, so this Number() conversion is safe.
+  const sign = negative ? '-' : opts?.signed ? '+' : '';
+
+  if (isWholeUnitCurrency(currency)) {
+    const grouped = Number(whole).toLocaleString('en-US').replace(/,/g, '.');
+    return `${sign}${grouped}${frac === '00' ? '' : `,${frac}`} đ`;
+  }
+
   const groupedWhole = Number(whole).toLocaleString('en-US');
   const symbol = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
-  const sign = negative ? '-' : opts?.signed ? '+' : '';
 
   return `${sign}${symbol}${groupedWhole}.${frac}`;
 }

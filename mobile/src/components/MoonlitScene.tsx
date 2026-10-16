@@ -110,7 +110,6 @@ const LAYERS: Layer[] = GRASS.map((spec, i) => ({
   speed: PAN_SPEED[i],
   leanScale: LEAN_SCALE[i],
 }));
-const NEAR = LAYERS.length - 1;
 // Plain numbers for the per-frame worklets, so they never capture the
 // blade arrays.
 const LEAN_SCALES = LAYERS.map((L) => L.leanScale);
@@ -164,12 +163,20 @@ export function fireFlash(flash: SharedValue<number>): void {
 // 60% of the frame width, 2° lean at full speed, 10% spring-back wobble.
 export const PAN_DELAY_MS = 120;
 export const PAN_MS = 1100;
-const NEAR_TRAVEL = 0.6 * W;
+const NEAR_TRAVEL = 0.6 * W; // per step
+/** A pan of `steps` tab positions travels `steps` x NEAR_TRAVEL but takes
+ * only 250 ms longer per extra step, so a long jump reads as faster rather
+ * than slower. The lean is capped by speed, not distance. */
+export function panDuration(steps: number): number {
+  return PAN_MS + 250 * (Math.max(1, steps) - 1);
+}
 const LEAN_MAX = Math.tan((2 * Math.PI) / 180);
 const SPRING_K = 160;
 const SPRING_C = 2 * (1 - 0.75 * 0.1) * Math.sqrt(SPRING_K);
-// A layer's strip spans [-W - EDGE, 2W + EDGE]; its offset is kept inside
-// [-W + EDGE, W - EDGE] so the visible frame never reaches a strip end.
+// A layer's strip spans [-W - EDGE, 2W + EDGE] (its one period of blades
+// tiled three times). Its offset is wrapped into [-W/2, W/2) every frame,
+// which never reaches a strip end; the wrap is a jump of exactly one
+// period, so it is invisible and a pan can travel any distance.
 const EDGE = 160;
 
 /** Shared state of the camera, owned by the caller (`useScenePan`) and read
@@ -177,12 +184,11 @@ const EDGE = 160;
 export type ScenePan = {
   /** Near-layer distance travelled, scene units. */
   camera: SharedValue<number>;
-  /** Per layer: a whole number of W subtracted so the offset stays on its strip. */
-  wrap: SharedValue<number[]>;
   /** Per layer lean spring: [x0, v0, x1, v1, x2, v2], x as tan(angle). */
   lean: SharedValue<number[]>;
-  /** Running pan: elapsed ms, start camera, direction; elapsed < 0 = idle. */
-  run: SharedValue<{ elapsed: number; from: number; dir: number }>;
+  /** Running pan: elapsed ms, start camera, direction, tab steps;
+   * elapsed < 0 = idle. */
+  run: SharedValue<{ elapsed: number; from: number; dir: number; steps: number }>;
 };
 
 function easeInOutCubic(t: number) {
@@ -193,18 +199,20 @@ function easeInOutCubicSlope(t: number) {
   'worklet';
   return t < 0.5 ? 12 * t * t : 3 * Math.pow(-2 * t + 2, 2); // peaks at 3
 }
-function mod(a: number, n: number) {
+/** A layer offset folded into [-W/2, W/2) — same picture, never off the strip. */
+function wrapOffset(t: number) {
   'worklet';
-  return ((a % n) + n) % n;
+  return ((((t + W / 2) % W) + W) % W) - W / 2;
 }
 
 /** Owns the camera and drives it each frame. `startPan(1)` slides the field
- * forward (camera right, grass slides left), `startPan(-1)` back. */
-export function useScenePan(): { pan: ScenePan; startPan: (dir: 1 | -1) => void } {
+ * forward (camera right, grass slides left), `startPan(-1)` back; `steps`
+ * is how many tab positions the move covers. Starting a pan mid-pan
+ * re-aims from wherever the camera is. */
+export function useScenePan(): { pan: ScenePan; startPan: (dir: 1 | -1, steps?: number) => void } {
   const camera = useSharedValue(0);
-  const wrap = useSharedValue<number[]>(LAYERS.map(() => 0));
   const lean = useSharedValue<number[]>(LAYERS.flatMap(() => [0, 0]));
-  const run = useSharedValue({ elapsed: -1, from: 0, dir: 1 });
+  const run = useSharedValue({ elapsed: -1, from: 0, dir: 1, steps: 1 });
 
   // Always registered, but returns at once while the camera is at rest and
   // every lean has settled. (It can't switch itself off: on web the
@@ -217,8 +225,9 @@ export function useScenePan(): { pan: ScenePan; startPan: (dir: 1 | -1) => void 
     let speed = 0;
     if (r.elapsed >= 0) {
       const elapsed = r.elapsed + dt;
-      const t = Math.min(1, Math.max(0, (elapsed - PAN_DELAY_MS) / PAN_MS));
-      camera.value = r.from - r.dir * NEAR_TRAVEL * easeInOutCubic(t);
+      const dur = PAN_MS + 250 * (r.steps - 1);
+      const t = Math.min(1, Math.max(0, (elapsed - PAN_DELAY_MS) / dur));
+      camera.value = r.from - r.dir * NEAR_TRAVEL * r.steps * easeInOutCubic(t);
       if (elapsed > PAN_DELAY_MS && t < 1) speed = (-r.dir * easeInOutCubicSlope(t)) / 3;
       run.value = { ...r, elapsed: t >= 1 ? -1 : elapsed };
     }
@@ -246,27 +255,16 @@ export function useScenePan(): { pan: ScenePan; startPan: (dir: 1 | -1) => void 
   });
 
   const startPan = useCallback(
-    (dir: 1 | -1) => {
-      // Re-seat each layer on its strip so the whole move stays on it:
-      // a forward move lowers the offset by up to `travel`, a back move
-      // raises it. Shifting by whole multiples of W changes nothing visible.
-      const from = camera.value;
-      wrap.value = LAYERS.map((L) => {
-        const travel = NEAR_TRAVEL * L.speed;
-        const lo = dir === 1 ? -W + EDGE + travel : -W + EDGE;
-        const t = from * L.speed;
-        const seated = lo + mod(t - lo, W);
-        return t - seated;
-      });
-      run.value = { elapsed: 0, from, dir };
+    (dir: 1 | -1, steps = 1) => {
+      run.value = { elapsed: 0, from: camera.value, dir, steps: Math.max(1, steps) };
     },
-    [camera, wrap, run],
+    [camera, run],
   );
 
   // Stable identity: the scene is memoised on its props, and a fresh
   // object here would re-render all ~3,500 grass shapes on every render of
   // the screen that owns the pan.
-  const pan = useMemo(() => ({ camera, wrap, lean, run }), [camera, wrap, lean, run]);
+  const pan = useMemo(() => ({ camera, lean, run }), [camera, lean, run]);
   return { pan, startPan };
 }
 
@@ -287,7 +285,7 @@ function LayerView({ layer, index, flash, pan, frame }: {
   const { speed, baseY } = layer;
 
   const slide = useAnimatedStyle(() => ({
-    transform: [{ translateX: (pan.camera.value * speed - pan.wrap.value[index]) * scale }],
+    transform: [{ translateX: wrapOffset(pan.camera.value * speed) * scale }],
   }));
   // Shear about this layer's own baseline: skewX pivots on the view's
   // center, so a translate moves the pivot down to the baseline.
@@ -343,7 +341,7 @@ function ParticlesView({ pan, frame }: { pan: ScenePan; frame: Frame }) {
   const stripW = (3 * W + 2 * EDGE) * scale;
   const stripH = H * scale;
   const slide = useAnimatedStyle(() => ({
-    transform: [{ translateX: (pan.camera.value - pan.wrap.value[NEAR]) * scale }],
+    transform: [{ translateX: wrapOffset(pan.camera.value) * scale }],
   }));
   return (
     <Animated.View
