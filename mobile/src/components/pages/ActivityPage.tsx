@@ -178,7 +178,7 @@ function Row({
         accessibilityState={{ expanded: mode !== 'closed' }}
         onPress={() => setMode(mode === 'closed' ? 'detail' : 'closed')}
         style={styles.row}
-        testID={`txn-${t.id}`}
+        testID={`txn-row-${t.id}`}
       >
         <View style={styles.rowText}>
           <Text style={styles.rowName} numberOfLines={1}>

@@ -315,3 +315,64 @@ rework was needed and no defect was found along the way.
   until it expires on its own
 - **AC:** EC-02, FR-05, BR-02
 - **Type:** integration
+
+---
+
+## SS: UI test cases *(UI fast-track — CLAUDE.md §2)*
+
+> Written after the System Security screens were built, under the UI fast-track ruling (2026-10-19). They pin down what the screens must **do** — each button's request, its answer, and what the person then sees — so a later change cannot silently break it. Visual design is never asserted. Each test arranges its own data through the API under a throwaway account, acts through the real screen, and lives in `mobile/e2e/`, run with `npm run test:e2e` against the real backend. Behaviour the screens cannot reach — expired tokens, other users' records, malformed payloads the client never sends — stays covered by the integration TCs above.
+
+### Coverage Matrix (UI)
+
+| TC | US | AC | E2E test | Status |
+| :-- | :-- | :-- | :-- | :-- |
+| TC-49 | SS-US-01 | AC-01 | `mobile/e2e/auth.spec.ts` › TC-49 | PASS — 2026-10-19, desktop + phone |
+| TC-50 | SS-US-01 | AC-03 | `mobile/e2e/auth.spec.ts` › TC-50 | PASS — 2026-10-19, desktop + phone |
+| TC-51 | SS-US-01 | AC-02 | `mobile/e2e/auth.spec.ts` › TC-51 | PASS — 2026-10-19, desktop + phone |
+| TC-52 | SS-US-01 | AC-08 | `mobile/e2e/auth.spec.ts` › TC-52 | PASS — 2026-10-19, desktop + phone |
+| TC-53 | SS-US-02 | AC-01 | `mobile/e2e/auth.spec.ts` › TC-53 | PASS — 2026-10-19, desktop + phone |
+
+### TC-49: An ACTIVE account signs in and stays signed in across a reload
+
+- **US:** SS-US-01
+- **Given:** An ACTIVE account and the sign-in panel
+- **When:** Its email and password are entered and Sign in is pressed; then the page is reloaded
+- **Then:** The login request is answered `200`; the Home tab is shown; after the reload the Home tab is shown again without signing in
+- **AC:** AC-01
+- **Type:** e2e
+
+### TC-50: A wrong password is refused with the generic message
+
+- **US:** SS-US-01
+- **Given:** An ACTIVE account
+- **When:** Its email and a wrong password are submitted
+- **Then:** The login request is answered `401`; "The email or password is incorrect." is shown; the sign-in panel stays
+- **AC:** AC-03
+- **Type:** e2e
+
+### TC-51: A PENDING account is told to activate first
+
+- **US:** SS-US-01
+- **Given:** An invited, not yet activated account
+- **When:** Its email and any password are submitted
+- **Then:** The login request is refused; the message tells the person their account is not activated yet; the sign-in panel stays
+- **AC:** AC-02
+- **Type:** e2e
+
+### TC-52: Empty fields are caught before anything is sent
+
+- **US:** SS-US-01
+- **Given:** The sign-in panel
+- **When:** Sign in is pressed with both fields empty
+- **Then:** "Enter your email and password." is shown; no login request is sent
+- **AC:** AC-08
+- **Type:** e2e
+
+### TC-53: Sign out ends the session on the server and on the device
+
+- **US:** SS-US-02
+- **Given:** A signed-in user on any tab
+- **When:** Sign out is pressed; then the page is reloaded
+- **Then:** The logout request is sent with the session token and answered `200`; the sign-in panel is shown; after the reload it is still the sign-in panel
+- **AC:** AC-01
+- **Type:** e2e

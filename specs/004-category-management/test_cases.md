@@ -1646,3 +1646,64 @@ unchanged at 631 passed, 1 deselected.
 - **Then:** The response is `200`, not `409`; the category's `name` changes exactly as CM-US-04 already defines, and its `archived_at` remains unchanged — demonstrating `spec.md` BR-05's own scope limit: this story's archived-category restriction reaches only new Transactions and new Budgets, never CM-US-04's own update operation
 - **AC:** BR-05
 - **Type:** integration
+
+---
+
+## CM: UI test cases *(UI fast-track — CLAUDE.md §2)*
+
+> Written after the Category Management screens were built, under the UI fast-track ruling (2026-10-19). They pin down what the screens must **do** — each button's request, its answer, and what the person then sees — so a later change cannot silently break it. Visual design is never asserted. Each test arranges its own data through the API under a throwaway account, acts through the real screen, and lives in `mobile/e2e/`, run with `npm run test:e2e` against the real backend. Behaviour the screens cannot reach — expired tokens, other users' records, malformed payloads the client never sends — stays covered by the integration TCs above.
+
+### Coverage Matrix (UI)
+
+| TC | US | AC | E2E test | Status |
+| :-- | :-- | :-- | :-- | :-- |
+| TC-94 | CM-US-01 | AC-01 | `mobile/e2e/categories.spec.ts` › TC-94 | PASS — 2026-10-19, desktop + phone |
+| TC-95 | CM-US-02 | AC-01 | `mobile/e2e/categories.spec.ts` › TC-95 | PASS — 2026-10-19, desktop + phone |
+| TC-96 | CM-US-04 | AC-01, AC-11 | `mobile/e2e/categories.spec.ts` › TC-96 | PASS — 2026-10-19, desktop + phone |
+| TC-97 | CM-US-04 | AC-06 | `mobile/e2e/categories.spec.ts` › TC-97 | PASS — 2026-10-19, desktop + phone |
+| TC-98 | CM-US-05 | AC-01, AC-06 | `mobile/e2e/categories.spec.ts` › TC-98 | PASS — 2026-10-19, desktop + phone |
+
+### TC-94: Create a category while recording a transaction
+
+- **US:** CM-US-01
+- **Given:** The new-transaction form on the Activity tab, type Expense
+- **When:** New category is pressed, a name entered and Add pressed
+- **Then:** The create request is answered `201`; the new category appears among the category choices already selected
+- **AC:** AC-01
+- **Type:** e2e
+
+### TC-95: The Categories panel lists income and expense categories
+
+- **US:** CM-US-02
+- **Given:** A user with one income and one expense category
+- **When:** Categories is pressed on the Activity tab
+- **Then:** The panel lists the income category under Income and the expense category under Expense
+- **AC:** AC-01
+- **Type:** e2e
+
+### TC-96: Rename a category
+
+- **US:** CM-US-04
+- **Given:** The Categories panel
+- **When:** A category is pressed, Rename pressed, a new name entered and Save pressed
+- **Then:** The update request is answered `200`; the panel shows the new name; transactions in it show the new name in the feed
+- **AC:** AC-01, AC-11
+- **Type:** e2e
+
+### TC-97: A blank name is caught before anything is sent
+
+- **US:** CM-US-04
+- **Given:** A category's rename field
+- **When:** The name is cleared and Save pressed
+- **Then:** "A category needs a name." is shown; no update request is sent
+- **AC:** AC-06
+- **Type:** e2e
+
+### TC-98: Archive a category after confirming
+
+- **US:** CM-US-05
+- **Given:** A category with one transaction in it
+- **When:** In the Categories panel it is pressed, Archive pressed, then the confirm Archive
+- **Then:** The archive request is answered `200`; it is gone from the panel and from the new-transaction category choices; its existing transaction stays in the feed, labelled "Archived category"
+- **AC:** AC-01, AC-06
+- **Type:** e2e

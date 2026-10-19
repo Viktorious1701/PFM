@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-07 · SDS §5.7 (FR)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** FR-US-01 *(TC-01…TC-28)*
+> **Stories in this file:** FR-US-01 *(TC-01…TC-28)* · FR-US-03 *(TC-29…TC-54)*
 
 > **Naming note carried from `spec.md`/`plan.md`:** every `FR-NN` below is a bare, local reference to
 > `spec.md`'s own Functional Requirements — never `SRS FR-07` and never the `FR-US-01` story code.
@@ -498,3 +498,415 @@ touched. See the Implement-step gate message for full pasted evidence.
 - **Then:** Each User's `total_expenses` equals exactly their own single transaction's amount — never the sum of both Users' transactions
 - **AC:** AC-03, AC-04 *(assertion technique per QF-05)*
 - **Type:** integration
+
+---
+
+## FR-US-03: Summary Report per Currency
+
+> **IDs in this section are local to FR-US-03** — except `TC-NN` and `QF-NN`, which continue this
+> epic file's numbering: FR-US-01 used `TC-01`…`TC-28` and `QF-01`…`QF-06`, so this story starts at
+> `TC-29` and `QF-07` (the continuing convention `specs/006-transaction-management/test_cases.md`
+> records and reasons for). `AC-NN`/`EC-NN` below are FR-US-03's own, from `spec.md`.
+
+### Quality Findings
+
+#### QF-07
+
+**Description.** The per-currency totals query has the same "a missing group is not a zero row" trap
+FR-US-01 QF-02 recorded, now once per `(currency, type)` pair — and the held-but-unused currency
+(spec AC-07) reaches the service through a *different* source (the active-wallet read, `plan.md` A7)
+with no totals row at all. A test that only checks "the currency is present" would pass against an
+entry carrying `null` figures.
+
+**Impact.** The zero-defaulting `plan.md` A5 requires could be wrong for exactly the entries that have
+no transactions, which no other test exercises.
+
+**Recommendation.** `TC-36`, `TC-44` and `TC-45` assert the exact string `"0.00"` for every absent
+figure and an empty `top_categories` list, on a currency with **zero rows** of that type in the period.
+
+#### QF-08
+
+**Description.** `plan.md` A4 sorts currencies by code in the service. If a test creates its wallets
+in alphabetical order, database insertion order and the promised order coincide, and a missing
+`sorted(...)` would still pass.
+
+**Impact.** AC-04's only guarantee could regress unnoticed.
+
+**Recommendation.** `TC-32` creates the wallets in the order VND, EUR, USD — deliberately not
+alphabetical — and asserts the exact sequence `["EUR", "USD", "VND"]` on two consecutive requests.
+
+#### QF-09
+
+**Description.** `plan.md` A6's window query is only proven *partitioned* by a scenario where an
+unpartitioned `LIMIT 5` would give a visibly different answer. If every currency in a test has five or
+fewer categories, a query that ranks globally and cuts at five overall could still return every row.
+
+**Impact.** The defect the ruling exists to prevent — one currency's spending crowding out another's —
+would survive the suite.
+
+**Recommendation.** `TC-33` gives VND six spending categories whose totals are all numerically larger
+than either of USD's two, so a global top five would contain only VND rows. It asserts VND has
+exactly five (the sixth absent) **and** USD still has both of its own.
+
+#### QF-10
+
+**Description.** A cross-currency leak is easiest to miss when the leaked amount is small relative to
+the right answer, or when one category is spent in only one currency.
+
+**Impact.** A query grouped by category but not by currency would pass a test where each category
+lives in one currency only.
+
+**Recommendation.** `TC-30` uses amounts of very different magnitude (100,000.00 VND, 20.00 USD) and
+asserts no field anywhere equals their sum; `TC-35` spends the **same** category in both currencies
+and asserts each ranking carries its own currency's total for it.
+
+#### QF-11
+
+**Description.** This story reshapes FR-US-01's response. FR-US-01's test cases stay as written
+(`CLAUDE.md` §1.1 rule 4), but two of them describe an outcome that no longer holds, and all of them
+name top-level fields that move into `currencies[0]`.
+
+**Impact.** Without a record, FR-US-01's TC text and its tests would disagree silently after T-06.
+
+**Recommendation.** The table *FR-US-01 test cases affected* below maps every FR-US-01 TC to its fate.
+`plan.md` T-06 re-points the test functions; their docstrings keep their FR-US-01 `TC-NN` and, for
+TC-17/TC-18, also cite the superseding TC.
+
+#### QF-12
+
+**Description.** The `[UI]` criteria (AC-14…AC-16) are about *which currency* an amount is shown in.
+`CLAUDE.md` §1.1 rule 0 forbids asserting visual design.
+
+**Impact.** A currency-labelling assertion could drift into a styling assertion.
+
+**Recommendation.** The e2e TCs assert only text content and containment: a block's heading text, the
+currency marker inside an amount's text (`$` for USD, a trailing `đ` for VND, per
+`mobile/src/utils/money.ts`), and which category names a block's breakdown contains. No colour, size,
+width, or position is asserted — bar widths in particular are not tested.
+
+### FR-US-01 test cases affected
+
+| FR-US-01 TC | Fate | How |
+| :-- | :-- | :-- |
+| TC-01…TC-16, TC-19…TC-28 | Holds, re-pointed | Every flat-field assertion reads `currencies[0]`, whose `currency` is `"USD"` (all FR-US-01 tests build USD wallets) |
+| TC-06, TC-16 | Holds, re-pointed | The caller owns an active USD wallet, so the zero-valued USD entry exists (spec AC-07) |
+| TC-17 | **Superseded by TC-40** | Top-level keys are now exactly `period`, `currencies` |
+| TC-18 | **Superseded by TC-37** | No wallets now yields `currencies: []`, not zero-valued flat figures |
+
+### Acceptance Criteria Classification
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Figures are reported separately for each currency | **[API]** | Response contract; the screen side is AC-14 |
+| AC-02 | Amounts in different currencies are never added together | **[API]** | Aggregation contract; bounded by QF-10 |
+| AC-03 | Wallets sharing a currency are combined into one entry | **[API]** | Aggregation contract |
+| AC-04 | Currency entries appear in a fixed, repeatable order | **[API]** | Ordering contract; bounded by QF-08 (the screen follows response order, TC-50) |
+| AC-05 | Top spending categories are ranked within each currency | **[API]** | Ranking contract; bounded by QF-09 |
+| AC-06 | A category spent in two currencies appears in each ranking | **[API]** | Ranking contract; bounded by QF-10 |
+| AC-07 | A held currency not used this month is reported at zero | **[BOTH]** | API zero entry; Home shows its block |
+| AC-08 | Archived wallets keep counting for the month they were used in | **[API]** | Presence rule |
+| AC-09 | Nothing to report is a valid, empty report | **[BOTH]** | API empty list; Home empty message |
+| AC-10 | Deny access to unauthenticated callers | **[API]** | Authorization contract |
+| AC-11 | Another User's data never appears, in any currency | **[API]** | Ownership contract |
+| AC-12 | The response carries exactly the documented fields | **[API]** | Payload contract |
+| AC-13 | The reporting period applies to every currency alike | **[API]** | Period rule |
+| AC-14 | Home shows one analysis block per currency | **[UI]** | Screen behaviour |
+| AC-15 | Each block shows its amounts in its own currency | **[UI]** | Screen behaviour; bounded by QF-12 |
+| AC-16 | "Where the money went" lists only that currency's categories | **[UI]** | Screen behaviour |
+| EC-01 | Income but no expenses in a currency | **[API]** | Boundary; bounded by QF-07 |
+| EC-02 | Expenses but no income in a currency | **[API]** | Boundary; bounded by QF-07 |
+| EC-03 | One currency saves while another overspends | **[API]** | Sign independence |
+| EC-04 | Category archived after being spent against | **[API]** | Consistency with FR-US-01 |
+| EC-05 | Only one currency held | **[BOTH]** | API one entry; Home one labelled block |
+| EC-06 | No wallet in the app's default currency | **[API]** | No invented entry |
+| EC-07 | Two currencies with identical figures | **[API]** | No merging |
+
+### Coverage Matrix
+
+| Story | AC/EC | Label | TC(s) | Test node id | Status |
+|---|---|---|---|---|---|
+| FR-US-03 | AC-01 | [API] | TC-29 | — | Not run |
+| FR-US-03 | AC-02 | [API] | TC-30 | — | Not run |
+| FR-US-03 | AC-03 | [API] | TC-31 | — | Not run |
+| FR-US-03 | AC-04 | [API] | TC-32 | — | Not run |
+| FR-US-03 | AC-05 | [API] | TC-33, TC-34 | — | Not run |
+| FR-US-03 | AC-06 | [API] | TC-35 | — | Not run |
+| FR-US-03 | AC-07 | [BOTH] | TC-36 · e2e TC-53 | — | Not run |
+| FR-US-03 | AC-08 | [API] | TC-42 | — | Not run |
+| FR-US-03 | AC-09 | [BOTH] | TC-37, TC-43 · e2e TC-54 | — | Not run |
+| FR-US-03 | AC-10 | [API] | TC-38 | — | Not run |
+| FR-US-03 | AC-11 | [API] | TC-39 | — | Not run |
+| FR-US-03 | AC-12 | [API] | TC-40 | — | Not run |
+| FR-US-03 | AC-13 | [API] | TC-41 | — | Not run |
+| FR-US-03 | AC-14 | [UI] | e2e TC-50 | — | Not run |
+| FR-US-03 | AC-15 | [UI] | e2e TC-51 | — | Not run |
+| FR-US-03 | AC-16 | [UI] | e2e TC-52 | — | Not run |
+| FR-US-03 | EC-01 | [API] | TC-44 | — | Not run |
+| FR-US-03 | EC-02 | [API] | TC-45 | — | Not run |
+| FR-US-03 | EC-03 | [API] | TC-46 | — | Not run |
+| FR-US-03 | EC-04 | [API] | TC-47 | — | Not run |
+| FR-US-03 | EC-05 | [BOTH] | TC-48 · e2e TC-53 | — | Not run |
+| FR-US-03 | EC-06 | [API] | TC-48 | — | Not run |
+| FR-US-03 | EC-07 | [API] | TC-49 | — | Not run |
+
+> Every AC and EC has at least one TC; every `[UI]`/`[BOTH]` row has an e2e TC. Integration TCs go
+> in `backend/tests/integration/test_fr_us_03_summary_per_currency.py` (`plan.md` T-07), e2e TCs in
+> `mobile/e2e/home.spec.ts` (T-09). Node ids are filled at step 4. **Known coverage limit,
+> accepted:** the window-function exactness (`plan.md` A6) is proven on SQLite only — PostgreSQL is
+> not runnable here (constitution ENV-04), the same limit FR-US-01's matrix note records.
+
+---
+
+### TC-29: Figures are reported separately for VND and USD
+
+- **US:** FR-US-03
+- **Given:** An authenticated User owning a VND wallet with an income of `15000000.00` and an expense of `100000.00`, and a USD wallet with an income of `500.00` and an expense of `20.00`, all this month
+- **When:** The User requests their summary report
+- **Then:** The response is `200`; `currencies` has exactly two entries; the `VND` entry has `total_income` `"15000000.00"`, `total_expenses` `"100000.00"`, `net_savings` `"14900000.00"`; the `USD` entry has `"500.00"`, `"20.00"`, `"480.00"`; each entry's `top_categories` lists only categories spent in that currency
+- **AC:** AC-01, FR-01, FR-03
+- **Type:** integration
+
+### TC-30: Amounts in different currencies are never added together
+
+- **US:** FR-US-03
+- **Given:** An authenticated User with an expense of `100000.00` from a VND wallet and an expense of `20.00` from a USD wallet this month, against two different categories
+- **When:** The User requests their summary report
+- **Then:** The `VND` entry's `total_expenses` is `"100000.00"` and the `USD` entry's is `"20.00"`; no value anywhere in the response equals `"100020.00"`
+- **AC:** AC-02, FR-02, BR-02 *(assertion technique per QF-10)*
+- **Type:** integration
+
+### TC-31: Two wallets in the same currency form one entry
+
+- **US:** FR-US-03
+- **Given:** An authenticated User owning two VND wallets, with an expense of `30000.00` from one and `70000.00` from the other this month
+- **When:** The User requests their summary report
+- **Then:** `currencies` has exactly one entry, `VND`, with `total_expenses` `"100000.00"`
+- **AC:** AC-03, FR-01
+- **Type:** integration
+
+### TC-32: Currency entries are ordered by code, the same on every request
+
+- **US:** FR-US-03
+- **Given:** An authenticated User who creates a VND wallet, then a EUR wallet, then a USD wallet, each with an expense this month
+- **When:** The User requests their summary report twice
+- **Then:** On both responses the sequence of `currency` values is exactly `["EUR", "USD", "VND"]`
+- **AC:** AC-04, FR-06, BR-04 *(assertion technique per QF-08)*
+- **Type:** integration
+
+### TC-33: Each currency has its own top five, never crowded out by another
+
+- **US:** FR-US-03
+- **Given:** An authenticated User with VND expenses this month across six categories with distinct totals `600000.00` … `100000.00`, and USD expenses across two categories of `50.00` and `10.00`
+- **When:** The User requests their summary report
+- **Then:** The `VND` entry's `top_categories` has exactly five entries in descending total order and omits the `100000.00` category; the `USD` entry's has exactly its two categories, `50.00` then `10.00`, not padded
+- **AC:** AC-05, FR-04 *(assertion technique per QF-09)*
+- **Type:** integration
+
+### TC-34: Tied categories within one currency are ordered by identifier
+
+- **US:** FR-US-03
+- **Given:** An authenticated User with two categories each carrying exactly `40.00` of USD expenses this month
+- **When:** The User requests their summary report
+- **Then:** Both appear in the `USD` entry's `top_categories`, the one with the smaller `category_id` first
+- **AC:** AC-05, FR-04
+- **Type:** integration
+
+### TC-35: A category spent in two currencies ranks in each with its own total
+
+- **US:** FR-US-03
+- **Given:** An authenticated User with one category "Food", against which `0.10` and `0.20` were spent from a USD wallet and `50000.00` from a VND wallet this month
+- **When:** The User requests their summary report
+- **Then:** "Food" appears in the `USD` ranking with `total_amount` `"0.30"` and in the `VND` ranking with `"50000.00"` — exact string matches
+- **AC:** AC-06, FR-02, FR-04, constitution VL-07 *(assertion technique per QF-10)*
+- **Type:** integration
+
+### TC-36: A held currency with no activity this month is a zero entry
+
+- **US:** FR-US-03
+- **Given:** An authenticated User owning an active EUR wallet with no transactions at all, and a VND wallet with an expense this month
+- **When:** The User requests their summary report
+- **Then:** `currencies` has a `EUR` entry with `total_income`, `total_expenses` and `net_savings` each exactly `"0.00"` and `top_categories` `[]`, alongside the `VND` entry
+- **AC:** AC-07, FR-05, BR-03 *(assertion technique per QF-07)*
+- **Type:** integration
+
+### TC-37: A User with no wallets receives an empty report
+
+- **US:** FR-US-03
+- **Given:** An authenticated User who owns no wallets
+- **When:** The User requests their summary report
+- **Then:** The response is `200`, `period` is the first day of the current month, and `currencies` is exactly `[]`
+- **AC:** AC-09, FR-07 *(supersedes FR-US-01 TC-18, per QF-11)*
+- **Type:** integration
+
+### TC-38: An unauthenticated caller is denied with 401
+
+- **US:** FR-US-03
+- **Given:** A caller presenting no `Authorization` header, and separately one presenting an invalid bearer token
+- **When:** Each requests the summary report
+- **Then:** Both responses are `401` with `error_code` `NOT_AUTHENTICATED` and no `currencies` field
+- **AC:** AC-10, FR-08, constitution SEC-07
+- **Type:** integration
+
+### TC-39: Another User's currency and amounts never appear
+
+- **US:** FR-US-03
+- **Given:** User `A` owns a VND wallet with an expense of `100000.00`; User `B` owns a VND wallet with an expense of `100000.00` against a same-named category and a EUR wallet with an expense of `30.00`, all this month
+- **When:** `A` requests their summary report
+- **Then:** `A`'s `currencies` has only a `VND` entry with `total_expenses` `"100000.00"` (not `"200000.00"`) and no `EUR` entry
+- **AC:** AC-11, FR-08, constitution SEC-08
+- **Type:** integration
+
+### TC-40: The response carries exactly the documented fields at every level
+
+- **US:** FR-US-03
+- **Given:** An authenticated User with one expense this month
+- **When:** The User requests their summary report
+- **Then:** Top-level keys are exactly `period`, `currencies`; each entry's keys are exactly `currency`, `total_income`, `total_expenses`, `net_savings`, `top_categories`; each ranked category's keys are exactly `category_id`, `category_name`, `total_amount`
+- **AC:** AC-12, FR-09, constitution PF-03 *(supersedes FR-US-01 TC-17, per QF-11)*
+- **Type:** integration
+
+### TC-41: The period applies to every currency alike
+
+- **US:** FR-US-03
+- **Given:** The clock frozen to a mid-month instant; an authenticated User with, in each of a VND and a USD wallet, one expense dated this month and one dated in the previous month
+- **When:** The User requests their summary report
+- **Then:** `period` is the first day of the frozen month; each entry's `total_expenses` equals only its this-month expense
+- **AC:** AC-13, FR-08
+- **Type:** integration
+
+### TC-42: An archived wallet's transactions this month still count, an archived unused currency does not appear
+
+- **US:** FR-US-03
+- **Given:** An authenticated User with a USD wallet that had an expense of `20.00` this month and was then archived, and a EUR wallet with no transactions that was archived; the User holds no other USD or EUR wallet
+- **When:** The User requests their summary report
+- **Then:** A `USD` entry exists with `total_expenses` `"20.00"`; no `EUR` entry exists
+- **AC:** AC-08, FR-05, BR-03
+- **Type:** integration
+
+### TC-43: A User with only archived, unused wallets receives an empty report
+
+- **US:** FR-US-03
+- **Given:** An authenticated User whose only wallet is archived and has no transactions this month
+- **When:** The User requests their summary report
+- **Then:** The response is `200` and `currencies` is exactly `[]`
+- **AC:** AC-09, FR-05, FR-07
+- **Type:** integration
+
+### TC-44: A currency with income only reports zero expenses
+
+- **US:** FR-US-03
+- **Given:** An authenticated User whose only transaction this month in USD is an income of `500.00`
+- **When:** The User requests their summary report
+- **Then:** The `USD` entry has `total_expenses` `"0.00"`, `net_savings` `"500.00"` and `top_categories` `[]`
+- **AC:** EC-01, FR-03 *(assertion technique per QF-07)*
+- **Type:** integration
+
+### TC-45: A currency with expenses only reports zero income and negative net savings
+
+- **US:** FR-US-03
+- **Given:** An authenticated User whose only transaction this month in VND is an expense of `100000.00`
+- **When:** The User requests their summary report
+- **Then:** The `VND` entry has `total_income` `"0.00"` and `net_savings` `"-100000.00"`
+- **AC:** EC-02, FR-03 *(assertion technique per QF-07)*
+- **Type:** integration
+
+### TC-46: Net savings carry their own sign per currency
+
+- **US:** FR-US-03
+- **Given:** An authenticated User with, this month, VND income `200000.00` and expense `50000.00`, and USD income `10.00` and expense `40.00`
+- **When:** The User requests their summary report
+- **Then:** The `VND` entry's `net_savings` is `"150000.00"` and the `USD` entry's is `"-30.00"` — neither offset by the other
+- **AC:** EC-03, FR-02, FR-03
+- **Type:** integration
+
+### TC-47: A category archived after being spent against still ranks in its currency
+
+- **US:** FR-US-03
+- **Given:** An authenticated User who spent `25.00` USD against category "Gifts" this month and then archived "Gifts"
+- **When:** The User requests their summary report
+- **Then:** The `USD` entry's `top_categories` contains "Gifts" with `total_amount` `"25.00"`
+- **AC:** EC-04, FR-04
+- **Type:** integration
+
+### TC-48: A User holding only EUR gets exactly one EUR entry and nothing invented
+
+- **US:** FR-US-03
+- **Given:** An authenticated User whose only wallet is in EUR, with an expense this month
+- **When:** The User requests their summary report
+- **Then:** `currencies` has exactly one entry and its `currency` is `"EUR"`; there is no `VND` entry
+- **AC:** EC-05, EC-06, FR-05
+- **Type:** integration
+
+### TC-49: Two currencies with identical figures stay two entries
+
+- **US:** FR-US-03
+- **Given:** An authenticated User with an expense of `100.00` from a USD wallet and an expense of `100.00` from a EUR wallet this month
+- **When:** The User requests their summary report
+- **Then:** `currencies` has two entries, `EUR` then `USD`, each with `total_expenses` `"100.00"`
+- **AC:** EC-07, FR-02
+- **Type:** integration
+
+---
+
+## FR: UI test cases *(UI fast-track — CLAUDE.md §2)*
+
+> The Home tab's analysis section, after `plan.md` FR-US-03 T-08. Each test arranges its own data
+> through the API under a throwaway account, acts through the real screen, and lives in
+> `mobile/e2e/home.spec.ts`, run with `npm run test:e2e` against the real backend. Visual design is
+> never asserted (QF-12). Behaviour the screen cannot reach — another user's data, unauthenticated
+> calls — stays covered by the integration TCs above.
+
+### Coverage Matrix (UI)
+
+| TC | US | AC | E2E test | Status |
+| :-- | :-- | :-- | :-- | :-- |
+| TC-50 | FR-US-03 | AC-14, AC-01, AC-04 | `mobile/e2e/home.spec.ts` › TC-50 | — |
+| TC-51 | FR-US-03 | AC-15 | `mobile/e2e/home.spec.ts` › TC-51 | — |
+| TC-52 | FR-US-03 | AC-16 | `mobile/e2e/home.spec.ts` › TC-52 | — |
+| TC-53 | FR-US-03 | AC-07, EC-05 | `mobile/e2e/home.spec.ts` › TC-53 | — |
+| TC-54 | FR-US-03 | AC-09 | `mobile/e2e/home.spec.ts` › TC-54 | — |
+
+### TC-50: Home shows one block per currency, in the report's order
+
+- **US:** FR-US-03
+- **Given:** A VND wallet with an expense of 100.000 đ and a USD wallet with an expense of $20.00, this month
+- **When:** The Home tab is opened
+- **Then:** The summary request is answered `200`; blocks `report-USD` and `report-VND` are shown, USD first; each heading reads its currency code; each block contains its income row, expenses row, net savings and spending breakdown
+- **AC:** AC-14, AC-01, AC-04
+- **Type:** e2e
+
+### TC-51: Each block's amounts are in its own currency
+
+- **US:** FR-US-03
+- **Given:** The data of TC-50
+- **When:** The Home tab is opened
+- **Then:** Inside `report-USD`, the expenses amount reads `$20.00` and no amount ends in `đ`; inside `report-VND`, the expenses amount reads `100.000 đ` and no amount contains `$`
+- **AC:** AC-15 *(assertion technique per QF-12)*
+- **Type:** e2e
+
+### TC-52: Each block's breakdown lists only its own currency's categories
+
+- **US:** FR-US-03
+- **Given:** An expense against "Food" from a VND wallet and against "Travel" from a USD wallet, this month
+- **When:** The Home tab is opened
+- **Then:** `report-VND-donut` contains "Food" and not "Travel"; `report-USD-donut` contains "Travel" and not "Food"
+- **AC:** AC-16
+- **Type:** e2e
+
+### TC-53: A single held currency with no activity shows one zero block
+
+- **US:** FR-US-03
+- **Given:** One VND wallet and no transactions
+- **When:** The Home tab is opened
+- **Then:** Exactly one block, `report-VND`, is shown with heading `VND`; its income and expenses read `0 đ`; its breakdown reads "No spending recorded this month."
+- **AC:** AC-07, EC-05
+- **Type:** e2e
+
+### TC-54: A user with nothing to report sees the empty message
+
+- **US:** FR-US-03
+- **Given:** A user with no wallets
+- **When:** The Home tab is opened
+- **Then:** `report-empty` is shown, reading that no income or expenses were recorded this month; no `report-` currency block is present
+- **AC:** AC-09
+- **Type:** e2e

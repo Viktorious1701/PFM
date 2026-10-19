@@ -2184,3 +2184,114 @@ Verification; nothing here required root-causing.
   now exactly `-400.00` (`100.00` minus the reversed `500.00`)
 - **AC:** EC-04 *(proof technique per QF-25)*
 - **Type:** integration
+
+---
+
+## TM: UI test cases *(UI fast-track — CLAUDE.md §2)*
+
+> Written after the Transaction Management screens were built, under the UI fast-track ruling (2026-10-19). They pin down what the screens must **do** — each button's request, its answer, and what the person then sees — so a later change cannot silently break it. Visual design is never asserted. Each test arranges its own data through the API under a throwaway account, acts through the real screen, and lives in `mobile/e2e/`, run with `npm run test:e2e` against the real backend. Behaviour the screens cannot reach — expired tokens, other users' records, malformed payloads the client never sends — stays covered by the integration TCs above.
+
+### Coverage Matrix (UI)
+
+| TC | US | AC | E2E test | Status |
+| :-- | :-- | :-- | :-- | :-- |
+| TC-127 | TM-US-01 | AC-01, AC-17 | `mobile/e2e/activity.spec.ts` › TC-127 | PASS — 2026-10-19, desktop + phone |
+| TC-128 | TM-US-01 | AC-02 | `mobile/e2e/activity.spec.ts` › TC-128 | PASS — 2026-10-19, desktop + phone |
+| TC-129 | TM-US-01 | AC-14 | `mobile/e2e/activity.spec.ts` › TC-129 | PASS — 2026-10-19, desktop + phone |
+| TC-130 | TM-US-01 | AC-10 | `mobile/e2e/activity.spec.ts` › TC-130 | PASS — 2026-10-19, desktop + phone |
+| TC-131 | TM-US-02 | AC-01, AC-08, AC-10 | `mobile/e2e/activity.spec.ts` › TC-131 | PASS — 2026-10-19, desktop + phone |
+| TC-132 | TM-US-02 | AC-02 | `mobile/e2e/activity.spec.ts` › TC-132 | PASS — 2026-10-19, desktop + phone |
+| TC-133 | TM-US-03 | AC-01 | `mobile/e2e/activity.spec.ts` › TC-133 | PASS — 2026-10-19, desktop + phone |
+| TC-134 | TM-US-04 | AC-07 | `mobile/e2e/activity.spec.ts` › TC-134 | PASS — 2026-10-19, desktop + phone |
+| TC-135 | TM-US-04 | AC-03 | `mobile/e2e/activity.spec.ts` › TC-135 | PASS — 2026-10-19, desktop + phone |
+| TC-136 | TM-US-05 | AC-01 | `mobile/e2e/activity.spec.ts` › TC-136 | PASS — 2026-10-19, desktop + phone |
+
+### TC-127: Record an expense
+
+- **US:** TM-US-01
+- **Given:** A wallet with balance 1.000.000 đ and an expense category, on the Activity tab
+- **When:** Add is pressed, Expense kept, `50.000` entered, the wallet and category chosen, a note entered and Add expense pressed
+- **Then:** The create request is sent with amount `50000.00`, type `EXPENSE` and the note, and answered `201`; the row appears at the top of the feed as `−50.000 đ`; the wallet's balance is 950.000 đ
+- **AC:** AC-01, AC-17
+- **Type:** e2e
+
+### TC-128: Record income
+
+- **US:** TM-US-01
+- **Given:** A wallet and an income category
+- **When:** An income of `200.000` is recorded
+- **Then:** The create request is answered `201`; the row shows `+200.000 đ` in the income colour; the wallet's balance rises by 200.000 đ
+- **AC:** AC-02
+- **Type:** e2e
+
+### TC-129: An expense larger than the balance is refused
+
+- **US:** TM-US-01
+- **Given:** A wallet with balance 100.000 đ
+- **When:** An expense of `500.000` is submitted from it
+- **Then:** The create request is refused and its message is shown inline; no row is added; the balance is unchanged
+- **AC:** AC-14
+- **Type:** e2e
+
+### TC-130: A zero amount is caught before anything is sent
+
+- **US:** TM-US-01
+- **Given:** The new-transaction form with wallet and category chosen
+- **When:** An amount of `0` is entered and Add expense pressed
+- **Then:** A message asks for an amount above zero; no create request is sent
+- **AC:** AC-10
+- **Type:** e2e
+
+### TC-131: The feed is newest first, grouped by day, and filters by wallet
+
+- **US:** TM-US-02
+- **Given:** Two wallets, each with a transaction
+- **When:** The Activity tab is opened, then one wallet's filter chip pressed
+- **Then:** The list request is answered `200`; rows are under a day heading, newest first; after the filter a list request carries that wallet's id and only its row remains
+- **AC:** AC-01, AC-08, AC-10
+- **Type:** e2e
+
+### TC-132: A user with no transactions sees an empty state
+
+- **US:** TM-US-02
+- **Given:** A user with no transactions
+- **When:** The Activity tab is opened
+- **Then:** "No transactions yet." is shown
+- **AC:** AC-02
+- **Type:** e2e
+
+### TC-133: Opening a transaction shows its details
+
+- **US:** TM-US-03
+- **Given:** A transaction with a note
+- **When:** Its row is pressed
+- **Then:** The row expands to show its type, wallet with currency, date and time, and note, with Edit and Delete
+- **AC:** AC-01
+- **Type:** e2e
+
+### TC-134: Edit a transaction's amount and note
+
+- **US:** TM-US-04
+- **Given:** An expense of 50.000 đ from a wallet
+- **When:** It is opened, Edit pressed, the amount changed to `80.000` and the note changed, and Save pressed
+- **Then:** The update request is answered `200`; the row shows `−80.000 đ` and the new note; the wallet's balance is 30.000 đ lower than before
+- **AC:** AC-07
+- **Type:** e2e
+
+### TC-135: Change an expense into income
+
+- **US:** TM-US-04
+- **Given:** An expense, and an income category
+- **When:** It is opened, Edit pressed, Income chosen, the income category chosen and Save pressed
+- **Then:** The update request is answered `200`; the row now shows `+` in the income colour under the income category
+- **AC:** AC-03
+- **Type:** e2e
+
+### TC-136: Delete a transaction after confirming
+
+- **US:** TM-US-05
+- **Given:** An expense of 50.000 đ
+- **When:** It is opened, Delete pressed, then the confirm Delete
+- **Then:** The delete request is answered `204`; the row is gone; the wallet's balance is 50.000 đ higher
+- **AC:** AC-01
+- **Type:** e2e

@@ -1574,3 +1574,74 @@ every TM-US-01 and BM-US-01 test unchanged.
 - **Then:** The response is `401` `NOT_AUTHENTICATED`, not `404` — mirrors WM-US-03 TC-70/TM-US-03 TC-82's own ordering
 - **AC:** AC-02, FR-02
 - **Type:** integration
+
+---
+
+## WM: UI test cases *(UI fast-track — CLAUDE.md §2)*
+
+> Written after the Wallet Management screens were built, under the UI fast-track ruling (2026-10-19). They pin down what the screens must **do** — each button's request, its answer, and what the person then sees — so a later change cannot silently break it. Visual design is never asserted. Each test arranges its own data through the API under a throwaway account, acts through the real screen, and lives in `mobile/e2e/`, run with `npm run test:e2e` against the real backend. Behaviour the screens cannot reach — expired tokens, other users' records, malformed payloads the client never sends — stays covered by the integration TCs above.
+
+### Coverage Matrix (UI)
+
+| TC | US | AC | E2E test | Status |
+| :-- | :-- | :-- | :-- | :-- |
+| TC-91 | WM-US-01 | AC-01 | `mobile/e2e/wallets.spec.ts` › TC-91 | PASS — 2026-10-19, desktop + phone |
+| TC-92 | WM-US-01 | AC-09 | `mobile/e2e/wallets.spec.ts` › TC-92 | PASS — 2026-10-19, desktop + phone |
+| TC-93 | WM-US-02 | AC-01, AC-02 | `mobile/e2e/wallets.spec.ts` › TC-93 | PASS — 2026-10-19, desktop + phone |
+| TC-94 | WM-US-03 | AC-01 | `mobile/e2e/wallets.spec.ts` › TC-94 | PASS — 2026-10-19, desktop + phone |
+| TC-95 | WM-US-04 | AC-01, AC-10 | `mobile/e2e/wallets.spec.ts` › TC-95 | PASS — 2026-10-19, desktop + phone |
+| TC-96 | WM-US-05 | AC-01, AC-06 | `mobile/e2e/wallets.spec.ts` › TC-96 | PASS — 2026-10-19, desktop + phone |
+
+### TC-91: Add a VND wallet with an opening balance
+
+- **US:** WM-US-01
+- **Given:** A signed-in user on the Wallets tab
+- **When:** Add wallet is pressed, a name and type are chosen, VND is left as the default currency, `2.500.000` is entered and Add wallet is pressed
+- **Then:** The create request is sent with currency `VND` and initial balance `2500000.00` and answered `201`; the new wallet card shows `2.500.000 đ`; the wallet total includes it
+- **AC:** AC-01
+- **Type:** e2e
+
+### TC-92: An invalid opening balance is caught before anything is sent
+
+- **US:** WM-US-01
+- **Given:** The new-wallet form with a name filled in, currency VND
+- **When:** `12.5` is entered as the opening balance and Add wallet is pressed
+- **Then:** A message asks for a whole number like 2.500.000; no create request is sent
+- **AC:** AC-09
+- **Type:** e2e
+
+### TC-93: The Wallets tab lists every wallet, or says there are none
+
+- **US:** WM-US-02
+- **Given:** A user with two wallets, and a user with none
+- **When:** Each opens the Wallets tab
+- **Then:** The list request is answered `200`; the first sees both wallets with their name, type, currency and balance and a total; the second sees "No wallets yet."
+- **AC:** AC-01, AC-02
+- **Type:** e2e
+
+### TC-94: Opening a wallet shows its latest activity
+
+- **US:** WM-US-03
+- **Given:** A wallet with one recorded expense
+- **When:** Its card is pressed
+- **Then:** The card expands to show the expense (category, amount) under Latest activity, with Rename and Archive buttons
+- **AC:** AC-01
+- **Type:** e2e
+
+### TC-95: Rename a wallet
+
+- **US:** WM-US-04
+- **Given:** An opened wallet card
+- **When:** Rename is pressed, a new name entered and Save pressed
+- **Then:** The update request is answered `200`; the card shows the new name; its balance and currency are unchanged
+- **AC:** AC-01, AC-10
+- **Type:** e2e
+
+### TC-96: Archive a wallet after confirming
+
+- **US:** WM-US-05
+- **Given:** An opened wallet card
+- **When:** Archive is pressed, then the confirm Archive
+- **Then:** The archive request is answered `200`; the card is gone from the list; the total no longer includes it
+- **AC:** AC-01, AC-06
+- **Type:** e2e

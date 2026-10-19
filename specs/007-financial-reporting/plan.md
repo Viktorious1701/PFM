@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-07 · SDS §5.7 (FR)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** FR-US-01 *(planned)*
+> **Stories in this file:** FR-US-01 *(planned)* · FR-US-03 *(planned)*
 
 > **Naming note carried from `spec.md`:** this epic's code (`FR`) collides in spelling with `SRS
 > FR-07` (the requirement) and with this file's own local `FR-NN` numbering in `spec.md`. This
@@ -411,3 +411,317 @@ for why this catalogue is deliberately this short, not incomplete.
 | T-03 | `report_service._month_bounds(...)`, `TOP_CATEGORIES_LIMIT`, `report_service.get_summary_report(db, *, owner)` | `backend/app/services/report_service.py` | Open |
 | T-04 | `GET /api/v1/reports/summary` router; mount `reports.router` in `api/v1/router.py` | `backend/app/api/v1/reports.py`, `backend/app/api/v1/router.py` | Open |
 | T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_fr_us_01_view_summary_report.py` | Open |
+
+---
+
+## FR-US-03: Summary Report per Currency
+
+> **IDs in this section are local to FR-US-03** — `A1`, `T-01` etc. restart here, as every
+> multi-story `plan.md` in `specs/` does (`TM-US-02 A1`, `BM-US-02 T-01`). A bare `AC-NN`/`FR-NN`
+> below means FR-US-03's own in `spec.md`; FR-US-01's are always written `FR-US-01 AC-NN`.
+
+### Gaps & Decisions (Resolved)
+
+Code and architecture decisions settled during design. Spec-level findings were folded back into
+`spec.md` before this step closed.
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Scope / Naming | **Story code `FR-US-03`, not `FR-US-02`.** `SDS §5.7.2` assigns `FR-US-02` to *View Category Expense Report*; FR-US-01's spec (naming note, *Out of scope*) and FR-US-01 A11 above both reserve it. This story has no SDS §5 entry and cites `SRS US-07-01` + `SDS §5.7.1` as its sources. Renaming later is mechanical — the code appears only in this epic's three files. | ✅ Resolved |
+| A2 | API contract | **`FR-API-01` (`GET /api/v1/reports/summary`) changes shape in place: the four flat figures and `top_categories` move into a `currencies` list, one entry per currency; `period` stays at the top level.** Four alternatives were weighed. **(b) Keep the flat fields alongside the new list** — rejected: the flat fields can only be filled by adding amounts across currencies, which the ruling forbids outright; filling them only when the caller holds a single currency (null otherwise) makes the shape depend on the data, and leaves a field that is right by coincidence. **(c) A new endpoint (e.g. `/reports/summary-by-currency`), old one deprecated** — rejected: it keeps a route alive whose only possible output is the meaningless mixed total, and it doubles the surface for one report. **(d) A `currency` query parameter, one call per currency** — rejected: the client would first have to discover the currencies (from `GET /wallets`, which hides archived wallets whose transactions still count, A5), it costs N requests for one screen, and it reintroduces caller input this endpoint has deliberately never accepted (FR-US-01 A12). **A `/api/v2` version bump** — rejected: the only client is this repo's own `mobile/` app, changed in the same delivery (T-08), and `FR-API-01` was never registered in `SDS.md` §6 (FR-US-01 A11), so no published contract outside this repo exists to protect. **(a) Replace, chosen:** it is the only shape in which every number has a currency, it keeps one request per screen, and the breaking change is contained to one repo and one delivery. The product owner authorized the per-currency behaviour itself (2026-10-19); this row records how the contract carries it. Not escalated as `[NEEDS RULING]`: every rejected option either violates the ruling or adds surface the ruling does not ask for. | ✅ Resolved |
+| A3 | Domain | **A currency appears iff the caller owns an active wallet in it, or a transaction of the caller's in the period belongs to a wallet in it (spec FR-05).** Weighed in full in `spec.md` *Assumptions*. Consequence for design: the currency set is the union of two sources — active-wallet currencies (a new `wallet_repo` read, A7) and currencies present in the per-currency totals (A5). Every currency with a ranked category also has an expense total, so the ranking query never introduces a currency the totals query lacks. | ✅ Resolved |
+| A4 | Domain / API | **Currencies ordered by code ascending, sorted in the service.** Alternatives: by activity (largest expenses first) — rejected, a block would jump position as amounts change, and AC-04 promises repeatability; default currency (VND) first — rejected, the server has no notion of a default currency (`DEFAULT_CURRENCY` is a client constant in `mobile/src/utils/money.ts`; a server-side default is `DC-US-01`, out of scope). Codes are unique per entry, so code order is total and needs no tie-break. Sorted in `report_service` (AR-01), since it merges two sources (A3). | ✅ Resolved |
+| A5 | Architecture | **Totals: `get_summary_totals()` is replaced by `get_summary_totals_by_currency()`, grouping by `(wallets.currency, transactions.type)`.** Same join, same ownership predicate, same half-open period as FR-US-01 A3/A4 — only one more grouping column, selected from the `wallets` row the query already joins for ownership. Returns `dict[tuple[str, TransactionType], Decimal]`; a missing `(currency, type)` key still means zero (FR-US-01 A7's trap, now per currency, so the service defaults per key). No `archived_at` predicate, exactly as FR-US-01 has none (verified in `transaction_repo.py`): an archived wallet's transactions in the period still count (spec AC-08). The old function is removed, not kept beside the new one — `report_service` is its only caller (checked with grep). | ✅ Resolved |
+| A6 | Architecture / Performance | **Top categories per currency: one query, `ROW_NUMBER()` window partitioned by currency, replacing `get_top_expense_categories()` with `get_top_expense_categories_by_currency()`.** An inner query groups the caller's period EXPENSE transactions by `(wallets.currency, categories.id, categories.name)` and sums `amount`; an outer query numbers rows `OVER (PARTITION BY currency ORDER BY total DESC, category_id ASC)` and keeps `rank <= limit`, ordered by currency then rank. Three shapes weighed: **one query per currency** — rejected, an N+1 pattern (PF-02); **one grouped query with no limit, cut to five per currency in the service** — simpler SQL, but sends every (currency, category) pair the caller ever spent against this month up from the database for the service to discard most of them, and moves FR-US-01's bounded `LIMIT` out of the query; **window function, chosen** — one round trip, result bounded at five rows per currency, and the tie-break is FR-US-01 A5's `category_id ASC` unchanged. **Empirically checked** (scratch probe outside the repo, this project's `sqlalchemy 2.0.51`, SQLite `3.53.1`): the window query returned top five per currency with ties broken by id, the same category ranked separately in two currencies, another user's rows excluded, and every total a `Decimal` with exact sums (`0.10 + 0.20 = 0.30`, `19.99 + 0.01 = 20.00`). Window functions exist in SQLite since 3.25 and in every supported PostgreSQL, so nothing here leans on SQLite-only behaviour (ENV-03); PostgreSQL itself was not run (ENV-04), reasoned the same way FR-US-01 A7 reasoned. `CategoryModel.archived_at` is not filtered, as in FR-US-01 (spec EC-04). | ✅ Resolved |
+| A7 | Architecture | **New `wallet_repo.list_active_currencies(db, *, user_id) -> list[str]`: the distinct currencies of the caller's wallets with `archived_at IS NULL`.** The same active-wallet predicate `wallet_repo.list_owned()` already applies (WM-US-05 A3). Lives in `wallet_repo`, not `transaction_repo`, because it reads wallets only (FR-US-01 A9's one-repo-per-model convention). | ✅ Resolved |
+| A8 | Performance | **No new index, no migration.** `wallets.currency` appears in the new queries only as a selected, grouped and partitioned column, after the rows have been narrowed by `wallets.user_id` (indexed, WM-US-01) and `ix_transactions_wallet_id_timestamp` (TM-US-02 A5) — it is never a `WHERE` predicate or a join key, so PF-02 does not call for an index on it. The partition runs over one caller's own (currency, category) groups — tens of rows. Alembic head unchanged. | ✅ Resolved |
+| A9 | API / DTO | **`SummaryReportRead` keeps its name and becomes `{period, currencies}`; new `CurrencySummaryRead` = `{currency, total_income, total_expenses, net_savings, top_categories}`; `CategorySpendingRead` unchanged.** Keeping the name avoids churn in the router and the mobile type for what is the same resource. `CurrencySummaryRead` carries exactly the four figures FR-US-01 put at the top level, so FR-US-01's per-figure rules move into it unchanged (spec FR-03, FR-04). `currencies` is always present, `[]` when empty — never `null` and never omitted (spec AC-09, AC-12). `currency` is serialised as stored: WM-US-01 FR-05 guarantees three uppercase letters, so no normalisation step exists. | ✅ Resolved |
+| A10 | API | **Error catalogue, auth, audit and commit behaviour unchanged from FR-US-01 (A12, A13, A14).** Still no input of any kind, so still only `401`; still `CurrentUserDep`; still no audit event; still a pure read with no `db.commit()`. | ✅ Resolved |
+| A11 | Testing | **FR-US-01's test cases are not rewritten; their test functions are re-pointed.** All 28 FR-US-01 tests build USD wallets only (`_make_wallet(..., currency="USD")` in `test_fr_us_01_view_summary_report.py`), so each assertion on a flat field translates mechanically to the single `currencies[0]` entry with `currency == "USD"`. Two outcomes change and are superseded by this story's TCs, recorded in `test_cases.md` (FR-US-03, *FR-US-01 test cases affected*): FR-US-01 TC-17 (exact top-level fields → TC-40) and TC-18 (no wallets → TC-37). FR-US-01's TC text and Test Implementation Map rows stay as written (`CLAUDE.md` §1.1 rule 4); the re-pointing is task T-06, and its rerun is recorded against FR-US-01's map at the Implement step. | ✅ Resolved |
+| A12 | UI (fast-track) | **Home's *Analysis* section renders one block per `currencies` entry, in response order.** Each block: a heading with the currency code, *Income vs. expenses* bars scaled to that block's own larger figure, net savings with the savings rate, and *Where the money went* (`ExpenseDonut`) fed with that block's `top_categories`, `total_expenses` and `currency`. Every `formatMoney` call takes the block's own `currency`. The `reportCurrency` fallback in `Dashboard.tsx` — today labelling a mixed total with `DEFAULT_CURRENCY` when the wallets disagree — is deleted, since every figure now has a currency. Empty `currencies` → one panel reading "No income or expenses recorded in <Month>." in place of the blocks. The month label stays in the section header, read from the top-level `period`. Presentation only: the client computes no figure the API does not return, beyond the per-block bar widths and savings rate it already derives today. | ✅ Resolved |
+| A13 | Docs alignment | **Nothing is aligned in `SRS.md` or `SDS.md` by this story.** `SDS.md` §6.3/§6.5 still lack an `FR-API-01` row (FR-US-01 A11's open note); this dispatch may edit only this epic's three files. Whether `SRS FR-07` should state "per currency" is a product-owner extension, not an alignment (`spec.md` *Assumptions*). | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (changes only — no new model, no migration; A8)
+
+```text
+backend/app/
+├── schemas/report.py                 # MODIFIED  SummaryReportRead → {period, currencies}; NEW CurrencySummaryRead
+├── repositories/
+│   ├── transaction_repo.py           # MODIFIED  get_summary_totals → get_summary_totals_by_currency,
+│   │                                 #           get_top_expense_categories → get_top_expense_categories_by_currency
+│   └── wallet_repo.py                # MODIFIED  add list_active_currencies()
+├── services/report_service.py        # MODIFIED  get_summary_report() assembles one CurrencySummaryRead per currency
+└── api/v1/reports.py                 # MODIFIED  description text only — same path, same response_model name
+
+backend/tests/integration/
+├── test_fr_us_01_view_summary_report.py      # MODIFIED  assertions re-pointed to currencies[0] (A11)
+└── test_fr_us_03_summary_per_currency.py     # NEW       written at the Implement step from test_cases.md
+
+mobile/src/                                     # UI fast-track (A12)
+├── api/types.ts                      # MODIFIED  SummaryReportRead, new CurrencySummary
+└── components/wallet/Dashboard.tsx   # MODIFIED  one analysis block per currency, empty state
+mobile/e2e/home.spec.ts               # NEW       [UI] TCs of this story
+```
+
+**Domain objects**
+
+| Entity | Table | Fields touched | Notes |
+|--------|-------|-----------------|-------|
+| `WalletModel` | `wallets` | none (read) | `currency` becomes the grouping key (A5, A6); `archived_at` read only by `list_active_currencies()` (A7) |
+| `TransactionModel` | `transactions` | none (read) | Summed per `(currency, type)` and per `(currency, category)` |
+| `CategoryModel` | `categories` | none (read) | Joined for `id`/`name`, as FR-US-01 A5/A6 |
+| `SummaryReportRead` (DTO) | — | `period`, `currencies` | Reshaped (A2, A9) |
+| `CurrencySummaryRead` (DTO) | — | `currency`, `total_income`, `total_expenses`, `net_savings`, `top_categories` | New (A9) |
+| `CategorySpendingRead` (DTO) | — | `category_id`, `category_name`, `total_amount` | Unchanged |
+
+**Response shape** (`200`, `FR-API-01`)
+
+```json
+{
+  "period": "2026-10-01",
+  "currencies": [
+    {
+      "currency": "USD",
+      "total_income": "0.00",
+      "total_expenses": "20.00",
+      "net_savings": "-20.00",
+      "top_categories": [
+        {"category_id": "6f1c…", "category_name": "Travel", "total_amount": "20.00"}
+      ]
+    },
+    {
+      "currency": "VND",
+      "total_income": "15000000.00",
+      "total_expenses": "100000.00",
+      "net_savings": "14900000.00",
+      "top_categories": [
+        {"category_id": "a2d4…", "category_name": "Food", "total_amount": "100000.00"}
+      ]
+    }
+  ]
+}
+```
+
+Empty case: `{"period": "2026-10-01", "currencies": []}`.
+
+**DTOs** (`app/schemas/report.py`)
+
+```python
+class CategorySpendingRead(BaseModel):          # unchanged (FR-US-01 A6)
+    category_id: str
+    category_name: str
+    total_amount: Decimal
+
+
+class CurrencySummaryRead(BaseModel):
+    """One currency's figures (spec FR-US-03 AC-01, FR-03, FR-04; plan A9).
+    Never mixed with another currency's amounts (BR-02)."""
+
+    currency: str
+    total_income: Decimal
+    total_expenses: Decimal
+    net_savings: Decimal
+    top_categories: list[CategorySpendingRead]
+
+
+class SummaryReportRead(BaseModel):
+    """FR-API-01 response (FR-US-03 A2). `currencies` ordered by code (A4),
+    always present, [] when nothing qualifies (AC-09)."""
+
+    period: date
+    currencies: list[CurrencySummaryRead]
+```
+
+**Repository changes**
+
+```python
+# transaction_repo.py — replaces get_summary_totals()
+def get_summary_totals_by_currency(
+    db: Session, *, user_id: str, period_start: datetime, period_end: datetime
+) -> dict[tuple[str, TransactionType], Decimal]:
+    """FR-US-01 A4's query with WalletModel.currency added to the select and
+    the GROUP BY. Same ownership join, same [start, end) bounds, no archived
+    filter (A5). Absent key == zero; the service defaults it."""
+
+
+# transaction_repo.py — replaces get_top_expense_categories()
+def get_top_expense_categories_by_currency(
+    db: Session, *, user_id: str, period_start: datetime, period_end: datetime, limit: int
+) -> Sequence[tuple[str, str, str, Decimal]]:
+    """(currency, category_id, category_name, total), at most `limit` rows per
+    currency, ordered by currency then rank. Inner: group EXPENSE rows by
+    (currency, category id, category name). Outer: row_number() over
+    (partition by currency order by total desc, category id asc) <= limit (A6)."""
+
+
+# wallet_repo.py — new
+def list_active_currencies(db: Session, *, user_id: str) -> list[str]:
+    """Distinct currencies of the caller's wallets with archived_at IS NULL (A7)."""
+```
+
+**Service** (`app/services/report_service.py`, `get_summary_report` body)
+
+```python
+period_start, period_end = _month_bounds(clock.utcnow().date())   # unchanged
+
+totals = transaction_repo.get_summary_totals_by_currency(db, user_id=owner.id, ...)
+ranked = transaction_repo.get_top_expense_categories_by_currency(
+    db, user_id=owner.id, ..., limit=TOP_CATEGORIES_LIMIT
+)
+held = wallet_repo.list_active_currencies(db, user_id=owner.id)
+
+currencies = sorted(set(held) | {cur for cur, _type in totals})        # A3, A4
+by_currency: dict[str, list[CategorySpendingRead]] = defaultdict(list)
+for cur, cid, name, amount in ranked:                                   # already in rank order
+    by_currency[cur].append(CategorySpendingRead(category_id=cid, category_name=name, total_amount=amount))
+
+zero = Decimal("0.00")
+entries = []
+for cur in currencies:
+    income = totals.get((cur, TransactionType.INCOME), zero)
+    expenses = totals.get((cur, TransactionType.EXPENSE), zero)
+    entries.append(CurrencySummaryRead(
+        currency=cur, total_income=income, total_expenses=expenses,
+        net_savings=income - expenses, top_categories=by_currency[cur],
+    ))
+return SummaryReportRead(period=period_start.date(), currencies=entries)
+```
+
+`_month_bounds()` and `TOP_CATEGORIES_LIMIT` are reused unchanged.
+
+**Router** (`app/api/v1/reports.py`) — path, method, `response_model=SummaryReportRead`, status and
+`401` response unchanged; the `description` becomes "…for the current calendar month, reported
+separately for each currency the caller holds or used — amounts in different currencies are never
+added together."
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|--------------|
+| Every figure computed per currency, from the wallet's currency | AC-01, AC-03, FR-01, BR-01 | Both transaction queries group by `wallets.currency` (A5, A6) |
+| No cross-currency arithmetic, no conversion | AC-02, AC-06, EC-03, EC-07, FR-02, BR-02 | The service only ever combines values sharing a `(currency, …)` key; no conversion code exists |
+| Held-or-used presence rule | AC-07, AC-08, EC-06, FR-05, BR-03 | `set(list_active_currencies()) ∪ currencies in totals` (A3, A7) |
+| Currency order by code | AC-04, FR-06, BR-04 | `sorted(...)` in `get_summary_report()` (A4) |
+| Per-currency top five, ties by id, no padding | AC-05, AC-06, FR-04 | Window query, `rank <= TOP_CATEGORIES_LIMIT` (A6) |
+| Zero figures for an unused held currency | AC-07, EC-01, EC-02 | `.get((cur, type), Decimal("0.00"))` (A5) |
+| Archived wallet's period transactions counted; archived-only unused currency absent | AC-08 | No `archived_at` filter in A5/A6; `archived_at IS NULL` in A7 only |
+| Archived category still ranked | EC-04 | No `archived_at` filter on `categories` (A6) |
+| Empty report is `200` with `currencies: []` | AC-09, FR-07 | Empty `currencies` list (A9) |
+| Unauthenticated denied | AC-10 | `CurrentUserDep`, unchanged (A10) |
+| Caller's own data only | AC-11, FR-08 | `wallets.user_id = owner` in all three queries |
+| Exact fields | AC-12, FR-09 | `SummaryReportRead` / `CurrencySummaryRead` / `CategorySpendingRead` (A9) |
+| One period, current month, for all entries | AC-13, FR-08 | `_month_bounds()` once per request, applied to both transaction queries |
+
+**Sequence diagram — View Summary Report per Currency**
+
+Drawn to `constitution.md` DG-01…DG-07: four lanes, no SQL, no parameter lists, the one request
+answered with a status in every branch, one workflow.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Authenticated User (mobile app)
+    participant API as API
+    participant Svc as ReportService
+    participant Store as Store
+
+    UI->>API: GET /reports/summary
+    API->>Svc: summarise(input)
+    Note over Svc: The period is the current calendar month, from the system clock — never from the request
+    Svc->>Store: find the currencies of the caller's active wallets
+    Store-->>Svc: currency codes, possibly none
+    Svc->>Store: sum the caller's income and expenses in the period, per wallet currency
+    Store-->>Svc: one total per currency and type that has transactions
+    Svc->>Store: find the caller's top five expense categories in the period, within each wallet currency
+    Store-->>Svc: up to five categories per currency, highest first
+    Note over Svc: Merge held and used currencies, sort by code, fill missing totals with zero — no amount ever crosses a currency
+    Svc-->>API: summary report, one entry per currency
+    API-->>UI: 200 summary report — period and currency entries, possibly none
+
+    Note over UI,Store: Checked before the flow above
+    opt Unauthenticated or expired credentials (AC-10)
+        API-->>UI: 401 NOT_AUTHENTICATED
+    end
+```
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| No or invalid bearer credentials (AC-10) | 401 | `NOT_AUTHENTICATED` |
+| Unexpected server error | 500 | `INTERNAL_ERROR` |
+
+Unchanged from FR-US-01 — flat envelope (API-02), no new error code (A10).
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | Presence rule, ordering, zero-defaulting and assembly all in `report_service.get_summary_report()` (A3, A4) |
+| AR-02 Thin router | Required | Router unchanged apart from description text |
+| AR-03 Repository isolation | Required | Three queries, no decisions; the ranking limit is passed in by the service (A6) |
+| AR-04 DTO mapping outside routers/repos | Required | Tuples/dicts mapped to DTOs in the service |
+| AR-05 No framework objects in services | Required | Signature unchanged: `(db, *, owner)` |
+| AR-06 One transaction per request | N/A | Pure read, no commit (A10) |
+| AR-07 Router → service → repository | Required | Router never calls a repository |
+| AR-08 Module layout | Required | No new module in `app/`; one new test module |
+| DG-01…DG-07 Diagram shape | Required | Four lanes, intent-only store arrows, `200`/`401` back to `UI` in every branch, one workflow; parsed with the `CLAUDE.md` §3 harness |
+| API-01 Versioned plural path | Required | Path unchanged; no `/v2` (A2) |
+| API-02 Flat error envelope | Required | Unchanged |
+| API-03 Status codes | Required | `200`, `401` |
+| API-04 Prefixed error codes | N/A | No new code (A10) |
+| API-05 No generic status endpoint | N/A | Read only |
+| API-06 Pagination | N/A | Not a list endpoint; `currencies` is bounded by the caller's own currencies and each ranking by five (PF-04) |
+| API-07 Explicit response_model | Required | `response_model=SummaryReportRead`, `status_code=200` |
+| API-08 Public endpoint list | Required | Still protected |
+| NC-01 Module naming | Required | No new `app/` module |
+| NC-02 DTO naming | Required | `CurrencySummaryRead` follows the `…Read` convention |
+| NC-03 API paths | Required | Unchanged |
+| NC-05 Enum serialisation | N/A | `currency` is a plain code string, not an enum (WM-US-01 A2); `TransactionType` stays internal |
+| NC-06 Concise service methods | Required (as-implemented) | `get_summary_report` kept, as FR-US-01 recorded |
+| NC-07 Plural collection parameters | N/A | No collection-valued parameter |
+| VL-01 Pydantic is the source of truth | N/A | No request payload |
+| VL-07 Decimal money | Required | `Decimal` end to end; exactness through the window query checked (A6) |
+| SEC-07 Authz proven by test | Required (partial) | `401` test (TC-38); no `403` case exists |
+| SEC-08 Ownership filter | Required | `wallets.user_id` predicate in all three queries |
+| SEC-10 No enumeration | N/A | Caller submits no reference |
+| LA-02 / LA-04 Audit | N/A (by decision) | No audit event (A10) |
+| PF-01 300 ms p95 | Required | Three indexed reads, one round trip each |
+| PF-02 Indexed queries, no N+1 | Required | Window query instead of a query per currency (A6); no new index needed (A8) |
+| PF-03 DTO projection | Required | Three narrow DTOs |
+| PF-04 Bounded lists | Required | ≤5 categories per currency; currencies bounded by the caller's own wallets |
+| ENV-03 No SQLite-only behaviour | Required | Window functions are standard and supported by both engines (A6) |
+| TST-01/02 AC→TC before code | Required | `test_cases.md` FR-US-03 |
+| DOD-02 Migration | N/A | No model change (A8) |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+
+**Element IDs** (`mobile/src/components/wallet/Dashboard.tsx`, UI fast-track — A12)
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| One currency's analysis block | `report-{CUR}` (e.g. `report-VND`) | Missing | `mobile/src/components/wallet/Dashboard.tsx` |
+| Block heading (currency code) | `report-{CUR}-currency` | Missing | same |
+| Income row | `report-{CUR}-flow-Income` | Missing (today `flow-Income`, one per screen) | same |
+| Expenses row | `report-{CUR}-flow-Expenses` | Missing (today `flow-Expenses`) | same |
+| Net savings | `report-{CUR}-net-savings` | Missing (today `net-savings`) | same |
+| Spending breakdown | `report-{CUR}-donut` | Missing | same, wrapping `ExpenseDonut` |
+| Breakdown row | `category-{name}`, scoped inside `report-{CUR}-donut` | Present | `mobile/src/components/wallet/ExpenseDonut.tsx` |
+| Empty-analysis message | `report-empty` | Missing | `mobile/src/components/wallet/Dashboard.tsx` |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | `CurrencySummaryRead`; reshape `SummaryReportRead` to `{period, currencies}` (A9) | `backend/app/schemas/report.py` | Open |
+| T-02 | Replace `get_summary_totals()` with `get_summary_totals_by_currency()` (A5) and `get_top_expense_categories()` with `get_top_expense_categories_by_currency()` (A6) | `backend/app/repositories/transaction_repo.py` | Open |
+| T-03 | `wallet_repo.list_active_currencies(db, *, user_id)` (A7) | `backend/app/repositories/wallet_repo.py` | Open |
+| T-04 | `report_service.get_summary_report()` assembles per-currency entries: merge, sort, zero-default, group ranking (A3, A4) | `backend/app/services/report_service.py` | Open |
+| T-05 | Router `description`/docstring text (A2) | `backend/app/api/v1/reports.py` | Open |
+| T-06 | Re-point FR-US-01 tests to `currencies[0]`; TC-17/TC-18 tests rewritten to their superseding outcome and cite TC-40/TC-37 (A11) | `backend/tests/integration/test_fr_us_01_view_summary_report.py` | Open |
+| T-07 | Integration tests TC-29…TC-49 from `test_cases.md` | `backend/tests/integration/test_fr_us_03_summary_per_currency.py` | Open |
+| T-08 | **UI fast-track:** `SummaryReportRead`/`CurrencySummary` types; `Dashboard.tsx` one block per currency with the Element IDs above, empty state, `reportCurrency` removed (A12) | `mobile/src/api/types.ts`, `mobile/src/components/wallet/Dashboard.tsx` | Open |
+| T-09 | **UI fast-track:** e2e tests TC-50…TC-54 against the real backend | `mobile/e2e/home.spec.ts` | Open |

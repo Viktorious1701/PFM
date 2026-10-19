@@ -1676,3 +1676,74 @@ pytest/curl transcript and why it does not belong to this story.
   unchanged in storage, and `A`'s own `BA` is also unaffected
 - **AC:** EC-02, FR-03
 - **Type:** integration
+
+---
+
+## BM: UI test cases *(UI fast-track — CLAUDE.md §2)*
+
+> Written after the Budget Management screens were built, under the UI fast-track ruling (2026-10-19). They pin down what the screens must **do** — each button's request, its answer, and what the person then sees — so a later change cannot silently break it. Visual design is never asserted. Each test arranges its own data through the API under a throwaway account, acts through the real screen, and lives in `mobile/e2e/`, run with `npm run test:e2e` against the real backend. Behaviour the screens cannot reach — expired tokens, other users' records, malformed payloads the client never sends — stays covered by the integration TCs above.
+
+### Coverage Matrix (UI)
+
+| TC | US | AC | E2E test | Status |
+| :-- | :-- | :-- | :-- | :-- |
+| TC-97 | BM-US-01 | AC-01, AC-10 | `mobile/e2e/budgets.spec.ts` › TC-97 | PASS — 2026-10-19, desktop + phone |
+| TC-98 | BM-US-01 | AC-11 | `mobile/e2e/budgets.spec.ts` › TC-98 | PASS — 2026-10-19, desktop + phone |
+| TC-99 | BM-US-01 | AC-08 | `mobile/e2e/budgets.spec.ts` › TC-99 | PASS — 2026-10-19, desktop + phone |
+| TC-100 | BM-US-03 | BM-US-02 AC-01, AC-12; BM-US-03 AC-01, AC-02, AC-03 | `mobile/e2e/budgets.spec.ts` › TC-100 | PASS — 2026-10-19, desktop + phone |
+| TC-101 | BM-US-04 | AC-01, AC-08 | `mobile/e2e/budgets.spec.ts` › TC-101 | PASS — 2026-10-19, desktop + phone |
+| TC-102 | BM-US-05 | AC-01, AC-05 | `mobile/e2e/budgets.spec.ts` › TC-102 | PASS — 2026-10-19, desktop + phone |
+
+### TC-97: Add a monthly budget
+
+- **US:** BM-US-01
+- **Given:** A signed-in user with a wallet and an expense category, on the Budgets tab
+- **When:** Add budget is pressed, the wallet and category chosen, a limit entered and Add budget pressed
+- **Then:** The create request is answered `201`; a budget card shows the category, wallet, "On track", 0% and the limit
+- **AC:** AC-01, AC-10
+- **Type:** e2e
+
+### TC-98: A second budget for the same wallet and category is refused
+
+- **US:** BM-US-01
+- **Given:** An existing budget for wallet W and category C this month
+- **When:** Another budget for W and C is submitted
+- **Then:** The create request is refused and its message is shown inline; still only one budget card for C
+- **AC:** AC-11
+- **Type:** e2e
+
+### TC-99: A zero limit is caught before anything is sent
+
+- **US:** BM-US-01
+- **Given:** The new-budget form with wallet and category chosen
+- **When:** A limit of `0` is entered and Add budget pressed
+- **Then:** A message asks for a limit above zero; no create request is sent
+- **AC:** AC-08
+- **Type:** e2e
+
+### TC-100: Each budget shows spending, percentage and status
+
+- **US:** BM-US-03
+- **Given:** Three budgets with spending at 50%, 90% and 120% of their limits
+- **When:** The Budgets tab is opened
+- **Then:** The list request is answered `200`; the cards read "On track" 50%, "Close to limit" 90% and "Over limit" 120%, each with amount spent of limit
+- **AC:** BM-US-02 AC-01, AC-12; BM-US-03 AC-01, AC-02, AC-03
+- **Type:** e2e
+
+### TC-101: Change a budget's limit
+
+- **US:** BM-US-04
+- **Given:** A budget at 50% of a 400 limit
+- **When:** Its card is pressed, Change limit pressed, `250` entered and Save pressed
+- **Then:** The update request is answered `200`; the card shows 80% "Close to limit" of the new limit; the editor closes
+- **AC:** AC-01, AC-08
+- **Type:** e2e
+
+### TC-102: Delete a budget after confirming
+
+- **US:** BM-US-05
+- **Given:** A budget card
+- **When:** It is pressed, Delete pressed, then the confirm Delete
+- **Then:** The delete request is answered `204`; the card is gone; the wallet and its transactions are unchanged
+- **AC:** AC-01, AC-05
+- **Type:** e2e

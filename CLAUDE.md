@@ -11,13 +11,13 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 | File | Owner | Rule |
 | :-- | :-- | :-- |
 | `SRS.md` v2.2.0 | the user; AI may **align**, not extend | Requirements baseline: FR, NFR, UXR, BF, Features 01–11 with Gherkin, §1.5 Conceptual Domain Model. See *They are references, not contracts* below. |
-| `SDS.md` v1.3.0 | the user; AI may **align** | Technical baseline: domain model, ERD, architecture, API design, security design. See *They are references, not contracts* below. |
+| `SDS.md` v1.4.0 | the user; AI may **align** | Technical baseline: domain model, ERD, architecture, API design, security design. See *They are references, not contracts* below. |
 | `aif-review-checklist.md` | the user | Run before claiming any step gate. Edited once to remove Jira and record stack adaptations; otherwise treat as the user's. |
 | `artifact-templates/*.md` | the user | **Read-only. Never edit. Never split.** The canonical shape of every artifact — see §1.1. |
 | `constitution.md` | AI + user | Project rules with stable IDs (AR/API/NC/VL/LA/PF/SEC/TST/DOD/ENV), derived from the SDS. |
 | `specs/**` | AI + user | The working artifacts, and the only ones. Design output goes here — **never** into `SDS.md`. |
 
-`SDS.md` was aligned to `SRS.md` on 2026-07-30 (v1.1.0), to the built system on 2026-07-31 (v1.2.0), and to the `DG` diagram convention the same day (v1.3.0); `SRS.md` was aligned on 2026-07-31 (v2.1.0) and gained its conceptual domain model, §1.5, at the user's explicit request the same day (v2.2.0). **`SRS.md` wins any remaining disagreement** — the rulings are in *Resolved contradictions* below.
+`SDS.md` was aligned to `SRS.md` on 2026-07-30 (v1.1.0), to the built system on 2026-07-31 (v1.2.0), to the `DG` diagram convention the same day (v1.3.0), and its Category ERD to §2.2 while specifying CM-US-01 (v1.4.0); `SRS.md` was aligned on 2026-07-31 (v2.1.0) and gained its conceptual domain model, §1.5, at the user's explicit request the same day (v2.2.0). **`SRS.md` wins any remaining disagreement** — the rulings are in *Resolved contradictions* below.
 
 ## 1.1 Artifact rules
 
@@ -39,7 +39,14 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
    | `tasks.md` | `plan.md` → *Open tasks* (`T-NN`) |
    | verification report / defect record | `test_cases.md` → result against each `TC-NN` |
 
-   A fourth artifact — the **automation test file** — is a known gap. It is not designed yet, and step 4 currently writes tests into `backend/tests/`. Do not invent a location or format for it; raise it as its own decision.
+   A fourth artifact — the **automation test file** — lives outside `specs/`, next to the code it drives (user ruling, 2026-10-19):
+
+   | Kind | Location | Runner |
+   | :-- | :-- | :-- |
+   | Backend (`[API]`, `[BOTH]` server side) | `backend/tests/` | `uv run pytest` |
+   | Functional UI (`[UI]`, `[BOTH]` client side) | `mobile/e2e/` | `npm run test:e2e` (`@playwright/test`, against the real backend) |
+
+   UI automation tests **behaviour, not looks**: buttons do what they say, forms validate, the right API call goes out and its result shows. Visual design is never asserted by a test (no screenshot diffs, no pixel or colour checks) — it is reviewed by eye. Every test names its `TC-NN` id, and the epic's Coverage Matrix points at it exactly as it does for pytest node ids.
 
    If a piece of information genuinely fits none of the three files, that is a finding to raise — not licence to add a fourth.
 
@@ -106,6 +113,8 @@ Where a deviation remains the right answer:
 | Audit scope on activation | Audit records cover every attempt **that reaches the service**. A `422` rejected by the Pydantic layer emits none, and is traceable through the request log instead — auditing it would mean emitting business events from `main.py`'s validation handler, against AR-01. | spec UM-US-02 FR-18; plan F2 |
 | Aligning SRS/SDS | The AI **may align** both, and **may not extend** either. Logged in each document's revision history. | §1.1 *They are references, not contracts* |
 | Sequence diagram shape | Four lanes only, `UI → API → <Name>Service → Store`. No `Repo`/`DB` lane, no SQL, no real parameter lists, every `UI→API` request answered with an HTTP status in every branch. The prior session's `plan.md` diagrams and the SDS §4.4.1 diagram violated this — an already-cited checklist rule that had been marked passed in error — and were redrawn. | constitution `DG-01`…`DG-07` |
+| Automation test location | Backend in `backend/tests/` (pytest); functional UI in `mobile/e2e/` (`@playwright/test`, real backend). UI tests assert behaviour, never visual design. | §1.1 rule 0; user ruling 2026-10-19 |
+| UI fast-track | Presentation and interaction work in `mobile/` may go from request to code; `[UI]` test cases and e2e tests follow. Backend, API and requirement changes keep the full cycle. | §2 *UI fast-track*; user ruling 2026-10-19 |
 
 ### Story ID map
 
@@ -157,6 +166,14 @@ Six steps per story, in **strict order, none skipped or reordered**. Each produc
 **If implementation diverges from `plan.md`, redefine the plan first** — never deviate silently and patch the document afterwards.
 
 Diagrams, ERDs and sequence diagrams belong to the **Design** step. They are not introduced or altered during Implementation.
+
+### UI fast-track
+
+**Presentation and interaction work in `mobile/` may go straight from the user's request to code** (user ruling, 2026-10-19). This covers the scene, motion, music, layout, styling, and screens that use API behaviour already specified and built. The AI still shows a preview first when the user asks for one, verifies in a real browser, and leaves the work uncommitted.
+
+Afterwards the story's `[UI]` test cases are written into the epic's `test_cases.md`, and the matching tests into `mobile/e2e/`. They record **what the screen must do** — so later changes can't silently break it — and they are verified, not assumed: a test that has never been seen to pass is not a result. This is not "documentation that justifies code already written" (§6): the test cases describe observable behaviour and can fail.
+
+The fast-track **never** covers backend or API behaviour, data rules, or anything that changes a requirement. Those keep the full six-step cycle above, including when a UI request turns out to need one — that is a finding to raise, not a reason to skip the cycle.
 
 ### Artifact layout
 
@@ -250,6 +267,18 @@ uv run python -m app.cli create-admin --email you@example.com --password '…'
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+Functional UI tests (`mobile/e2e/`, §1.1 rule 0) — both servers must already be running:
+
+```bash
+cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000   # real backend, EMAIL_TRANSPORT=outbox
+cd mobile  && npx expo start --web --port 8081                          # the web app
+cd mobile  && npm run test:e2e                                          # desktop + phone projects
+cd mobile  && npm run test:e2e -- --project=desktop -g "TC-91 "         # one TC
+cd mobile  && npm run typecheck                                         # app and e2e
+```
+
+Each run creates its own ADMIN through `app.cli create-admin`, and each test its own invited-and-activated member, so tests never share data or touch the demo account. Those accounts stay in the dev database afterwards (there is no user deletion).
+
 Swagger at `/docs`, ReDoc at `/redoc`. FastAPI ≥0.141 makes `include_router` lazy — to list routes read `app.openapi()["paths"]`, not `app.routes`.
 
 ### Checking the mermaid diagrams
@@ -320,8 +349,8 @@ Note the last line: verification closes by recording results **in `test_cases.md
 
 ## 5. Current state and boundaries
 
-- **Round 1 scope:** UM-US-01 invite (specified first), UM-US-02 activate, UM-US-03 list users, plus SS-US-01 login — which must be *implemented* first, since the others need an authenticated ADMIN. **Out of scope:** everything else, including Features 03–11 and SRS §6 Feature-10/11 placeholders.
-- **Backend first.** `mobile/` holds a **UI prototype**, not implementation: a navigable Expo web app whose data comes entirely from fixtures (`EXPO_PUBLIC_API_MOCK=1`), because the backend has no routes yet. Its invite screen implements UM-US-01's ACs against those fixtures. It satisfies **no** TC, and the `[UI]` rows in `test_cases.md` stay deferred. SDS §4.3.1 is the target design. Findings that cost real debugging time live in `mobile/AGENTS.md`.
+- **Built:** seven epics, `specs/001`–`007` (UM, SS, WM, CM, BM, TM, FR). Every story's backend is through the cycle. **Out of scope:** SRS Features 08–11 and the SDS-only stories in the *Story ID map*.
+- **`mobile/` is the real client**, an Expo web app on the real backend (the old fixture/mock mode was removed, 2026-10-19). One screen, `app/index.tsx`, renders over a fullscreen animated moonlit scene with a looped song: sign-in, account activation (`/activate?token=…`, also served by `app/activate.tsx`), then the Home, Wallets, Activity, Budgets and Family (ADMIN) tabs, switched by a camera pan. VND is the default currency. Web is the only run target (ENV-04). It was built under the *UI fast-track* (§2); its `[UI]` test cases and `mobile/e2e/` tests are being added after the fact. Findings that cost real debugging time live in `mobile/AGENTS.md`.
 - **The discarded implementation-first attempt has been deleted.** Its code remains recoverable with `git show 56768c8` if a detail is ever needed; do not restore it, and never import from it. Its lesson is the one at the top of this file.
 - **`specs/` is the tracked deliverable, not scratch space.** `.gitignore` excludes `.venv`, `__pycache__`, `*.db`, `.env`, `node_modules/`, tool caches — and `docs/`, which is kept on disk but deliberately untracked (§1.1 rule 0). Earlier commits still contain `docs/`; `git show <sha>:docs/<path>` retrieves a file if one is ever needed.
 - Dev DB is SQLite; PostgreSQL is the deployment target (SDS §4.5).

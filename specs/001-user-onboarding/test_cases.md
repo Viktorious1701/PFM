@@ -1138,3 +1138,94 @@ three parametrised values each) passed against the first version of the code.
 - **Then:** The concatenation of all three pages' `items` contains every one of the five users exactly once, with no duplicate and no gap, in the same newest-first order TC-57 established, stable across the page boundaries
 - **AC:** EC-04, FR-08, BR-04
 - **Type:** integration
+
+---
+
+## UM: UI test cases *(UI fast-track — CLAUDE.md §2)*
+
+> Written after the User Onboarding screens were built, under the UI fast-track ruling (2026-10-19). They pin down what the screens must **do** — each button's request, its answer, and what the person then sees — so a later change cannot silently break it. Visual design is never asserted. Each test arranges its own data through the API under a throwaway account, acts through the real screen, and lives in `mobile/e2e/`, run with `npm run test:e2e` against the real backend. These fill the E2E column that the UM-US-01/02/03 Coverage Matrices above left as *deferred — mobile round*. Behaviour the screens cannot reach — expired tokens, other users' records, malformed payloads the client never sends — stays covered by the integration TCs above.
+
+### Coverage Matrix (UI)
+
+| TC | US | AC | E2E test | Status |
+| :-- | :-- | :-- | :-- | :-- |
+| TC-73 | UM-US-01 | AC-01 | `mobile/e2e/family.spec.ts` › TC-73 | PASS — 2026-10-19, desktop + phone |
+| TC-74 | UM-US-01 | AC-03 | `mobile/e2e/family.spec.ts` › TC-74 | PASS — 2026-10-19, desktop + phone |
+| TC-75 | UM-US-01 | AC-02 | `mobile/e2e/family.spec.ts` › TC-75 | PASS — 2026-10-19, desktop + phone |
+| TC-76 | UM-US-01 | AC-04 | `mobile/e2e/family.spec.ts` › TC-76 | PASS — 2026-10-19, desktop + phone |
+| TC-77 | UM-US-02 | AC-01, AC-10, AC-11 | `mobile/e2e/activation.spec.ts` › TC-77 | PASS — 2026-10-19, desktop + phone |
+| TC-78 | UM-US-02 | AC-06 | `mobile/e2e/activation.spec.ts` › TC-78 | PASS — 2026-10-19, desktop + phone |
+| TC-79 | UM-US-02 | AC-03, AC-04, AC-11 | `mobile/e2e/activation.spec.ts` › TC-79 | PASS — 2026-10-19, desktop + phone |
+| TC-80 | UM-US-03 | AC-01, AC-07 | `mobile/e2e/family.spec.ts` › TC-80 | PASS — 2026-10-19, desktop + phone |
+
+### TC-73: ADMIN invites a family member from the Family tab
+
+- **US:** UM-US-01
+- **Given:** An ADMIN is signed in and on the Family tab
+- **When:** They enter a new, well-formed email and press Send invite
+- **Then:** The invite request is sent and answered `201`; a confirmation naming the email appears; the address is listed among the members as **Invited**
+- **AC:** AC-01
+- **Type:** e2e
+
+### TC-74: A malformed email is caught before anything is sent
+
+- **US:** UM-US-01
+- **Given:** An ADMIN on the Family tab
+- **When:** They enter `not-an-email` and press Send invite
+- **Then:** An inline message asks for an email address like name@example.com; no invite request is sent; no member is added
+- **AC:** AC-03
+- **Type:** e2e
+
+### TC-75: Inviting an address that is already ACTIVE shows the server's refusal
+
+- **US:** UM-US-01
+- **Given:** An ADMIN on the Family tab, and an ACTIVE account with email E
+- **When:** They invite E
+- **Then:** The invite request is answered with an error, and its message is shown inline; the member list is unchanged
+- **AC:** AC-02
+- **Type:** e2e
+
+### TC-76: A non-ADMIN has no Family tab
+
+- **US:** UM-US-01
+- **Given:** An ACTIVE USER (not ADMIN) is signed in
+- **When:** The tab bar is shown
+- **Then:** The tabs are Home, Wallets, Activity and Budgets — there is no Family tab, so there is no way to reach the invite form
+- **AC:** AC-04
+- **Type:** e2e
+
+### TC-77: An invited member activates from the emailed link and can then sign in
+
+- **US:** UM-US-02
+- **Given:** A fresh invitation for email E, and its link as written to the email outbox
+- **When:** The link is opened, a full name and a policy-compliant password are entered, and Activate account is pressed; then Go to sign in, and E signs in with that password
+- **Then:** The link opens the activation form; activation is answered `200` and a success message is shown; Go to sign in shows the sign-in panel at `/`; signing in as E succeeds and shows the Home tab
+- **AC:** AC-01, AC-10, AC-11
+- **Type:** e2e
+
+### TC-78: A password that breaks the policy is refused with the specific rule
+
+- **US:** UM-US-02
+- **Given:** The activation form for a usable invitation link
+- **When:** A full name and the password `weakpass` are submitted
+- **Then:** The rule that was broken is shown (e.g. it needs an uppercase letter), not a generic message; the form stays open; the same link still activates afterwards with a valid password
+- **AC:** AC-06
+- **Type:** e2e
+
+### TC-79: An already-used or unknown link says so before any typing
+
+- **US:** UM-US-02
+- **Given:** A link whose invitation has been used, and a link with a made-up token
+- **When:** Each link is opened
+- **Then:** No form is shown; instead the panel says the link isn't valid or has already been used, with a Go to sign in button
+- **AC:** AC-03, AC-04, AC-11
+- **Type:** e2e
+
+### TC-80: The Family tab lists members of every status
+
+- **US:** UM-US-03
+- **Given:** An ADMIN, an ACTIVE member and a PENDING (invited, not activated) member
+- **When:** The ADMIN opens the Family tab
+- **Then:** The members request is answered `200`; both members are listed, the active one labelled **Active** and the pending one **Invited**; the header shows the member count
+- **AC:** AC-01, AC-07
+- **Type:** e2e

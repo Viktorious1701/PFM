@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-07 · SDS §5.7 (FR)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** FR-US-01 *(specified)*
+> **Stories in this file:** FR-US-01 *(specified)* · FR-US-03 *(specified)*
 
 ---
 
@@ -276,3 +276,243 @@ savings rate and where my money is going.
 - **`FR-US-02` (View Category Expense Report) is a distinct, separately-numbered story** — a chart/visualisation concern over category-wise expense breakdown — and is out of scope for this dispatch.
 - **No `SDS.md` §6.3 API Index entry exists for Financial Reporting at all**, confirmed by reading §6.3 and §6.5 directly — unlike every prior story, which had at least a partial entry to anchor to. The endpoint path is therefore invented from `constitution.md` API-01 alone; see `plan.md`.
 - **This story is the first in this codebase whose response embeds a field sourced from an entity other than the one primarily being aggregated** — each top-category entry carries the Category's own `name`, not only its `id`. This is a deliberate, reasoned departure from the "no embedded foreign entity data" precedent `TM-US-01` A14 and `TM-US-02` A8 each established for a *transaction* list (where the category is a secondary reference the caller has other context for). Here the category **is** the primary subject of half the report, and — checked directly — no `GET /categories` endpoint exists anywhere in this codebase through which a caller could otherwise resolve a bare `category_id` to a name. Reasoned in full in `plan.md`.
+
+---
+
+## FR-US-03: Summary Report per Currency
+
+> **IDs in this section are local to FR-US-03.** `AC-01` below is not FR-US-01's `AC-01`; each story
+> section numbers its own criteria, per `artifact-templates/spec-templates.md` and every multi-story
+> epic file in `specs/`. Only `TC-NN` (and `QF-NN`) in `test_cases.md` continue across the epic —
+> this story's test cases start at `TC-29`.
+>
+> **Why `FR-US-03` and not `FR-US-02`.** `SDS §5.7.2` already assigns `FR-US-02` to *View Category
+> Expense Report*, and this file's own naming note and FR-US-01's *Out of scope* list both reserve
+> `FR-US-02` for it (as does `plan.md` FR-US-01 A11). Reusing the code for a different story would
+> make this file contradict itself and the SDS. This story therefore takes the next free code. It has
+> no SDS §5 entry of its own — it refines `SDS §5.7.1` FR-US-01's response by product-owner ruling
+> (below), and cites `SRS US-07-01` as its SRS story, the same one FR-US-01 cites.
+
+### Source *(scope extraction — CLAUDE.md §1 scope rule)*
+
+Only the sections below entered the working context for FR-US-03.
+
+**Product-owner ruling, 2026-10-19 — the reason this story exists**
+> The summary reports income, expenses, net savings and top spending categories **separately for each
+> currency**, and the Home screen shows one block per currency. Amounts in different currencies are
+> never added together, and there is no currency conversion (no exchange rates exist in the system).
+
+The defect the ruling corrects: FR-US-01's report sums every transaction of every wallet the caller
+owns into one set of figures regardless of the wallet's currency, so a User with a VND wallet and a
+USD wallet receives đồng added to dollars — a number with no meaning.
+
+**SRS §6 Feature-07 · US-07-01 — View Summary Report [MVP]**
+> * **As an** Authenticated User
+> * **I want to** view a monthly income vs. expense summary report
+> * **So that** I can understand my savings rate and top spending categories.
+
+**SRS §2 — `SRS FR-03`: Wallet Management**
+> The System shall allow Users to create and manage multiple Wallets (e.g., Cash, Checking, Credit
+> Card). Each wallet tracks name, type, currency, and current real-time balance.
+
+**SRS §2 — `SRS FR-07`: Financial Reporting**
+> The System shall aggregate income and expense transactions to generate monthly summaries, net
+> savings trends (`Income - Expenses`), and top category spending rankings.
+
+**SRS §1.5 Conceptual Domain Model** *(the two relationships this story depends on)*
+> | User owns Wallet | one User → many Wallets | A User may hold several Wallets — cash, bank, credit (FR-03) |
+> | Wallet contains Transaction | one Wallet → many Transactions | Every Transaction moves money into or out of exactly one Wallet (FR-06) |
+
+A Transaction carries no currency of its own in either document; its currency is its Wallet's.
+
+**SDS §5.7.1 FR-US-01: View Summary Report (USER)**
+> * **Goal:** Display monthly income, total expenses, net savings, and top spending categories.
+
+**SDS §5.10.1 DC-US-01: Config Values for Currency & Exchange Rates (ADMIN)** *(cited for exclusion only)*
+> * **Goal:** Configure system-wide default currency and exchange rate constants.
+
+`DC-US-01` is an SDS-only story outside MVP scope (`CLAUDE.md` *Story ID map*). It is the only place
+in either document where exchange rates exist, and it is not built — which is why the ruling says
+there is no conversion.
+
+**Existing behaviour this story builds on, read from the epic files and the code** — FR-US-01's
+period rule (BR-02), ownership rule (BR-01), net-savings rule (BR-04) and ranking rule (BR-05);
+WM-US-01 FR-05 (a wallet's currency is a three-letter uppercase code, no case-folding); WM-US-04
+(a wallet's currency cannot be changed after creation); WM-US-05 / CM-US-05 (archiving a wallet or a
+category leaves its recorded transactions untouched).
+
+### Out of scope for this story
+
+Currency conversion, exchange rates, or any combined "grand total" across currencies (`DC-US-01`,
+SDS-only, not MVP) · a system-wide or per-User *default* currency · `FR-US-02` View Category Expense
+Report (`SDS §5.7.2`) · any caller-supplied period, month, or year · any wallet-level or
+currency-level filter on the request · multi-period trend history (FR-US-01 *Assumptions*) · Budget
+Management and Notification Handling (Features 05/08) · Overview Dashboard widgets (Feature-09,
+`DB-US-01`) · the Home screen's *Total balance* and *Wallets* panels, which already group balances by
+currency and are untouched · SRS §6 Feature-10/11 placeholders.
+
+### User Scenarios & Testing *(mandatory)*
+
+As an **authenticated User** who keeps money in more than one currency, I want my monthly summary —
+income, expenses, net savings and top spending categories — reported separately for each currency I
+hold, so that every figure I read is a real amount of one currency and I can understand my savings
+rate in each.
+
+**Acceptance Criteria**:
+
+**AC-01: Figures are reported separately for each currency**
+**Given** an authenticated User who owns a wallet in VND and a wallet in USD, each with income and expense transactions recorded this month,
+**When** the User requests their summary report,
+**Then** the result carries the current period and one entry for VND and one for USD, each with its own total income, total expenses, net savings and top spending categories, computed only from transactions in wallets of that currency.
+
+**AC-02: Amounts in different currencies are never added together**
+**Given** an authenticated User who recorded an expense of 100,000.00 in a VND wallet and an expense of 20.00 in a USD wallet this month,
+**When** the User requests their summary report,
+**Then** the VND entry reports total expenses of exactly 100,000.00, the USD entry reports exactly 20.00, and no figure anywhere in the result is a sum of amounts from both currencies.
+
+**AC-03: Wallets sharing a currency are combined into one entry**
+**Given** an authenticated User who owns two VND wallets, each with an expense transaction recorded this month,
+**When** the User requests their summary report,
+**Then** the result carries exactly one VND entry, whose total expenses is the sum of both wallets' expenses.
+
+**AC-04: Currency entries appear in a fixed, repeatable order**
+**Given** an authenticated User with activity this month in more than one currency,
+**When** the User requests their summary report, and requests it again unchanged,
+**Then** the entries are ordered alphabetically by currency code (for example EUR, then USD, then VND), identically on both requests.
+
+**AC-05: Top spending categories are ranked within each currency**
+**Given** an authenticated User with expense transactions this month in two currencies, one of them spread across more than five categories,
+**When** the User requests their summary report,
+**Then** each currency entry carries its own ranking of at most five categories, ordered from that currency's highest expense total to its lowest, with ties ordered deterministically — and a currency with fewer than five spending categories lists exactly those, never padded.
+
+**AC-06: A category spent in two currencies appears in each currency's ranking with that currency's total**
+**Given** an authenticated User who recorded expenses against the same category from a VND wallet and from a USD wallet this month,
+**When** the User requests their summary report,
+**Then** that category appears in the VND ranking with its VND total and in the USD ranking with its USD total, and neither total includes the other.
+
+**AC-07: A currency the User holds but did not use this month is reported at zero**
+**Given** an authenticated User who owns an active wallet in a currency against which no transaction was recorded this month,
+**When** the User requests their summary report,
+**Then** the result carries an entry for that currency with total income zero, total expenses zero, net savings zero and no top spending categories — and the Home screen shows a block for it.
+
+**AC-08: Archived wallets keep counting for the month they were used in**
+**Given** an authenticated User with a wallet that was archived after transactions were recorded against it this month, and another archived wallet, in a different currency held by no active wallet, with no transactions this month,
+**When** the User requests their summary report,
+**Then** the first wallet's transactions are counted under its currency, and the second wallet's currency has no entry at all.
+
+**AC-09: Nothing to report is a valid, empty report, not an error**
+**Given** an authenticated User who owns no active wallet and recorded no transaction this month,
+**When** the User requests their summary report,
+**Then** the system returns a successful result carrying the current period and no currency entries — and the Home screen says no income or expenses were recorded this month instead of showing a block.
+
+**AC-10: Deny access to unauthenticated callers**
+**Given** a caller presenting no credentials, or credentials that are invalid or expired,
+**When** the caller requests a summary report,
+**Then** the system denies the request with an unauthenticated error, computing nothing.
+
+**AC-11: Another User's data never appears, in any currency**
+**Given** two authenticated Users, where only the second owns a wallet in EUR, and both recorded transactions this month,
+**When** the first User requests their summary report,
+**Then** the result carries no EUR entry, and every figure in every entry reflects only the first User's own transactions.
+
+**AC-12: The response carries exactly the documented fields**
+**Given** an authenticated User requests their summary report,
+**When** the system returns the result,
+**Then** the result carries exactly the period and the list of currency entries; each entry carries exactly its currency code, total income, total expenses, net savings and top spending categories; and each ranked category carries exactly its identifier, name and total — no combined cross-currency figure and no other field.
+
+**AC-13: The reporting period applies to every currency alike**
+**Given** an authenticated User with, in each of two currencies, one transaction dated this month and one dated last month,
+**When** the User requests their summary report,
+**Then** every currency entry counts only its transaction dated this month, and the result carries one period, the current calendar month, for all entries.
+
+**AC-14: The Home screen shows one analysis block per currency**
+**Given** an authenticated User whose summary report carries entries for USD and VND,
+**When** the User opens the Home tab,
+**Then** the analysis section shows one block per entry, in the report's order, each labelled with its currency code and each showing that currency's income, expenses, net savings and where the money went.
+
+**AC-15: Each block shows its amounts in its own currency**
+**Given** the Home tab is showing a USD block and a VND block,
+**When** the User reads the amounts in either block,
+**Then** every amount in the USD block is shown in USD and every amount in the VND block is shown in VND — no amount is labelled with another block's currency.
+
+**AC-16: "Where the money went" lists only that currency's categories**
+**Given** an authenticated User who spent against category "Food" only from a VND wallet and against category "Travel" only from a USD wallet this month,
+**When** the User opens the Home tab,
+**Then** the VND block's spending breakdown lists "Food" and not "Travel", and the USD block's lists "Travel" and not "Food".
+
+### Edge Cases
+
+**EC-01**: **A currency with income but no expenses this month** — its total expenses is zero, its net savings equals its total income, and its spending ranking is empty.
+
+**EC-02**: **A currency with expenses but no income this month** — its total income is zero and its net savings is the negative of its total expenses.
+
+**EC-03**: **One currency saves while another overspends** — each entry's net savings carries its own sign independently; a negative figure in one currency is never offset against a positive one in another.
+
+**EC-04**: **A category archived after it was spent against this month** — it still appears, by name, in the ranking of each currency it was spent in, exactly as FR-US-01 already treats it.
+
+**EC-05**: **The User holds only one currency** — the result carries exactly one entry, and the Home screen shows exactly one block, still labelled with its currency code.
+
+**EC-06**: **The User holds no wallet in the app's default currency** — no entry is invented for it; only currencies the User actually holds or used appear.
+
+**EC-07**: **Two currencies' figures are numerically identical** — they remain two separate entries, never merged or deduplicated.
+
+### Requirements *(mandatory)*
+
+#### Functional Requirements
+
+- **FR-01**: The system must **attribute** every transaction to the currency of the wallet it belongs to, and **compute** every figure in the report separately for each currency (AC-01, AC-03; product-owner ruling 2026-10-19).
+- **FR-02**: The system must **never add, subtract, compare or rank** amounts of different currencies together, and must **perform no currency conversion** (AC-02, AC-06, EC-03, EC-07).
+- **FR-03**: The system must **compute**, within each currency, total income, total expenses and net savings exactly as FR-US-01's FR-05, FR-06 and FR-07 define them, restricted to that currency's transactions (AC-01, EC-01, EC-02).
+- **FR-04**: The system must **rank**, within each currency, the top spending categories exactly as FR-US-01's FR-08, FR-09 and FR-10 define them — at most five, highest first, deterministic ties, zero-total categories omitted, each identified by identifier and name — restricted to that currency's expense transactions (AC-05, AC-06, EC-04).
+- **FR-05**: The system must **include** an entry for a currency if, and only if, the caller owns at least one active wallet in that currency **or** at least one of the caller's transactions dated in the period belongs to a wallet in that currency (AC-07, AC-08, EC-06).
+- **FR-06**: The system must **order** the currency entries alphabetically by currency code (AC-04).
+- **FR-07**: The system must **return** a successful result with the period and no currency entries when no currency qualifies under FR-05 (AC-09).
+- **FR-08**: The system must **keep** FR-US-01's access, ownership and period rules unchanged — authenticated callers of any role only, the caller's own wallets only, the current calendar month only, chosen by the system (AC-10, AC-11, AC-13; FR-US-01 FR-01…FR-04).
+- **FR-09**: The system must **return** exactly the documented fields, and no figure combining currencies (AC-12).
+- **FR-10**: The Home screen must **show** one analysis block per currency entry, in the report's order, each labelled with its currency code, each presenting its income, expenses, net savings and spending breakdown with every amount in that block's own currency, and must **show** a no-activity message instead of any block when the report carries no entries (AC-07, AC-09, AC-14, AC-15, AC-16).
+
+#### Business Rules
+
+- **BR-01**: A transaction's currency is its wallet's currency. A wallet's currency cannot change after creation (WM-US-04), so a transaction's currency never changes either.
+- **BR-02**: No arithmetic, comparison or ranking ever crosses a currency boundary. There is no conversion and no exchange rate (product-owner ruling; `DC-US-01` out of scope).
+- **BR-03**: A currency is reported when the caller holds it in an active wallet or used it in the period; an archived wallet contributes its transactions in the period but does not, by itself, keep its currency on the report (FR-05).
+- **BR-04**: Currency entries are ordered alphabetically by currency code, independent of the amounts they carry (FR-06).
+- **BR-05**: Within one currency, FR-US-01's BR-02 (period), BR-03 (zero rather than absent), BR-04 (net savings may be negative) and BR-05 (ranking) apply unchanged.
+
+#### Key Entities
+
+- **Wallet**: Reused from WM-US-01 with no new field. Its **currency** becomes the grouping key of the whole report; its archived state decides only whether an unused currency still appears (BR-03).
+- **Transaction**: Reused from TM-US-01 with no new field. Summed per currency, through its wallet.
+- **Category**: Reused from CM-US-01 with no new field. Ranked per currency; the same category may rank in several currencies.
+- **User**: Reused unchanged; ownership scopes the report exactly as in FR-US-01.
+- No new domain entity is introduced. The report remains a computed projection, now with one part per currency.
+
+### Success Criteria *(mandatory)*
+
+- **SC-01**: No figure in any summary report is ever a sum of amounts in different currencies.
+- **SC-02**: A User holding several currencies reads, in one request, a complete monthly summary for each of them.
+- **SC-03**: The order of currencies in the report and on the Home screen is the same on every request.
+- **SC-04**: A User with wallets but no activity this month sees each held currency at zero rather than an error or a blank screen; a User with nothing at all sees an explicit empty message.
+- **SC-05**: Every amount on the Home screen's analysis is labelled with the currency it is actually in.
+
+### Assumptions & Dependencies
+
+- **This story supersedes part of FR-US-01's response, by product-owner ruling, without rewriting FR-US-01.** FR-US-01's section above is left exactly as specified (`CLAUDE.md` §1.1 rule 4). How each FR-US-01 criterion fares under the new shape:
+
+  | FR-US-01 | Fate under FR-US-03 |
+  | :-- | :-- |
+  | AC-01 | Restated per currency by AC-01 here |
+  | AC-02, AC-04, AC-05, AC-14 | Unchanged, now hold for every currency entry (AC-10, AC-11, AC-13) |
+  | AC-03 | Holds within each currency (AC-03 here); across currencies, superseded by AC-02 here |
+  | AC-06 | Holds per currency — a held currency with no activity is a zero-valued entry (AC-07) |
+  | AC-07…AC-13 | Unchanged within each currency (FR-03, FR-04) |
+  | AC-15 | **Superseded** by AC-12 here — the top-level fields change |
+  | EC-01 | **Superseded** by AC-09 here — no wallets now means no entries, not one zero-valued set of figures |
+  | EC-02…EC-12 | Unchanged within each currency |
+
+- **SRS and SDS are silent on currency in reporting, so the ruling contradicts neither.** `SRS FR-07`, `SRS US-07-01` and `SDS §5.7.1` say nothing about currency at all; the ruling narrows how their figures are computed. It does add a requirement neither document states, and adding it to `SRS.md` would be extending, not aligning (`CLAUDE.md` §1.1). Whether `SRS FR-07` should gain a "per currency" clause is left to the product owner.
+- **Currency codes need no normalisation.** WM-US-01 FR-05 rejects anything but three uppercase letters, so "usd" and "USD" can never both exist.
+- **Which currencies appear is a design choice, made here rather than left open:** held-or-used (FR-05). Two simpler rules were weighed. "Used this month only" would make a User with one VND wallet and a quiet month see no block at all, which contradicts FR-US-01 AC-06's zero-valued report and the per-currency *Total balance* panel shown just above on the same screen. "Every currency of every wallet ever owned" would keep showing a zero block for a currency left only in archived wallets, which can never be used again (WM-US-05 AC-08). Held-or-used shows every currency the User can still spend in, plus any currency that actually moved this month.
+- **Login (SS-US-01), Wallets (WM-US-01…05), Categories (CM-US-01…05) and Transactions (TM-US-01…05) are built.** No precondition data is required for success (AC-09).
+- **The Home screen side is UI fast-track work** (`CLAUDE.md` §2): it is designed in `plan.md` and its `[UI]` test cases are written in this epic's test cases with end-to-end tests to follow, but the screen only renders what this story's backend returns — no requirement lives only in the client.
+- **Finding, not in scope:** the Home screen's "Where the money went" donut is already a category-wise expense breakdown chart — the goal of `SDS §5.7.2` `FR-US-02`, which has never been specified. It draws on the top-five ranking only, folding the rest into "Other". This story makes it per currency and does nothing more; whether it now *is* `FR-US-02`, or `FR-US-02` still needs its own story, is for the product owner.

@@ -48,3 +48,7 @@ docs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Playwright e2e output
+mobile/test-results/
+mobile/playwright-report/
