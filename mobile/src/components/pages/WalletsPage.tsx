@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { listCategories } from '../../api/categories';
-import { toApiError } from '../../api/errors';
+import { errorMessage } from '../../api/errors';
 import { listTransactions } from '../../api/transactions';
 import type { WalletRead } from '../../api/types';
 import { archiveWallet, createWallet, listWallets, updateWallet } from '../../api/wallets';
@@ -39,7 +39,7 @@ function AddWallet({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
       await createWallet({ name: name.trim(), type, currency, initial_balance: amount });
       onDone();
     } catch (e) {
-      setError(toApiError(e).message);
+      setError(errorMessage(e));
       setBusy(false);
     }
   };
@@ -64,7 +64,7 @@ function WalletDetail({ wallet, onChanged }: { wallet: WalletRead; onChanged: ()
   const recent = useLoad(async () => {
     const [txns, cats] = await Promise.all([listTransactions({ wallet_id: wallet.id, page_size: 5 }), listCategories()]);
     const names = new Map(cats.items.map((c) => [c.id, c.name]));
-    return txns.items.map((t) => ({ ...t, category: names.get(t.category_id) ?? 'Uncategorised' }));
+    return txns.items.map((t) => ({ ...t, category: names.get(t.category_id) ?? 'Archived category' }));
   }, [wallet.id]);
   const [name, setName] = useState(wallet.name);
   const [mode, setMode] = useState<'view' | 'rename' | 'archive'>('view');
@@ -78,7 +78,7 @@ function WalletDetail({ wallet, onChanged }: { wallet: WalletRead; onChanged: ()
       await fn();
       onChanged();
     } catch (e) {
-      setError(toApiError(e).message);
+      setError(errorMessage(e));
       setBusy(false);
     }
   };

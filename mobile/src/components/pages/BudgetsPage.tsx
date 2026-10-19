@@ -9,7 +9,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { createBudget, deleteBudget, listBudgets, updateBudget } from '../../api/budgets';
 import { listCategories } from '../../api/categories';
-import { toApiError } from '../../api/errors';
+import { errorMessage } from '../../api/errors';
 import type { BudgetProgressRead, CategoryRead, WalletRead } from '../../api/types';
 import { listWallets } from '../../api/wallets';
 import { font, moon } from '../../theme/moonlit';
@@ -45,7 +45,7 @@ function AddBudget({ wallets, categories, onDone, onCancel }: { wallets: WalletR
       await createBudget({ wallet_id: walletId, category_id: categoryId, amount_limit: value });
       onDone();
     } catch (e) {
-      setError(toApiError(e).message);
+      setError(errorMessage(e));
       setBusy(false);
     }
   };
@@ -89,7 +89,7 @@ function BudgetCard({ b, wallet, category, onChanged }: { b: BudgetProgressRead;
       setMode('view');
       onChanged();
     } catch (e) {
-      setError(toApiError(e).message);
+      setError(errorMessage(e));
       setBusy(false);
     }
   };
@@ -100,7 +100,7 @@ function BudgetCard({ b, wallet, category, onChanged }: { b: BudgetProgressRead;
         <View style={styles.cardTop}>
           <View style={styles.cardText}>
             <Text style={styles.name} numberOfLines={1}>
-              {category ?? 'Category'}
+              {category ?? 'Archived category'}
             </Text>
             <Text style={styles.meta} numberOfLines={1}>
               {wallet?.name ?? 'Archived wallet'}

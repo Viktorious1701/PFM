@@ -7,18 +7,12 @@
  * — SS-US-01's `TokenResponse` carries only the token, its expiry, and the
  * role (see `api/types.ts`'s `LoginResponse`); a profile is UM-US-04's
  * concern, out of MVP scope, so nothing here can invent one.
- *
- * In mock mode this boots pre-authenticated as ADMIN. That is a prototype
- * shortcut, active only while `EXPO_PUBLIC_API_MOCK=1` — with it unset (the
- * default once the backend is real), the real login flow takes over.
  */
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { login as loginRequest } from '../api/auth';
+import { login as loginRequest, logout as logoutRequest } from '../api/auth';
 import { setTokenProvider, setUnauthenticatedHandler } from '../api/client';
-import { MOCK_ADMIN } from '../api/mock';
 import type { UserRole } from '../api/types';
-import { USE_MOCK_API } from '../config';
 import { clearStoredToken, getStoredRole, getStoredToken, setStoredRole, clearStoredRole, setStoredToken } from './session-storage';
 
 type AuthState = {
@@ -47,21 +41,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   tokenRef.current = token;
   useState(() => setTokenProvider(() => tokenRef.current));
 
-  const signOut = useCallback(async () => {
+  const signingOut = useRef(false);
+  const endSession = useCallback(async (notifyServer: boolean) => {
+    if (signingOut.current) return;
+    signingOut.current = true;
+    // Tell the server first, while the token is still attached; never let
+    // a failure here keep anyone signed in. Skipped when the server has
+    // just rejected the token (a 401) — that would only 401 again.
+    if (notifyServer && tokenRef.current) {
+      try {
+        await logoutRequest();
+      } catch {
+        // offline, or the token had already expired — sign out locally anyway
+      }
+    }
     setToken(null);
     setRole(null);
     await clearStoredToken();
     await clearStoredRole();
+    signingOut.current = false;
   }, []);
+  const signOut = useCallback(() => endSession(true), [endSession]);
 
   // AC-05: a 401 anywhere clears the session rather than failing silently.
   useEffect(() => {
     setUnauthenticatedHandler(() => {
-      void signOut();
+      void endSession(false);
     });
-  }, [signOut]);
+  }, [endSession]);
 
-  // Boot: rehydrate from storage, or assume the mock ADMIN session.
+  // Boot: rehydrate the session from storage.
   useEffect(() => {
     let cancelled = false;
 
@@ -71,10 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (stored) {
         setToken(stored);
-        setRole(USE_MOCK_API ? MOCK_ADMIN.role : ((await getStoredRole()) as UserRole | null));
-      } else if (USE_MOCK_API) {
-        setToken('mock.jwt.token');
-        setRole(MOCK_ADMIN.role);
+        setRole((await getStoredRole()) as UserRole | null);
       }
       setIsLoading(false);
     })();

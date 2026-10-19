@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { toApiError } from '../../api/errors';
+import { errorMessage } from '../../api/errors';
 import type { UserStatus } from '../../api/types';
 import { inviteUser, listUsers } from '../../api/users';
 import { font, moon } from '../../theme/moonlit';
@@ -38,7 +38,7 @@ function Invite({ onSent }: { onSent: () => void }) {
       setEmail('');
       onSent();
     } catch (e) {
-      setError(toApiError(e).message);
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

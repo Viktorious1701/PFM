@@ -1,9 +1,7 @@
 /**
  * Transaction Management API (TM) — SDS §5.6; backend app/api/v1/transactions.py.
  */
-import { USE_MOCK_API } from '../config';
 import { client } from './client';
-import { mockCreateTransaction, mockListTransactions } from './mock';
 import type { Page, TransactionCreate, TransactionListParams, TransactionRead } from './types';
 
 /**
@@ -16,7 +14,6 @@ import type { Page, TransactionCreate, TransactionListParams, TransactionRead } 
 export async function listTransactions(
   params: TransactionListParams = {},
 ): Promise<Page<TransactionRead>> {
-  if (USE_MOCK_API) return mockListTransactions(params);
 
   const { page = 1, page_size = 25, wallet_id, category_id, date_from, date_to } = params;
   const query: Record<string, string | number> = { page, page_size };
@@ -31,7 +28,6 @@ export async function listTransactions(
 
 /** TM-US-01 · `POST /api/v1/transactions`. */
 export async function createTransaction(payload: TransactionCreate): Promise<TransactionRead> {
-  if (USE_MOCK_API) return mockCreateTransaction(payload);
 
   const { data } = await client.post<TransactionRead>('/transactions', payload);
   return data;
@@ -41,4 +37,15 @@ export async function createTransaction(payload: TransactionCreate): Promise<Tra
  * on the wallet balance. Real backend only. */
 export async function deleteTransaction(id: string): Promise<void> {
   await client.delete(`/transactions/${id}`);
+}
+
+/** TM-US-04 · `PATCH /api/v1/transactions/{id}` — amount, type, category,
+ * note (the wallet can't change). Balances are re-applied server-side.
+ * Real backend only. */
+export async function updateTransaction(
+  id: string,
+  payload: { amount?: string; type?: 'INCOME' | 'EXPENSE'; category_id?: string; note?: string | null },
+): Promise<TransactionRead> {
+  const { data } = await client.patch<TransactionRead>(`/transactions/${id}`, payload);
+  return data;
 }

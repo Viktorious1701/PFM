@@ -114,9 +114,33 @@ export function toApiError(err: unknown): ApiError {
 export function fieldErrors(err: ApiError): Record<string, string> {
   const out: Record<string, string> = {};
   const raw = err.details;
+  // The backend's shape: `details.fields: [{ location: ["body", "password"],
+  // message: "Value error, Password must …" }]` — keyed here by the last
+  // location segment, with pydantic's "Value error, " prefix dropped.
+  const fields = (raw as { fields?: unknown }).fields;
+  if (Array.isArray(fields)) {
+    for (const f of fields as { location?: unknown[]; message?: unknown }[]) {
+      const key = Array.isArray(f.location) ? String(f.location[f.location.length - 1]) : '';
+      if (key && typeof f.message === 'string' && !(key in out)) out[key] = f.message.replace(/^Value error, /, '');
+    }
+  }
   for (const [key, value] of Object.entries(raw)) {
+    if (key === 'fields') continue;
     if (typeof value === 'string') out[key] = value;
     else if (Array.isArray(value) && typeof value[0] === 'string') out[key] = value[0];
   }
   return out;
+}
+
+/** The message to show for a failed request: for a 422, the first
+ * field-specific reason (e.g. "Password must contain at least one digit")
+ * rather than the generic "Request payload is invalid."; otherwise the
+ * server's own message. */
+export function errorMessage(err: unknown): string {
+  const e = toApiError(err);
+  if (e.code === ErrorCode.VALIDATION_ERROR) {
+    const first = Object.values(fieldErrors(e))[0];
+    if (first) return first;
+  }
+  return e.message;
 }

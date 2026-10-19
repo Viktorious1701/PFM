@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { toApiError } from '../../api/errors';
+import { errorMessage } from '../../api/errors';
 import { useAuth } from '../../store/auth';
 import { font, moon } from '../../theme/moonlit';
 
@@ -29,7 +29,7 @@ export function LoginPanel() {
     try {
       await signIn(email.trim(), password);
     } catch (e) {
-      setError(toApiError(e).message);
+      setError(errorMessage(e));
       setBusy(false);
     }
   };

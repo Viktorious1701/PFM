@@ -49,6 +49,7 @@ export function Field({
   testID,
   autoFocus,
   onSubmitEditing,
+  secure,
 }: {
   label: string;
   value: string;
@@ -58,6 +59,8 @@ export function Field({
   testID?: string;
   autoFocus?: boolean;
   onSubmitEditing?: () => void;
+  /** Password entry. */
+  secure?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -75,6 +78,8 @@ export function Field({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onSubmitEditing={onSubmitEditing}
+        secureTextEntry={secure}
+        autoCapitalize={secure ? 'none' : undefined}
         style={[s.input, focused && s.inputFocused]}
       />
     </View>

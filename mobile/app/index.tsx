@@ -2,6 +2,7 @@ import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, usePathname } from 'expo-router';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import {
@@ -24,6 +25,7 @@ import { FamilyPage } from '../src/components/pages/FamilyPage';
 import { WalletsPage } from '../src/components/pages/WalletsPage';
 import { TabBar, type Tab } from '../src/components/TabBar';
 import { Dashboard } from '../src/components/wallet/Dashboard';
+import { ActivatePanel } from '../src/components/wallet/ActivatePanel';
 import { LoginPanel } from '../src/components/wallet/LoginPanel';
 import { useAuth } from '../src/store/auth';
 import { font } from '../src/theme/moonlit';
@@ -44,7 +46,11 @@ const CONTENT_IN_MS = 320;
 const CONTENT_DRIFT = 24;
 
 type TabKey = 'home' | 'wallets' | 'activity' | 'budgets' | 'family';
-type Screen = 'login' | TabKey;
+// 'activate' is where an invitation link lands (app/activate.tsx renders
+// this same screen); it sits just before sign-in along the meadow.
+type Screen = 'activate' | 'login' | TabKey;
+/** Screens shown without the header and tab bar. */
+const isGate = (sc: Screen) => sc === 'activate' || sc === 'login';
 
 // Left to right along the meadow; sign-in sits just before the first.
 const TABS: readonly Tab<TabKey>[] = [
@@ -69,10 +75,22 @@ export default function Index() {
   const flash = useSharedValue(0);
   const reduceMotion = useReducedMotion();
   const { isAuthenticated, isLoading, isAdmin } = useAuth();
+  // An invitation link opens /activate?token=…. Leaving it ("Go to sign
+  // in") swaps the URL back to / in place rather than navigating, so the
+  // scene, the song and the pan carry straight on.
+  const pathname = usePathname();
+  const { token: tokenParam } = useLocalSearchParams<{ token?: string }>();
+  const [activationToken] = useState<string | null>(typeof tokenParam === 'string' && tokenParam ? tokenParam : null);
+  const [activationLeft, setActivationLeft] = useState(false);
+  const activating = pathname === '/activate' && !activationLeft;
+  const leaveActivation = () => {
+    setActivationLeft(true);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') window.history.replaceState(null, '', '/');
+  };
   const tabs = TABS.filter((t) => isAdmin || !TAB_ADMIN_ONLY.has(t.key));
   const [tab, setTab] = useState<TabKey>('home');
   /** Where a screen sits along the meadow: sign-in 0, tabs 1..n. */
-  const position = (sc: Screen) => (sc === 'login' ? 0 : 1 + Math.max(0, tabs.findIndex((t) => t.key === sc)));
+  const position = (sc: Screen) => (sc === 'activate' ? -1 : sc === 'login' ? 0 : 1 + Math.max(0, tabs.findIndex((t) => t.key === sc)));
   const { pan, startPan } = useScenePan();
   const { burst, fireBurst, strike, release } = useMoonBurst();
   const glitch = useRef<GlitchHandle>(null);
@@ -94,12 +112,18 @@ export default function Index() {
   }));
   const chromeStyle = useAnimatedStyle(() => ({ opacity: chromeOpacity.value }));
 
-  const target: Screen = !isAuthenticated ? 'login' : tabs.some((t) => t.key === tab) ? tab : 'home';
+  const target: Screen = activating
+    ? 'activate'
+    : !isAuthenticated
+      ? 'login'
+      : tabs.some((t) => t.key === tab)
+        ? tab
+        : 'home';
 
   useEffect(() => {
     if (isLoading) return;
     const next = target;
-    if (next === 'login' && tab !== 'home') setTab('home'); // sign back in to Home
+    if (isGate(next) && tab !== 'home') setTab('home'); // sign back in to Home
     if (shown === null) {
       setShown(next);
       return;
@@ -115,23 +139,23 @@ export default function Index() {
     const inStart = reduceMotion ? 200 : PAN_DELAY_MS + pan - CONTENT_IN_MS;
     const inMs = reduceMotion ? 200 : CONTENT_IN_MS;
     const drift = reduceMotion ? 0 : CONTENT_DRIFT;
-    const crossesSignIn = shown === 'login' || next === 'login';
+    const crossesSignIn = isGate(shown) !== isGate(next);
 
     if (!reduceMotion) startPan(dir, steps);
     contentOpacity.value = withTiming(0, { duration: out });
     contentDrift.value = withTiming(-dir * drift, { duration: out });
-    if (crossesSignIn && shown !== 'login') chromeOpacity.value = withTiming(0, { duration: out });
+    if (crossesSignIn && !isGate(shown)) chromeOpacity.value = withTiming(0, { duration: out });
     timers.current = [
       setTimeout(() => {
         setShown(next);
         contentDrift.value = dir * drift;
-        if (crossesSignIn && next !== 'login') chromeOpacity.value = 0;
+        if (crossesSignIn && !isGate(next)) chromeOpacity.value = 0;
       }, out),
       setTimeout(() => {
         const cfg = { duration: inMs, easing: Easing.out(Easing.cubic) };
         contentOpacity.value = withTiming(1, cfg);
         contentDrift.value = withTiming(0, cfg);
-        if (crossesSignIn && next !== 'login') chromeOpacity.value = withTiming(1, cfg);
+        if (crossesSignIn && !isGate(next)) chromeOpacity.value = withTiming(1, cfg);
       }, Math.max(out, inStart)),
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -256,13 +280,18 @@ export default function Index() {
           </View>
         ) : (
           <>
-            {shown !== 'login' ? (
+            {!isGate(shown) ? (
               <Animated.View style={chromeStyle}>
                 <AppHeader song={songControls} />
               </Animated.View>
             ) : null}
             <Animated.View style={[styles.overlay, contentStyle]}>
-              {shown === 'login' ? (
+              {shown === 'activate' ? (
+                <KeyboardAvoidingView style={styles.center} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+                  <ActivatePanel token={activationToken} onSignIn={leaveActivation} />
+                  <View style={styles.loginSong}>{songControls}</View>
+                </KeyboardAvoidingView>
+              ) : shown === 'login' ? (
                 <KeyboardAvoidingView style={styles.center} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                   <LoginPanel />
                   <View style={styles.loginSong}>{songControls}</View>
@@ -279,11 +308,11 @@ export default function Index() {
                 <FamilyPage />
               )}
             </Animated.View>
-            {shown !== 'login' ? (
+            {!isGate(shown) ? (
               <Animated.View style={[StyleSheet.absoluteFill, chromeStyle]} pointerEvents="box-none">
                 <TabBar
                   tabs={tabs}
-                  active={target === 'login' ? (shown as TabKey) : (target as TabKey)}
+                  active={isGate(target) ? (shown as TabKey) : (target as TabKey)}
                   onSelect={setTab}
                   glideDelayMs={PAN_DELAY_MS}
                   glideFor={panDuration}

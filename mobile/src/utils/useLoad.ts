@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type DependencyList } from 'react';
 
-import { toApiError } from '../api/errors';
+import { errorMessage } from '../api/errors';
 
 export function useLoad<T>(fn: () => Promise<T>, deps: DependencyList = []) {
   const [data, setData] = useState<T | null>(null);
@@ -19,7 +19,7 @@ export function useLoad<T>(fn: () => Promise<T>, deps: DependencyList = []) {
       const value = await fn();
       if (mine === seq.current) setData(value);
     } catch (e) {
-      if (mine === seq.current) setError(toApiError(e).message);
+      if (mine === seq.current) setError(errorMessage(e));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);

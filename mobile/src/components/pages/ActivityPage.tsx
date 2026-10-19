@@ -7,14 +7,15 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { createCategory, listCategories } from '../../api/categories';
-import { toApiError } from '../../api/errors';
-import { createTransaction, deleteTransaction, listTransactions } from '../../api/transactions';
+import { errorMessage } from '../../api/errors';
+import { createTransaction, deleteTransaction, listTransactions, updateTransaction } from '../../api/transactions';
 import type { CategoryRead, CategoryType, TransactionRead, WalletRead } from '../../api/types';
 import { listWallets } from '../../api/wallets';
 import { font, moon } from '../../theme/moonlit';
 import { amountPlaceholder, dayKey, dayLabel, parseAmount, timeLabel } from '../../utils/format';
 import { DEFAULT_CURRENCY, formatMoney, isWholeUnitCurrency } from '../../utils/money';
 import { useLoad } from '../../utils/useLoad';
+import { CategoriesPanel } from './CategoriesPanel';
 import { Button, Chips, Confirm, ErrorText, Field, LoadError, Loading, Muted, Panel, SectionHead, ui } from '../ui/moon';
 
 const PAGE = 50;
@@ -55,7 +56,7 @@ function AddTransaction({
       setCategoryId(c.id);
       setNewCat(null);
     } catch (e) {
-      setError(toApiError(e).message);
+      setError(errorMessage(e));
     }
   };
 
@@ -71,7 +72,7 @@ function AddTransaction({
       await createTransaction({ wallet_id: walletId, category_id: categoryId, amount: value, type, note: note.trim() || null });
       onDone();
     } catch (e) {
-      setError(toApiError(e).message);
+      setError(errorMessage(e));
       setBusy(false);
     }
   };
@@ -121,17 +122,67 @@ function AddTransaction({
   );
 }
 
-function Row({ t, wallet, category, onDeleted }: { t: TransactionRead; wallet?: WalletRead; category?: string; onDeleted: () => void }) {
-  const [open, setOpen] = useState(false);
+/** One transaction. Tapping it opens its details (TM-US-03) with Edit
+ * (TM-US-04: amount, type, category, note — the wallet is fixed) and
+ * Delete (TM-US-05). */
+function Row({
+  t,
+  wallet,
+  category,
+  categories,
+  onChanged,
+}: {
+  t: TransactionRead;
+  wallet?: WalletRead;
+  category?: string;
+  categories: CategoryRead[];
+  onChanged: () => void;
+}) {
+  const [mode, setMode] = useState<'closed' | 'detail' | 'edit' | 'delete'>('closed');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const currency = wallet?.currency ?? DEFAULT_CURRENCY;
+  const whole = isWholeUnitCurrency(currency);
+
+  const [type, setType] = useState<CategoryType>(t.type);
+  const [amount, setAmount] = useState(whole ? t.amount.replace(/\.00$/, '') : t.amount);
+  const [categoryId, setCategoryId] = useState<string | null>(t.category_id);
+  const [note, setNote] = useState(t.note ?? '');
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      setBusy(false);
+      setMode('closed');
+      onChanged();
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
+  };
+
+  const save = () => {
+    const value = parseAmount(amount, { wholeUnits: whole });
+    if (!value || value === '0.00') return setError(whole ? 'Enter an amount above zero, like 50.000.' : 'Enter an amount above zero, like 12.50.');
+    if (!categoryId) return setError('Choose a category.');
+    void run(() => updateTransaction(t.id, { amount: value, type, category_id: categoryId, note: note.trim() || null }));
+  };
+
+  const when = new Date(t.timestamp);
   return (
     <View style={styles.rowWrap}>
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)} style={styles.row} testID={`txn-${t.id}`}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: mode !== 'closed' }}
+        onPress={() => setMode(mode === 'closed' ? 'detail' : 'closed')}
+        style={styles.row}
+        testID={`txn-${t.id}`}
+      >
         <View style={styles.rowText}>
           <Text style={styles.rowName} numberOfLines={1}>
-            {category ?? 'Uncategorised'}
+            {category ?? 'Archived category'}
           </Text>
           <Text style={styles.rowMeta} numberOfLines={1}>
             {timeLabel(t.timestamp)} · {wallet?.name ?? 'Archived wallet'}
@@ -143,29 +194,77 @@ function Row({ t, wallet, category, onDeleted }: { t: TransactionRead; wallet?: 
           {formatMoney(t.amount, currency)}
         </Text>
       </Pressable>
-      {open ? (
+
+      {mode === 'detail' ? (
+        <View style={styles.rowActions} testID="txn-detail">
+          <View style={styles.facts}>
+            <Fact label="Type" value={t.type === 'INCOME' ? 'Income' : 'Expense'} />
+            <Fact label="Wallet" value={wallet ? `${wallet.name} · ${wallet.currency}` : 'Archived wallet'} />
+            <Fact label="When" value={`${dayLabel(t.timestamp)} ${when.getFullYear()} · ${timeLabel(t.timestamp)}`} />
+            {t.note ? <Fact label="Note" value={t.note} /> : null}
+          </View>
+          <View style={ui.row}>
+            <Button small kind="ghost" label="Edit" onPress={() => setMode('edit')} testID="txn-edit" />
+            <Button small kind="danger" label="Delete" onPress={() => setMode('delete')} testID="txn-delete" />
+          </View>
+        </View>
+      ) : mode === 'edit' ? (
+        <View style={styles.editForm} testID="txn-edit-form">
+          <Chips
+            options={[
+              { value: 'EXPENSE', label: 'Expense' },
+              { value: 'INCOME', label: 'Income' },
+            ]}
+            value={type}
+            onChange={(v) => {
+              setType(v);
+              if (categories.find((c) => c.id === categoryId)?.type !== v) setCategoryId(null);
+            }}
+            testID="txn-edit-type"
+          />
+          <Field
+            label={`Amount (${currency})`}
+            value={amount}
+            onChangeText={setAmount}
+            placeholder={amountPlaceholder(currency)}
+            keyboardType={whole ? 'number-pad' : 'decimal-pad'}
+            testID="txn-edit-amount"
+          />
+          <Chips
+            label="Category"
+            options={categories.filter((c) => c.type === type).map((c) => ({ value: c.id, label: c.name }))}
+            value={categoryId}
+            onChange={setCategoryId}
+            testID="txn-edit-category"
+          />
+          <Field label="Note (optional)" value={note} onChangeText={setNote} testID="txn-edit-note" onSubmitEditing={save} />
+          <View style={ui.row}>
+            <Button small label="Save" onPress={save} busy={busy} testID="txn-edit-save" />
+            <Button small kind="ghost" label="Cancel" onPress={() => setMode('detail')} />
+          </View>
+        </View>
+      ) : mode === 'delete' ? (
         <View style={styles.rowActions}>
           <Confirm
             question="Delete this transaction? Its amount goes back into the wallet's balance."
             confirmLabel="Delete"
             busy={busy}
             testID="txn-delete-confirm"
-            onCancel={() => setOpen(false)}
-            onConfirm={async () => {
-              setBusy(true);
-              setError(null);
-              try {
-                await deleteTransaction(t.id);
-                onDeleted();
-              } catch (e) {
-                setError(toApiError(e).message);
-                setBusy(false);
-              }
-            }}
+            onCancel={() => setMode('detail')}
+            onConfirm={() => void run(() => deleteTransaction(t.id))}
           />
-          {error ? <ErrorText>{error}</ErrorText> : null}
         </View>
       ) : null}
+      {error && mode !== 'closed' ? <ErrorText>{error}</ErrorText> : null}
+    </View>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.fact}>
+      <Text style={styles.factLabel}>{label}</Text>
+      <Text style={styles.factValue}>{value}</Text>
     </View>
   );
 }
@@ -196,6 +295,7 @@ export function ActivityPage() {
     }
   };
   const [adding, setAdding] = useState(false);
+  const [managing, setManaging] = useState(false);
 
   const byDay = useMemo(() => {
     const groups: { key: string; label: string; items: TransactionRead[] }[] = [];
@@ -219,8 +319,25 @@ export function ActivityPage() {
         <View style={ui.section}>
           <SectionHead
             title="Activity"
-            right={!adding && lookups.data ? <Button small kind="ghost" label="Add" onPress={() => setAdding(true)} testID="add-transaction" /> : null}
+            right={
+              lookups.data && !adding && !managing ? (
+                <View style={ui.row}>
+                  <Button small kind="ghost" label="Categories" onPress={() => setManaging(true)} testID="manage-categories" />
+                  <Button small kind="ghost" label="Add" onPress={() => setAdding(true)} testID="add-transaction" />
+                </View>
+              ) : null
+            }
           />
+          {managing && lookups.data ? (
+            <CategoriesPanel
+              categories={lookups.data.categories}
+              onChanged={lookups.reload}
+              onClose={() => {
+                setManaging(false);
+                void feed.reload();
+              }}
+            />
+          ) : null}
           {adding && lookups.data ? (
             <AddTransaction
               wallets={wallets}
@@ -266,7 +383,13 @@ export function ActivityPage() {
                     {g.items.map((t, i) => (
                       <View key={t.id}>
                         {i > 0 ? <View style={styles.divider} /> : null}
-                        <Row t={t} wallet={walletById.get(t.wallet_id)} category={catName.get(t.category_id)} onDeleted={() => void feed.reload()} />
+                        <Row
+                          t={t}
+                          wallet={walletById.get(t.wallet_id)}
+                          category={catName.get(t.category_id)}
+                          categories={lookups.data?.categories ?? []}
+                          onChanged={() => void feed.reload()}
+                        />
                       </View>
                     ))}
                   </Panel>
@@ -301,6 +424,11 @@ const styles = StyleSheet.create({
   rowMeta: { fontFamily: font.medium, fontSize: 13, color: moon.muted },
   amount: { fontFamily: font.semibold, fontSize: 17, color: moon.ink, ...ui.num },
   income: { color: moon.income },
-  rowActions: { gap: 8 },
+  rowActions: { gap: 12 },
+  editForm: { gap: 12, paddingTop: 4 },
+  facts: { gap: 6 },
+  fact: { flexDirection: 'row', gap: 12 },
+  factLabel: { width: 64, fontFamily: font.semibold, fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: moon.muted, paddingTop: 2 },
+  factValue: { flex: 1, fontFamily: font.medium, fontSize: 15, color: moon.inkSoft },
   more: { alignItems: 'center' },
 });

@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { toApiError } from '../../api/errors';
+import { errorMessage } from '../../api/errors';
 import { getSummaryReport } from '../../api/reports';
 import type { SummaryReportRead, WalletRead } from '../../api/types';
 import { listWallets } from '../../api/wallets';
@@ -47,7 +47,7 @@ export function Dashboard() {
       const [wallets, summary] = await Promise.all([listWallets(), getSummaryReport()]);
       setData({ wallets: wallets.items, summary });
     } catch (e) {
-      setError(toApiError(e).message);
+      setError(errorMessage(e));
     }
   }, []);
 
