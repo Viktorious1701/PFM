@@ -22,7 +22,11 @@ export type Sequence = {
   /** Draws the frame for track time `t` (ms). `cam` is the tab-pan camera in
    * scene units, `shear` the field's lean while panning. */
   render: (t: number, cam?: number, shear?: number) => void;
+  /** Picks the full sequence, or the moon scene for the whole song. */
+  setMode: (mode: SequenceMode) => void;
 };
+
+export type SequenceMode = 'full' | 'scene3';
 
 /** Builds the engine on a 1280x720 canvas. */
 export function createSequence(canvas: HTMLCanvasElement): Sequence {
@@ -41,8 +45,17 @@ export function createSequence(canvas: HTMLCanvasElement): Sequence {
     glitchA: 57500, glitchB: 58750, black2: 59440, moonIn: 59500,
     breakA: 87500, outroA: 99500, outroB: 106000, end: 115000,
   };
-  var SNARES = [4679, 6560, 8429, 10310, 12190, 14060, 15929, 19691, 21560, 23429, 25310, 27191, 29060, 30929, 34691, 36560, 38429, 40310, 42191, 44060, 45929, 49691, 51560, 55310, 57191, 59095, 62810, 64691, 66560, 70310, 72191, 74060, 75929, 77810, 79679, 81560, 83429, 85310, 87191]
-    .map(function (s) { return s + OFF; }).filter(function (s) { return s >= T.moonIn - 200 && s < T.outroA; });
+  // which sequence plays: the full four scenes, or the moon scene for the whole song
+  var MODE = 'full';
+  var SNARES_ALL = [4679, 6560, 8429, 10310, 12190, 14060, 15929, 19691, 21560, 23429, 25310, 27191, 29060, 30929, 34691, 36560, 38429, 40310, 42191, 44060, 45929, 49691, 51560, 55310, 57191, 59095, 62810, 64691, 66560, 70310, 72191, 74060, 75929, 77810, 79679, 81560, 83429, 85310, 87191].map(function (s) { return s + OFF; });
+  // ARRIVE: the white flash that brings the moon scene in (scene 3's first kick, or the drop's first drum)
+  var ARRIVE, SNARES;
+  function applyMode() {
+    ARRIVE = MODE === 'scene3' ? T.drop : T.moonIn;
+    // the dark beat (dipA..dipB) stays dark: no flashes there
+    SNARES = SNARES_ALL.filter(function (s) { return s >= ARRIVE - 200 && s < T.outroA && !(s > T.dipA && s < T.dipB); });
+  }
+  applyMode();
   // scene 1's snares (after the drop, before dusk)
   var SN1 = [4679, 6560, 8429, 10310, 12190, 14060, 15929, 19691, 21560, 23429, 25310, 27191, 29060, 30929].map(function (x) { return x + OFF; }).filter(function (x) { return x > T.drop && x < T.duskA && (x < T.dipA || x > T.dipB); });
   var BEAT = 60000 / 129.2;
@@ -909,10 +922,10 @@ export function createSequence(canvas: HTMLCanvasElement): Sequence {
     var white = Math.max(storm ? 1 - smooth(ramp(strikeAge, 120, 1400)) : 0, envelope(t - CLIMAX_B, 120, 220, 450));
     if (white > 0) { g.fillStyle = 'rgba(250,251,253,' + Math.min(1, white).toFixed(3) + ')'; g.fillRect(0, 0, W, H); }
     // arriving: from dark grey through a white fog that clears onto the moon
-    if (t < T.moonIn + 2200) {
+    if (t < ARRIVE + 2200 && (MODE === 'full' || t >= ARRIVE)) {
       // a white flash that clears through pale fog onto the moon
       // hold white through the whole first bass drum, then clear
-      var wf = 1 - smooth(ramp(t, T.moonIn + 40, T.moonIn + 340));
+      var wf = 1 - smooth(ramp(t, ARRIVE + 40, ARRIVE + 340));
       g.fillStyle = 'rgba(244,245,247,' + Math.min(1, wf * 1.05).toFixed(3) + ')'; g.fillRect(0, 0, W, H);
     }
   }
@@ -925,9 +938,25 @@ export function createSequence(canvas: HTMLCanvasElement): Sequence {
     return out;
   })();
 
+  // Scene 3 only: the moon scene under the intro song, veiled; dark through the silence;
+  // dark grey rising; then the white flash on the first drum of the drop.
+  function renderScene3(t) {
+    if (t >= T.black && t < ARRIVE) {
+      var gl = Math.round(58 * smooth(ramp(t, T.black + 150, ARRIVE - 100)));
+      ctx.fillStyle = 'rgb(' + gl + ',' + gl + ',' + gl + ')'; ctx.fillRect(0, 0, W, H);
+      return;
+    }
+    drawMoonScene(t);
+    if (t < T.black) {
+      var veil = t < T.grey ? 1 - 0.55 * smooth(ramp(t, 0, 3000)) : 0.45 + 0.55 * smooth(ramp(t, T.grey, T.black));
+      ctx.fillStyle = 'rgba(0,0,0,' + veil.toFixed(3) + ')'; ctx.fillRect(0, 0, W, H);
+    }
+  }
+
   // ---------- director ----------
   function render(t) {
-    if (t < T.grey) drawIntro(t);
+    if (MODE === 'scene3') renderScene3(t);
+    else if (t < T.grey) drawIntro(t);
     else if (t < T.g1End) {
       // glitch 1: the intro smeared into streaks, with the line
       drawGlitch(t, t - T.grey, T.g1End - T.grey, function () { drawIntro(T.introEnd); }, 'intro', true, 0.6, 0.38);
@@ -955,6 +984,11 @@ export function createSequence(canvas: HTMLCanvasElement): Sequence {
       CAM = cam || 0;
       SHEAR = shear || 0;
       render(t);
+    },
+    setMode: function (m) {
+      if (m === MODE) return;
+      MODE = m;
+      applyMode();
     },
   };
 }

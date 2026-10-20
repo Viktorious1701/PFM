@@ -8,6 +8,7 @@ import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, w
 import { SongProgress } from '../src/components/SongProgress';
 import { NullscapesBackground } from '../src/scene/NullscapesBackground';
 import { PAN_DELAY_MS, panDuration, useScenePan } from '../src/scene/scenePan';
+import { useSceneMode } from '../src/scene/sceneMode';
 import { AppHeader } from '../src/components/AppHeader';
 import { ActivityPage } from '../src/components/pages/ActivityPage';
 import { BudgetsPage } from '../src/components/pages/BudgetsPage';
@@ -52,6 +53,7 @@ export default function Index() {
   const player = useAudioPlayer(SONG);
   const { playing } = useAudioPlayerStatus(player);
   const reduceMotion = useReducedMotion();
+  const [sceneMode, setSceneMode] = useSceneMode();
   const { isAuthenticated, isLoading, isAdmin } = useAuth();
   // An invitation link opens /activate?token=…. Leaving it ("Go to sign
   // in") swaps the URL back to / in place rather than navigating, so the
@@ -158,7 +160,7 @@ export default function Index() {
   };
   const showPause = playing || restarting;
 
-  // Play/Pause, restart, then the song's progress — the same row in the
+  // Play/Pause, restart, the moon-only switch, then the song's progress — the same row in the
   // dashboard header and under the sign-in panel.
   const songControls = (
     <View style={styles.songControls}>
@@ -187,13 +189,28 @@ export default function Index() {
       >
         <Text style={[styles.label, styles.icon]}>↺</Text>
       </Pressable>
+      <Pressable
+        testID="moon-only"
+        role="switch"
+        aria-label="Moon scene only"
+        aria-checked={sceneMode === 'scene3'}
+        onPress={() => setSceneMode(sceneMode === 'scene3' ? 'full' : 'scene3')}
+        style={({ pressed }) => [
+          styles.button,
+          styles.modeButton,
+          sceneMode === 'scene3' && styles.modeOn,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Text style={[styles.label, sceneMode === 'scene3' && styles.modeOnLabel]}>Moon</Text>
+      </Pressable>
       <SongProgress player={player} />
     </View>
   );
 
   return (
     <View style={styles.root}>
-      <NullscapesBackground player={player} pan={pan} reduceMotion={!!reduceMotion} />
+      <NullscapesBackground player={player} pan={pan} reduceMotion={!!reduceMotion} mode={sceneMode} />
       <SafeAreaView style={styles.overlay}>
         {shown === null ? (
           <View style={styles.center}>
@@ -257,6 +274,9 @@ const styles = StyleSheet.create({
   playButton: { minWidth: 76, alignItems: 'center' },
   iconButton: { paddingHorizontal: 0, width: 34, alignItems: 'center' },
   icon: { fontSize: 15, letterSpacing: 0 },
+  modeButton: { paddingHorizontal: 12 },
+  modeOn: { backgroundColor: '#eaf0ff', borderColor: '#eaf0ff' },
+  modeOnLabel: { color: '#0b1220' },
   button: {
     height: 34,
     justifyContent: 'center',

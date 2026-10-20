@@ -5,6 +5,9 @@
  * so the scenes, flashes and glitches stay locked to the music — seeking,
  * restarting and looping included.
  *
+ * `mode` picks the full sequence or the moon scene for the whole song;
+ * switching it redraws at once, wherever the song is.
+ *
  * Before the song has ever played it rests on a calm frame of the moon
  * scene; while paused it holds the paused moment. Reduced motion: one still
  * frame. Web only (ENV-04); elsewhere it renders the scene's sky colour.
@@ -13,7 +16,7 @@ import type { AudioPlayer } from 'expo-audio';
 import { useEffect, useRef } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
-import { createSequence, type Sequence } from './sequenceEngine';
+import { createSequence, type Sequence, type SequenceMode } from './sequenceEngine';
 import type { ScenePan } from './scenePan';
 
 /** The calm moon-scene moment shown before the song is first played. */
@@ -23,12 +26,17 @@ export function NullscapesBackground({
   player,
   pan,
   reduceMotion,
+  mode,
 }: {
   player: AudioPlayer;
   pan: ScenePan;
   reduceMotion: boolean;
+  mode: SequenceMode;
 }) {
   const host = useRef<View>(null);
+  // read by the frame loop, so changing it doesn't rebuild the canvas
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -50,10 +58,11 @@ export function NullscapesBackground({
       const t = reduceMotion || !played ? RESTING_MS : pos;
       const cam = pan.camera.value;
       const shear = pan.lean.value[4] ?? 0; // near layer
-      // Only redraw when something changed: playing, a pan, or a seek.
-      const key = `${Math.round(t)}|${cam.toFixed(1)}|${shear.toFixed(4)}`;
+      // Only redraw when something changed: playing, a pan, a seek, or the mode.
+      const key = `${modeRef.current}|${Math.round(t)}|${cam.toFixed(1)}|${shear.toFixed(4)}`;
       if (key !== last) {
         last = key;
+        seq.setMode(modeRef.current);
         seq.render(t, cam, shear);
       }
       raf = requestAnimationFrame(frame);
