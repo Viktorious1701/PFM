@@ -5,19 +5,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, usePathname } from 'expo-router';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import {
-  FLASH_LEAD_MS,
-  fireFlash,
-  MoonlitScene,
-  PAN_DELAY_MS,
-  panDuration,
-  SKY,
-  useScenePan,
-} from '../src/components/MoonlitScene';
-import { useMoonBurst } from '../src/components/MoonBurst';
 import { SongProgress } from '../src/components/SongProgress';
-import { GlitchOverlay, type GlitchHandle } from '../src/components/GlitchOverlay';
-import { CLIMAX_BURST_MS, CLIMAX_END_MS, CLIMAX_START_MS, GLITCH_MS, SNARE_MS } from '../src/components/nullscapesSnares';
+import { NullscapesBackground } from '../src/scene/NullscapesBackground';
+import { PAN_DELAY_MS, panDuration, useScenePan } from '../src/scene/scenePan';
 import { AppHeader } from '../src/components/AppHeader';
 import { ActivityPage } from '../src/components/pages/ActivityPage';
 import { BudgetsPage } from '../src/components/pages/BudgetsPage';
@@ -30,13 +20,9 @@ import { LoginPanel } from '../src/components/wallet/LoginPanel';
 import { useAuth } from '../src/store/auth';
 import { font } from '../src/theme/moonlit';
 
-// The song's first 1:33.5, looped (see SONG_MS in nullscapesSnares.ts).
-const SONG = require('../assets/audio/creo-flow-loop.mp3');
-
-// A snare counts as "just happened" only within this window — anything
-// older is skipped silently, so resuming after a stall or a seek never
-// fires a burst of stale flashes at once.
-const MAX_LATE_MS = 150;
+// The whole Nullscapes track (intro, three scenes, outro), looped; the
+// background draws whatever moment of it is playing (src/scene/).
+const SONG = require('../assets/audio/nullscapes-sequence.mp3');
 
 // Screen change, timed against the camera pan (Moonlit Pan study): the old
 // screen leaves in the first CONTENT_OUT_MS, the new one arrives over the
@@ -62,17 +48,9 @@ const TABS: readonly Tab<TabKey>[] = [
 ];
 const TAB_ADMIN_ONLY: ReadonlySet<TabKey> = new Set(['family']);
 
-/** Index of the first hit in `times` not yet reached at time `ms`. */
-function nextIndex(times: readonly number[], ms: number): number {
-  let i = 0;
-  while (i < times.length && times[i] < ms) i++;
-  return i;
-}
-
 export default function Index() {
   const player = useAudioPlayer(SONG);
   const { playing } = useAudioPlayerStatus(player);
-  const flash = useSharedValue(0);
   const reduceMotion = useReducedMotion();
   const { isAuthenticated, isLoading, isAdmin } = useAuth();
   // An invitation link opens /activate?token=…. Leaving it ("Go to sign
@@ -92,8 +70,6 @@ export default function Index() {
   /** Where a screen sits along the meadow: sign-in 0, tabs 1..n. */
   const position = (sc: Screen) => (sc === 'activate' ? -1 : sc === 'login' ? 0 : 1 + Math.max(0, tabs.findIndex((t) => t.key === sc)));
   const { pan, startPan } = useScenePan();
-  const { burst, fireBurst, strike, release } = useMoonBurst();
-  const glitch = useRef<GlitchHandle>(null);
 
   // Which screen is on display lags the request by design: on sign-in,
   // sign-out or a tab change the old screen stays up while it fades, the
@@ -167,63 +143,8 @@ export default function Index() {
     player.loop = true;
   }, [player]);
 
-  // Read the live playback position every frame (status events are too
-  // coarse to land on a snare) and fire one flash per snare, FLASH_LEAD_MS
-  // early so the flash peaks on the hit itself. Inside the climax the moon's
-  // column is held, and each climax hit also fires a full explosion.
-  useEffect(() => {
-    if (!playing || reduceMotion) return;
-    let raf = 0;
-    let lastMs = player.currentTime * 1000;
-    let idx = nextIndex(SNARE_MS, lastMs);
-    let burstIdx = nextIndex(CLIMAX_BURST_MS, lastMs);
-    let glitchIdx = nextIndex(GLITCH_MS, lastMs);
-    let inClimax = false;
-    const tick = () => {
-      const ms = player.currentTime * 1000;
-      if (ms < lastMs) {
-        // looped back to the start, or restarted
-        idx = nextIndex(SNARE_MS, ms);
-        burstIdx = nextIndex(CLIMAX_BURST_MS, ms);
-        glitchIdx = nextIndex(GLITCH_MS, ms);
-      }
-      lastMs = ms;
-      const lead = ms + FLASH_LEAD_MS;
-      while (idx < SNARE_MS.length && lead >= SNARE_MS[idx]) {
-        if (lead - SNARE_MS[idx] <= MAX_LATE_MS) fireFlash(flash);
-        idx++;
-      }
-      while (burstIdx < CLIMAX_BURST_MS.length && lead >= CLIMAX_BURST_MS[burstIdx]) {
-        if (lead - CLIMAX_BURST_MS[burstIdx] <= MAX_LATE_MS) {
-          fireBurst();
-          fireFlash(flash);
-        }
-        burstIdx++;
-      }
-      while (glitchIdx < GLITCH_MS.length && ms >= GLITCH_MS[glitchIdx]) {
-        if (ms - GLITCH_MS[glitchIdx] <= MAX_LATE_MS) glitch.current?.fire();
-        glitchIdx++;
-      }
-      // Derived from the clock every frame, so a seek or restart into or
-      // out of the climax brings the column with it.
-      const climax = lead >= CLIMAX_START_MS && ms < CLIMAX_END_MS;
-      if (climax !== inClimax) {
-        inClimax = climax;
-        if (climax) strike();
-        else release();
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(raf);
-      // paused mid-climax: let the column go rather than leave it hanging
-      if (inClimax) release();
-    };
-  }, [playing, player, flash, reduceMotion, fireBurst, strike, release]);
-
-  // Back to 0:00 and playing — the snare loop sees the clock jump
-  // backwards and re-finds its place, so flashes stay in sync.
+  // Back to 0:00 and playing — the background draws from the song's
+  // position, so it is back at the intro's rise from black with it.
   // The web player reports "not playing" for a moment while it seeks; hold
   // the label on "Pause" through that instead of flickering to "Play".
   const [restarting, setRestarting] = useState(false);
@@ -272,7 +193,7 @@ export default function Index() {
 
   return (
     <View style={styles.root}>
-      <MoonlitScene style={StyleSheet.absoluteFill} flash={flash} pan={pan} burst={burst} />
+      <NullscapesBackground player={player} pan={pan} reduceMotion={!!reduceMotion} />
       <SafeAreaView style={styles.overlay}>
         {shown === null ? (
           <View style={styles.center}>
@@ -323,15 +244,12 @@ export default function Index() {
           </>
         )}
       </SafeAreaView>
-      {/* Above everything, UI included, and never takes a touch: the
-          glitch breaks the whole screen for its one second. */}
-      <GlitchOverlay ref={glitch} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: SKY },
+  root: { flex: 1, backgroundColor: '#0f1d33' },
   overlay: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', padding: 16, gap: 20 },
   loginSong: { width: '100%', maxWidth: 380, alignSelf: 'center' },
