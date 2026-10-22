@@ -79,7 +79,8 @@ export function Field({
         onBlur={() => setFocused(false)}
         onSubmitEditing={onSubmitEditing}
         secureTextEntry={secure}
-        autoCapitalize={secure ? 'none' : undefined}
+        autoCapitalize={secure || keyboardType === 'url' || keyboardType === 'email-address' ? 'none' : undefined}
+        autoCorrect={keyboardType === 'url' ? false : undefined}
         style={[s.input, focused && s.inputFocused]}
       />
     </View>

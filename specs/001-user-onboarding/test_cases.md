@@ -1157,6 +1157,7 @@ three parametrised values each) passed against the first version of the code.
 | TC-78 | UM-US-02 | AC-06 | `mobile/e2e/activation.spec.ts` › TC-78 | PASS — 2026-10-19, desktop + phone |
 | TC-79 | UM-US-02 | AC-03, AC-04, AC-11 | `mobile/e2e/activation.spec.ts` › TC-79 | PASS — 2026-10-19, desktop + phone |
 | TC-80 | UM-US-03 | AC-01, AC-07 | `mobile/e2e/family.spec.ts` › TC-80 | PASS — 2026-10-19, desktop + phone |
+| TC-81 | UM-US-02 | AC-03 | `mobile/e2e/activation.spec.ts` › TC-81 | PASS — 2026-10-22, desktop + phone |
 
 ### TC-73: ADMIN invites a family member from the Family tab
 
@@ -1229,3 +1230,13 @@ three parametrised values each) passed against the first version of the code.
 - **Then:** The members request is answered `200`; both members are listed, the active one labelled **Active** and the pending one **Invited**; the header shows the member count
 - **AC:** AC-01, AC-07
 - **Type:** e2e
+
+### TC-81: An invitation link that carries a server address uses that server
+
+- **US:** UM-US-02
+- **Given:** An activation link of the shape the live server sends (`…/activate?token=…&server=…`), naming a server other than the app's current one
+- **When:** The link is opened
+- **Then:** The token-state check goes to the server named in the link; the panel shows that server's host; for an unknown token it says the link isn't valid
+- **AC:** AC-03 (the outcome shown); the `server` parameter itself is not an SRS/SDS acceptance criterion — `constitution.md` ENV-06
+- **Type:** e2e
+

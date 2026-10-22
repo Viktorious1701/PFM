@@ -9,8 +9,10 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { ErrorCode, errorMessage, toApiError } from '../../api/errors';
 import { activateAccount, checkTokenState } from '../../api/users';
+import { useServerAddress } from '../../store/server-address';
 import { font, moon } from '../../theme/moonlit';
 import { Button, ErrorText, Field, Muted } from '../ui/moon';
+import { ServerLine } from './ServerLine';
 
 const PASSWORD_RULE = 'At least 8 characters, with an uppercase letter, a digit and a symbol.';
 
@@ -23,9 +25,12 @@ export function ActivatePanel({ token, onSignIn }: { token: string | null; onSig
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  // checked again if the server address is corrected below
+  const server = useServerAddress();
 
   useEffect(() => {
     if (!token) return;
+    setPhase('checking');
     let cancelled = false;
     checkTokenState(token)
       .then((r) => {
@@ -36,7 +41,7 @@ export function ActivatePanel({ token, onSignIn }: { token: string | null; onSig
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, server]);
 
   const submit = async () => {
     if (!token || busy) return;
@@ -98,6 +103,9 @@ export function ActivatePanel({ token, onSignIn }: { token: string | null; onSig
           <Button label="Activate account" onPress={submit} busy={busy} testID="activate-submit" />
         </>
       )}
+
+      <View style={styles.divider} />
+      <ServerLine />
     </View>
   );
 }
@@ -118,5 +126,6 @@ const styles = StyleSheet.create({
   title: { fontFamily: font.light, fontSize: 32, color: moon.ink, marginTop: -8, letterSpacing: 1 },
   body: { fontFamily: font.medium, fontSize: 16, color: moon.inkSoft },
   success: { fontFamily: font.medium, fontSize: 16, color: moon.income },
+  divider: { height: 1, backgroundColor: moon.panelBorder, marginTop: 4 },
   hint: { fontFamily: font.medium, fontSize: 13, color: moon.muted, marginTop: -6 },
 });

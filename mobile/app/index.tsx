@@ -1,6 +1,6 @@
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, usePathname } from 'expo-router';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -9,6 +9,7 @@ import { SongProgress } from '../src/components/SongProgress';
 import { NullscapesBackground } from '../src/scene/NullscapesBackground';
 import { PAN_DELAY_MS, panDuration, useScenePan } from '../src/scene/scenePan';
 import { useSceneMode } from '../src/scene/sceneMode';
+import { setServerAddress } from '../src/store/server-address';
 import { AppHeader } from '../src/components/AppHeader';
 import { ActivityPage } from '../src/components/pages/ActivityPage';
 import { BudgetsPage } from '../src/components/pages/BudgetsPage';
@@ -55,13 +56,27 @@ export default function Index() {
   const reduceMotion = useReducedMotion();
   const [sceneMode, setSceneMode] = useSceneMode();
   const { isAuthenticated, isLoading, isAdmin } = useAuth();
-  // An invitation link opens /activate?token=…. Leaving it ("Go to sign
-  // in") swaps the URL back to / in place rather than navigating, so the
-  // scene, the song and the pan carry straight on.
+  // An invitation link opens /activate?token=… (on Android
+  // pfm://activate?token=…&server=…, which also says where the server is).
+  // Leaving it ("Go to sign in") swaps the URL back to / in place rather
+  // than navigating, so the scene, the song and the pan carry straight on.
   const pathname = usePathname();
-  const { token: tokenParam } = useLocalSearchParams<{ token?: string }>();
-  const [activationToken] = useState<string | null>(typeof tokenParam === 'string' && tokenParam ? tokenParam : null);
+  const { token: tokenParam, server: serverParam } = useLocalSearchParams<{ token?: string; server?: string }>();
+  const linkToken = typeof tokenParam === 'string' && tokenParam ? tokenParam : null;
+  // Applied during render, before the activation panel's first token check
+  // (children's effects run before this screen's); setting the same address
+  // again is a no-op.
+  if (typeof serverParam === 'string' && serverParam) setServerAddress(serverParam);
+  const [activationToken, setActivationToken] = useState<string | null>(linkToken);
   const [activationLeft, setActivationLeft] = useState(false);
+  // A second invitation link while the app is open: show that one.
+  useEffect(() => {
+    if (linkToken && linkToken !== activationToken) {
+      setActivationToken(linkToken);
+      setActivationLeft(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkToken]);
   const activating = pathname === '/activate' && !activationLeft;
   const leaveActivation = () => {
     setActivationLeft(true);
@@ -143,6 +158,16 @@ export default function Index() {
 
   useEffect(() => {
     player.loop = true;
+  }, [player]);
+
+  // On a phone, leaving the app pauses the song rather than playing on in a
+  // pocket; Play picks it up again.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') player.pause();
+    });
+    return () => sub.remove();
   }, [player]);
 
   // Back to 0:00 and playing — the background draws from the song's

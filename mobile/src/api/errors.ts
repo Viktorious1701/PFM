@@ -102,7 +102,7 @@ export function toApiError(err: unknown): ApiError {
 
   return new ApiError(
     ErrorCode.NETWORK_ERROR,
-    'Could not reach the server. Check your connection and try again.',
+    'Could not reach the server. Check your connection and the server address.',
     0,
   );
 }

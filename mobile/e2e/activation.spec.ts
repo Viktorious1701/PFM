@@ -67,3 +67,13 @@ test('TC-79 An already-used or unknown link says so before any typing', async ({
     await expect(page.getByRole('button', { name: 'Go to sign in' })).toBeVisible();
   }
 });
+
+test('TC-81 An invitation link that carries a server address uses that server', async ({ page }) => {
+  const server = 'http://127.0.0.1:8000/api/v1';
+  const state = apiResponse(page, 'GET', /^\/users\/activate\?token=/);
+  await page.goto(`/activate?token=unknown-${uid()}&server=${encodeURIComponent(server)}`);
+  const res = await state;
+  expect(res.url().startsWith(`${server}/users/activate?token=`)).toBe(true);
+  await expect(page.getByTestId('server-host')).toHaveText('127.0.0.1:8000');
+  await expect(page.getByTestId('activate-unusable')).toBeVisible();
+});

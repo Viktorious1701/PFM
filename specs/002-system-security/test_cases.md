@@ -331,6 +331,9 @@ rework was needed and no defect was found along the way.
 | TC-51 | SS-US-01 | AC-02 | `mobile/e2e/auth.spec.ts` › TC-51 | PASS — 2026-10-19, desktop + phone |
 | TC-52 | SS-US-01 | AC-08 | `mobile/e2e/auth.spec.ts` › TC-52 | PASS — 2026-10-19, desktop + phone |
 | TC-53 | SS-US-02 | AC-01 | `mobile/e2e/auth.spec.ts` › TC-53 | PASS — 2026-10-19, desktop + phone |
+| TC-54 | SS-US-01 | — (server address, `constitution.md` ENV-06) | `mobile/e2e/auth.spec.ts` › TC-54 | PASS — 2026-10-22, desktop + phone |
+| TC-55 | SS-US-01 | — (server address, `constitution.md` ENV-06) | `mobile/e2e/auth.spec.ts` › TC-55 | PASS — 2026-10-22, desktop + phone |
+| TC-56 | SS-US-01 | — (server address, `constitution.md` ENV-06) | `mobile/e2e/auth.spec.ts` › TC-56 | PASS — 2026-10-22, desktop + phone |
 
 ### TC-49: An ACTIVE account signs in and stays signed in across a reload
 
@@ -376,3 +379,31 @@ rework was needed and no defect was found along the way.
 - **Then:** The logout request is sent with the session token and answered `200`; the sign-in panel is shown; after the reload it is still the sign-in panel
 - **AC:** AC-01
 - **Type:** e2e
+
+### TC-54: The sign-in panel names its server, and a changed address is used and remembered
+
+- **US:** SS-US-01
+- **Given:** The sign-in panel, on the build's default server address
+- **When:** Change is pressed, a different address for the same backend is entered (`http://127.0.0.1:8000`), Use this server is pressed, and an ACTIVE account signs in; then the page is reloaded after signing out
+- **Then:** The panel shows the new server's host; the login request goes to that address and is answered `200`; after the reload the panel still shows the new host
+- **AC:** — (not an SRS/SDS acceptance criterion: the family's server address changes with every tunnel start, `constitution.md` ENV-06)
+- **Type:** e2e
+
+### TC-55: Something that isn't a server address is refused before anything is sent
+
+- **US:** SS-US-01
+- **Given:** The sign-in panel with the server address open for editing
+- **When:** `not a server` is entered and Use this server is pressed
+- **Then:** "That isn’t a server address. It looks like abc-def.trycloudflare.com" is shown; the address is not changed; no request is sent
+- **AC:** — (`constitution.md` ENV-06)
+- **Type:** e2e
+
+### TC-56: An unreachable server is named as the problem
+
+- **US:** SS-US-01
+- **Given:** The server address set to one where nothing is listening
+- **When:** An email and password are submitted
+- **Then:** "Could not reach the server. Check your connection and the server address." is shown; the sign-in panel stays
+- **AC:** — (`constitution.md` ENV-06)
+- **Type:** e2e
+

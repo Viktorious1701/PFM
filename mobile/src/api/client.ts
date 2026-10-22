@@ -11,8 +11,9 @@
  */
 import axios from 'axios';
 
-import { API_BASE_URL, API_TIMEOUT_MS } from '../config';
-import { toApiError } from './errors';
+import { API_TIMEOUT_MS } from '../config';
+import { serverAddress } from '../store/server-address';
+import { ApiError, ErrorCode, toApiError } from './errors';
 
 type TokenProvider = () => string | null;
 
@@ -33,12 +34,18 @@ export function setUnauthenticatedHandler(handler: () => void): void {
 }
 
 export const client = axios.create({
-  baseURL: API_BASE_URL,
   timeout: API_TIMEOUT_MS,
   headers: { 'Content-Type': 'application/json' },
 });
 
-client.interceptors.request.use((config) => {
+client.interceptors.request.use(async (config) => {
+  // Read per request: the server address can change while the app runs
+  // (store/server-address.ts).
+  const base = await serverAddress();
+  if (!base) {
+    throw new ApiError(ErrorCode.NETWORK_ERROR, 'Enter the server address first.', 0);
+  }
+  config.baseURL = base;
   const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;

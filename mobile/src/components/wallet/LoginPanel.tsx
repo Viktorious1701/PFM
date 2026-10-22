@@ -8,10 +8,13 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 
 import { errorMessage } from '../../api/errors';
 import { useAuth } from '../../store/auth';
+import { useServerAddress } from '../../store/server-address';
 import { font, moon } from '../../theme/moonlit';
+import { ServerLine } from './ServerLine';
 
 export function LoginPanel() {
   const { signIn } = useAuth();
+  const server = useServerAddress();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -20,6 +23,10 @@ export function LoginPanel() {
 
   const submit = async () => {
     if (busy) return;
+    if (!server) {
+      setError('Enter the server address below first.');
+      return;
+    }
     if (!email.trim() || !password) {
       setError('Enter your email and password.');
       return;
@@ -89,6 +96,9 @@ export function LoginPanel() {
       >
         {busy ? <ActivityIndicator color={moon.ink} /> : <Text style={styles.buttonLabel}>Sign in</Text>}
       </Pressable>
+
+      <View style={styles.divider} />
+      <ServerLine />
     </View>
   );
 }
@@ -143,6 +153,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(223,232,251,0.9)',
   },
   buttonPressed: { opacity: 0.75 },
+  divider: { height: 1, backgroundColor: moon.panelBorder, marginTop: 4 },
   buttonLabel: {
     fontFamily: font.bold,
     fontSize: 14,

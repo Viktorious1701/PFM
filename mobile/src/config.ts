@@ -6,8 +6,10 @@
  * it ships to the device.
  */
 
-export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1';
+// The default server. `none` (the phone builds, eas.json) means there is no
+// default: the family's address changes, so the sign-in screen asks for it.
+const configured = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1';
+export const API_BASE_URL = configured === 'none' ? '' : configured;
 
 /** Request timeout in ms. Generous relative to NFR-01's 300 ms p95 budget. */
 export const API_TIMEOUT_MS = 10_000;
