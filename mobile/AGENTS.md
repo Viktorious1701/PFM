@@ -34,7 +34,7 @@ SDS §4.3.1 specifies it for "hardware-encrypted JWT storage", but it throws in 
 
 ## Verifying UI changes here
 
-There is no Android SDK, no `adb`, no emulator (constitution ENV-04). Web is the only run target:
+There is no Android SDK, no `adb`, no emulator here (constitution ENV-04). Android is the primary target, but it is built in the EAS cloud and checked by hand on a real phone (ENV-05); everything that *can* be verified is verified on web first:
 
 ```bash
 npx expo start --web --clear     # then open http://localhost:8081 in Windows

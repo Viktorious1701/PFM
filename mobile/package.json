@@ -39,7 +39,6 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "typecheck": "tsc --noEmit && tsc --noEmit -p e2e",
-    "test:e2e": "playwright test -c e2e/playwright.config.ts",
-    "postinstall": "setup-skia-web"
+    "test:e2e": "playwright test -c e2e/playwright.config.ts"
   }
 }

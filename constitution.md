@@ -168,7 +168,9 @@ prose or in the code. These rules are how that stays true.
 - **ENV-01** `uv` is the only Python entry point; system Python has no pip. Every command is `uv run …`.
 - **ENV-02** Python is pinned to 3.13 (`.python-version`), not the system 3.14, to stay on well-supported wheels.
 - **ENV-03** Local database is SQLite; PostgreSQL is the deployment target (SDS §4.5), because Docker is unreachable in this WSL2 setup. Nothing may depend on SQLite-only behaviour, and nothing may be *hidden* by it either: SQLite ignores column widths and drops `tzinfo`, so a bound or a timezone that only PostgreSQL enforces must be enforced in the application as well. `id` columns are UUID-as-text for the same reason.
-- **ENV-04** No Docker, Android SDK, or emulator is available in this environment. Work requiring them is deferred and documented, never faked.
+- **ENV-04** No Docker, Android SDK, or emulator is available in this environment. Work requiring them is deferred and documented, never faked. *(Android builds: superseded by ENV-05. The rest stands — nothing here may pretend an emulator ran.)*
+- **ENV-05** **Android is the primary client** (user ruling, 2026-10-22: mobile-first, Android only, distributed as an APK outside any store). Android builds run in the **EAS cloud** (`mobile/eas.json`), so this machine still needs no Android SDK. Android behaviour is verified **by hand on a real phone**; there is no emulator and no automated Android UI test. Web remains the development surface and a secondary client, and `mobile/e2e/` keeps running against it (§1.1 rule 0 of `CLAUDE.md`).
+- **ENV-06** **The live server is this laptop** (user ruling, 2026-10-22), started by `scripts/serve.sh`: the backend in `ENVIRONMENT=production` on its own SQLite database and JWT secret under `backend/var/live/` (gitignored), reached through a free Cloudflare quick tunnel whose `https://*.trycloudflare.com` address changes on every start. This deviates from ENV-03's PostgreSQL target by choice — one family on one laptop — and switching is still one `DATABASE_URL` change. The dev database (demo and test accounts) is never served.
 
 ---
 

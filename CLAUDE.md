@@ -11,13 +11,13 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 | File | Owner | Rule |
 | :-- | :-- | :-- |
 | `SRS.md` v2.2.0 | the user; AI may **align**, not extend | Requirements baseline: FR, NFR, UXR, BF, Features 01–11 with Gherkin, §1.5 Conceptual Domain Model. See *They are references, not contracts* below. |
-| `SDS.md` v1.4.0 | the user; AI may **align** | Technical baseline: domain model, ERD, architecture, API design, security design. See *They are references, not contracts* below. |
+| `SDS.md` v1.5.0 | the user; AI may **align** | Technical baseline: domain model, ERD, architecture, API design, security design. See *They are references, not contracts* below. |
 | `aif-review-checklist.md` | the user | Run before claiming any step gate. Edited once to remove Jira and record stack adaptations; otherwise treat as the user's. |
 | `artifact-templates/*.md` | the user | **Read-only. Never edit. Never split.** The canonical shape of every artifact — see §1.1. |
 | `constitution.md` | AI + user | Project rules with stable IDs (AR/API/NC/VL/LA/PF/SEC/TST/DOD/ENV), derived from the SDS. |
 | `specs/**` | AI + user | The working artifacts, and the only ones. Design output goes here — **never** into `SDS.md`. |
 
-`SDS.md` was aligned to `SRS.md` on 2026-07-30 (v1.1.0), to the built system on 2026-07-31 (v1.2.0), to the `DG` diagram convention the same day (v1.3.0), and its Category ERD to §2.2 while specifying CM-US-01 (v1.4.0); `SRS.md` was aligned on 2026-07-31 (v2.1.0) and gained its conceptual domain model, §1.5, at the user's explicit request the same day (v2.2.0). **`SRS.md` wins any remaining disagreement** — the rulings are in *Resolved contradictions* below.
+`SDS.md` was aligned to `SRS.md` on 2026-07-30 (v1.1.0), to the built system on 2026-07-31 (v1.2.0), to the `DG` diagram convention the same day (v1.3.0), its Category ERD to §2.2 while specifying CM-US-01 (v1.4.0), and its §4.5 physical view to the laptop-and-Android deployment ruling on 2026-10-22 (v1.5.0); `SRS.md` was aligned on 2026-07-31 (v2.1.0) and gained its conceptual domain model, §1.5, at the user's explicit request the same day (v2.2.0). **`SRS.md` wins any remaining disagreement** — the rulings are in *Resolved contradictions* below.
 
 ## 1.1 Artifact rules
 
@@ -115,6 +115,7 @@ Where a deviation remains the right answer:
 | Sequence diagram shape | Four lanes only, `UI → API → <Name>Service → Store`. No `Repo`/`DB` lane, no SQL, no real parameter lists, every `UI→API` request answered with an HTTP status in every branch. The prior session's `plan.md` diagrams and the SDS §4.4.1 diagram violated this — an already-cited checklist rule that had been marked passed in error — and were redrawn. | constitution `DG-01`…`DG-07` |
 | Automation test location | Backend in `backend/tests/` (pytest); functional UI in `mobile/e2e/` (`@playwright/test`, real backend). UI tests assert behaviour, never visual design. | §1.1 rule 0; user ruling 2026-10-19 |
 | UI fast-track | Presentation and interaction work in `mobile/` may go from request to code; `[UI]` test cases and e2e tests follow. Backend, API and requirement changes keep the full cycle. | §2 *UI fast-track*; user ruling 2026-10-19 |
+| Deployment | **Android only** (APK via EAS cloud, no store, no iOS); the backend on this laptop behind a free Cloudflare quick tunnel; SQLite in production. Web stays the dev surface and e2e target. | `constitution.md` ENV-05/ENV-06; SDS §4.5 v1.5.0; user ruling 2026-10-22 |
 
 ### Story ID map
 
@@ -281,6 +282,27 @@ Each run creates its own ADMIN through `app.cli create-admin`, and each test its
 
 Swagger at `/docs`, ReDoc at `/redoc`. FastAPI ≥0.141 makes `include_router` lazy — to list routes read `app.openapi()["paths"]`, not `app.routes`.
 
+### Serving to phones (the live server)
+
+The family's Android phones talk to **this laptop** through a free Cloudflare quick tunnel
+(`constitution.md` ENV-05, ENV-06). One-time setup: `cloudflared` in `~/.local/bin` (a single
+binary from github.com/cloudflare/cloudflared releases, no account), Windows set to never sleep
+while plugged in.
+
+```bash
+scripts/serve.sh            # tunnel + production backend on :8100; prints the server address
+```
+
+- It serves **`backend/var/live/`** — its own SQLite database, JWT secret and logs (gitignored) —
+  never the dev database, so the demo and e2e accounts are not on the internet. The dev backend on
+  :8000 can keep running beside it.
+- The address (`https://<random>.trycloudflare.com/api/v1`) **changes on every start**. Invitation
+  emails carry it (`pfm://activate?token=…&server=…`); anyone signing in by hand types it into the
+  app's sign-in screen.
+- First ADMIN for the live database:
+  `cd backend && DATABASE_URL=sqlite:///./var/live/pfm.db uv run python -m app.cli create-admin --email … --password '…'`
+- Back up by copying `backend/var/live/pfm.db`.
+
 ### Checking the mermaid diagrams
 
 Run this at the **Design** gate, before claiming step 2. Both `plan.md` diagrams once shipped
@@ -350,10 +372,11 @@ Note the last line: verification closes by recording results **in `test_cases.md
 ## 5. Current state and boundaries
 
 - **Built:** seven epics, `specs/001`–`007` (UM, SS, WM, CM, BM, TM, FR). Every story's backend is through the cycle. **Out of scope:** SRS Features 08–11 and the SDS-only stories in the *Story ID map*.
-- **`mobile/` is the real client**, an Expo web app on the real backend (the old fixture/mock mode was removed, 2026-10-19). One screen, `app/index.tsx`, renders over a fullscreen canvas background (`src/scene/`) that plays the Nullscapes sequence — intro, mountains, storm, moon — locked to the looped track: sign-in, account activation (`/activate?token=…`, also served by `app/activate.tsx`), then the Home, Wallets, Activity, Budgets and Family (ADMIN) tabs, switched by a camera pan. VND is the default currency. Web is the only run target (ENV-04). It was built under the *UI fast-track* (§2); its `[UI]` test cases and `mobile/e2e/` tests are being added after the fact. Findings that cost real debugging time live in `mobile/AGENTS.md`.
+- **Mobile-first, Android only** (user ruling, 2026-10-22; `constitution.md` ENV-05/ENV-06): the app ships as an EAS-built APK, verified by hand on a real phone, and the backend is served from this laptop by `scripts/serve.sh` (§3 *Serving to phones*). The web build stays the development surface and the e2e target.
+- **`mobile/` is the real client**, an Expo app on the real backend (the old fixture/mock mode was removed, 2026-10-19). One screen, `app/index.tsx`, renders over a fullscreen canvas background (`src/scene/`) that plays the Nullscapes sequence — intro, mountains, storm, moon — locked to the looped track: sign-in, account activation (`/activate?token=…`, also served by `app/activate.tsx`), then the Home, Wallets, Activity, Budgets and Family (ADMIN) tabs, switched by a camera pan. VND is the default currency. Until the Android port lands, web is the only target it has run on. It was built under the *UI fast-track* (§2); its `[UI]` test cases and `mobile/e2e/` tests are being added after the fact. Findings that cost real debugging time live in `mobile/AGENTS.md`.
 - **The discarded implementation-first attempt has been deleted.** Its code remains recoverable with `git show 56768c8` if a detail is ever needed; do not restore it, and never import from it. Its lesson is the one at the top of this file.
 - **`specs/` is the tracked deliverable, not scratch space.** `.gitignore` excludes `.venv`, `__pycache__`, `*.db`, `.env`, `node_modules/`, tool caches — and `docs/`, which is kept on disk but deliberately untracked (§1.1 rule 0). Earlier commits still contain `docs/`; `git show <sha>:docs/<path>` retrieves a file if one is ever needed.
-- Dev DB is SQLite; PostgreSQL is the deployment target (SDS §4.5).
+- Dev and live databases are both SQLite (`backend/pfm.db`, `backend/var/live/pfm.db`); PostgreSQL is the supported alternative, one `DATABASE_URL` change away (SDS §4.5 v1.5.0).
 
 ## 6. Honesty rules
 

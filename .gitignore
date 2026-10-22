@@ -52,3 +52,4 @@ Thumbs.db
 # Playwright e2e output
 mobile/test-results/
 mobile/playwright-report/
+backend/var/live/
