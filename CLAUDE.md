@@ -11,13 +11,13 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 | File | Owner | Rule |
 | :-- | :-- | :-- |
 | `SRS.md` v2.2.0 | the user; AI may **align**, not extend | Requirements baseline: FR, NFR, UXR, BF, Features 01–11 with Gherkin, §1.5 Conceptual Domain Model. See *They are references, not contracts* below. |
-| `SDS.md` v1.5.0 | the user; AI may **align** | Technical baseline: domain model, ERD, architecture, API design, security design. See *They are references, not contracts* below. |
+| `SDS.md` v1.5.1 | the user; AI may **align** | Technical baseline: domain model, ERD, architecture, API design, security design. See *They are references, not contracts* below. |
 | `aif-review-checklist.md` | the user | Run before claiming any step gate. Edited once to remove Jira and record stack adaptations; otherwise treat as the user's. |
 | `artifact-templates/*.md` | the user | **Read-only. Never edit. Never split.** The canonical shape of every artifact — see §1.1. |
 | `constitution.md` | AI + user | Project rules with stable IDs (AR/API/NC/VL/LA/PF/SEC/TST/DOD/ENV), derived from the SDS. |
 | `specs/**` | AI + user | The working artifacts, and the only ones. Design output goes here — **never** into `SDS.md`. |
 
-`SDS.md` was aligned to `SRS.md` on 2026-07-30 (v1.1.0), to the built system on 2026-07-31 (v1.2.0), to the `DG` diagram convention the same day (v1.3.0), its Category ERD to §2.2 while specifying CM-US-01 (v1.4.0), and its §4.5 physical view to the laptop-and-Android deployment ruling on 2026-10-22 (v1.5.0); `SRS.md` was aligned on 2026-07-31 (v2.1.0) and gained its conceptual domain model, §1.5, at the user's explicit request the same day (v2.2.0). **`SRS.md` wins any remaining disagreement** — the rulings are in *Resolved contradictions* below.
+`SDS.md` was aligned to `SRS.md` on 2026-07-30 (v1.1.0), to the built system on 2026-07-31 (v1.2.0), to the `DG` diagram convention the same day (v1.3.0), its Category ERD to §2.2 while specifying CM-US-01 (v1.4.0), and its §4.5 physical view to the laptop-and-Android deployment ruling on 2026-10-22 (v1.5.0, v1.5.1); `SRS.md` was aligned on 2026-07-31 (v2.1.0) and gained its conceptual domain model, §1.5, at the user's explicit request the same day (v2.2.0). **`SRS.md` wins any remaining disagreement** — the rulings are in *Resolved contradictions* below.
 
 ## 1.1 Artifact rules
 
@@ -115,7 +115,7 @@ Where a deviation remains the right answer:
 | Sequence diagram shape | Four lanes only, `UI → API → <Name>Service → Store`. No `Repo`/`DB` lane, no SQL, no real parameter lists, every `UI→API` request answered with an HTTP status in every branch. The prior session's `plan.md` diagrams and the SDS §4.4.1 diagram violated this — an already-cited checklist rule that had been marked passed in error — and were redrawn. | constitution `DG-01`…`DG-07` |
 | Automation test location | Backend in `backend/tests/` (pytest); functional UI in `mobile/e2e/` (`@playwright/test`, real backend). UI tests assert behaviour, never visual design. | §1.1 rule 0; user ruling 2026-10-19 |
 | UI fast-track | Presentation and interaction work in `mobile/` may go from request to code; `[UI]` test cases and e2e tests follow. Backend, API and requirement changes keep the full cycle. | §2 *UI fast-track*; user ruling 2026-10-19 |
-| Deployment | **Android only** (APK via EAS cloud, no store, no iOS); the backend on this laptop behind a free Cloudflare quick tunnel; SQLite in production. Web stays the dev surface and e2e target. | `constitution.md` ENV-05/ENV-06; SDS §4.5 v1.5.0; user ruling 2026-10-22 |
+| Deployment | **Android only** (APK via EAS cloud, no store, no iOS); the backend on this laptop, published on a fixed Tailscale Funnel address built into the APK; SQLite in production. Web stays the dev surface and e2e target. | `constitution.md` ENV-05/ENV-06; SDS §4.5 v1.5.1; user ruling 2026-10-22 |
 
 ### Story ID map
 
@@ -284,21 +284,25 @@ Swagger at `/docs`, ReDoc at `/redoc`. FastAPI ≥0.141 makes `include_router` l
 
 ### Serving to phones (the live server)
 
-The family's Android phones talk to **this laptop** through a free Cloudflare quick tunnel
-(`constitution.md` ENV-05, ENV-06). One-time setup: `cloudflared` in `~/.local/bin` (a single
-binary from github.com/cloudflare/cloudflared releases, no account), Windows set to never sleep
-while plugged in.
+The family's Android phones talk to **this laptop** at a fixed address,
+**`https://an-dang.tail8ac910.ts.net`**, published by Tailscale Funnel (`constitution.md` ENV-05,
+ENV-06) and built into the Android app (`mobile/eas.json`), so nobody enters an address. One-time
+setup, already done: Tailscale for Windows (installed at `D:\tailscale.exe`, signed in, Funnel approved
+for the tailnet), Windows set to never sleep while plugged in. Tailscale runs on Windows because WSL
+here has no systemd; its CLI is called from WSL, and Windows forwards `127.0.0.1:8100` into WSL.
 
 ```bash
-scripts/serve.sh            # tunnel + production backend on :8100; prints the server address
+scripts/serve.sh            # points Funnel at :8100, then runs the production backend there
 ```
 
 - It serves **`backend/var/live/`** — its own SQLite database, JWT secret and logs (gitignored) —
   never the dev database, so the demo and e2e accounts are not on the internet. The dev backend on
   :8000 can keep running beside it.
-- The address (`https://<random>.trycloudflare.com/api/v1`) **changes on every start**. Invitation
-  emails carry it (`pfm://activate?token=…&server=…`); anyone signing in by hand types it into the
-  app's sign-in screen.
+- Funnel's configuration lives in the Tailscale app and survives restarts; `tailscale.exe funnel
+  status` shows it. Invitation emails open the app (`pfm://activate?token=…&server=…`).
+- **`scripts/dev-phone.sh`** is for development only: it serves the app's *code* (Metro, :8081) to
+  the PFM development build through a Cloudflare quick tunnel (`cloudflared` in `~/.local/bin`). The
+  family APK (`preview` profile) never uses it.
 - First ADMIN for the live database:
   `cd backend && DATABASE_URL=sqlite:///./var/live/pfm.db uv run python -m app.cli create-admin --email … --password '…'`
 - Back up by copying `backend/var/live/pfm.db`.

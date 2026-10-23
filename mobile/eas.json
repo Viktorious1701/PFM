@@ -11,7 +11,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "none"
+        "EXPO_PUBLIC_API_BASE_URL": "https://an-dang.tail8ac910.ts.net/api/v1"
       }
     },
     "preview": {
@@ -21,7 +21,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "none"
+        "EXPO_PUBLIC_API_BASE_URL": "https://an-dang.tail8ac910.ts.net/api/v1"
       }
     }
   }

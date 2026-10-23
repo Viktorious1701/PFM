@@ -6,8 +6,9 @@
  * it ships to the device.
  */
 
-// The default server. `none` (the phone builds, eas.json) means there is no
-// default: the family's address changes, so the sign-in screen asks for it.
+// The default server: the dev backend on web; the family's fixed Tailscale
+// Funnel address in the phone builds (eas.json). `none` means no default —
+// the sign-in screen then asks for one.
 const configured = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 export const API_BASE_URL = configured === 'none' ? '' : configured;
 

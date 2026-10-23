@@ -332,7 +332,8 @@ rework was needed and no defect was found along the way.
 | TC-52 | SS-US-01 | AC-08 | `mobile/e2e/auth.spec.ts` › TC-52 | PASS — 2026-10-19, desktop + phone |
 | TC-53 | SS-US-02 | AC-01 | `mobile/e2e/auth.spec.ts` › TC-53 | PASS — 2026-10-19, desktop + phone |
 | TC-54 | SS-US-01 | — (server address, `constitution.md` ENV-06) | `mobile/e2e/auth.spec.ts` › TC-54 | PASS — 2026-10-22, desktop + phone |
-| TC-55 | SS-US-01 | — (server address, `constitution.md` ENV-06) | `mobile/e2e/auth.spec.ts` › TC-55 | PASS — 2026-10-22, desktop + phone |
+| TC-55 | SS-US-01 | — (server address, `constitution.md` ENV-06) | — (test replaced by TC-57) | Superseded by TC-57 — 2026-10-22: the hint no longer names a trycloudflare.com address, since the server moved to a fixed Tailscale Funnel address |
+| TC-57 | SS-US-01 | — (server address, `constitution.md` ENV-06) | `mobile/e2e/auth.spec.ts` › TC-57 | PASS — 2026-10-23, desktop + phone |
 | TC-56 | SS-US-01 | — (server address, `constitution.md` ENV-06) | `mobile/e2e/auth.spec.ts` › TC-56 | PASS — 2026-10-22, desktop + phone |
 
 ### TC-49: An ACTIVE account signs in and stays signed in across a reload
@@ -404,6 +405,15 @@ rework was needed and no defect was found along the way.
 - **Given:** The server address set to one where nothing is listening
 - **When:** An email and password are submitted
 - **Then:** "Could not reach the server. Check your connection and the server address." is shown; the sign-in panel stays
+- **AC:** — (`constitution.md` ENV-06)
+- **Type:** e2e
+
+### TC-57: Something that isn't a server address is refused before anything is sent (supersedes TC-55)
+
+- **US:** SS-US-01
+- **Given:** The sign-in panel with the server address open for editing
+- **When:** `not a server` is entered and Use this server is pressed
+- **Then:** "That isn’t a server address. It looks like laptop-name.tailnet.ts.net" is shown; the address is not changed; no request is sent
 - **AC:** — (`constitution.md` ENV-06)
 - **Type:** e2e
 

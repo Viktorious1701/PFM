@@ -1,8 +1,8 @@
 /**
  * Which server the app talks to, under the sign-in and activation panels.
- * The family's server address changes whenever the laptop restarts its
- * tunnel (constitution ENV-06), so it can be changed here. It is always
- * shown, so nobody types a password into a server they didn't expect.
+ * The phone builds carry the family server's address (constitution ENV-06);
+ * Change is the way out if that server ever moves. It is always shown, so
+ * nobody types a password into a server they didn't expect.
  */
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -20,7 +20,7 @@ export function ServerLine() {
 
   const save = () => {
     if (!setServerAddress(draft)) {
-      setError('That isn’t a server address. It looks like abc-def.trycloudflare.com');
+      setError('That isn’t a server address. It looks like laptop-name.tailnet.ts.net');
       return;
     }
     setError(null);
@@ -56,7 +56,7 @@ export function ServerLine() {
         label="Server address"
         value={draft}
         onChangeText={setDraft}
-        placeholder="abc-def.trycloudflare.com"
+        placeholder="laptop-name.tailnet.ts.net"
         keyboardType="url"
         testID="server-field"
         onSubmitEditing={save}

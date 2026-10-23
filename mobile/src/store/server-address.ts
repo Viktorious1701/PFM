@@ -1,9 +1,9 @@
 /**
- * Where the API lives. The family's server is a laptop behind a free
- * Cloudflare quick tunnel whose address changes on every start
- * (constitution ENV-06), so the address is a per-device setting rather than
- * something baked into the build: typed on the sign-in screen, or carried in
- * an invitation link (`pfm://activate?token=…&server=…`).
+ * Where the API lives. The phone builds carry the family server's fixed
+ * address (constitution ENV-06), so normally nobody sets this. It stays a
+ * per-device setting so the server can move without a new build: changed on
+ * the sign-in screen, or carried in an invitation link
+ * (`pfm://activate?token=…&server=…`).
  *
  * `EXPO_PUBLIC_API_BASE_URL` is the default (the dev backend on web). The
  * value `none` means "no default": the sign-in screen asks for one.
@@ -32,7 +32,7 @@ const loaded = readSetting(KEY).then((stored) => {
 
 /**
  * Turns what someone typed or pasted into an API base URL:
- * `abc.trycloudflare.com` → `https://abc.trycloudflare.com/api/v1`.
+ * `laptop.tailnet.ts.net` → `https://laptop.tailnet.ts.net/api/v1`.
  * Returns null for something that isn't an http(s) address.
  */
 export function normalizeServerAddress(input: string): string | null {
@@ -75,7 +75,7 @@ export function useServerAddress(): string | null {
   return useSyncExternalStore(subscribe, () => current, () => current);
 }
 
-/** `https://abc.trycloudflare.com/api/v1` → `abc.trycloudflare.com`. */
+/** `https://laptop.tailnet.ts.net/api/v1` → `laptop.tailnet.ts.net`. */
 export function serverHost(address: string): string {
   return /^[a-z]+:\/\/([^/]+)/i.exec(address)?.[1] ?? address;
 }

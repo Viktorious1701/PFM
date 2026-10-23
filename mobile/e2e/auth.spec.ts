@@ -91,18 +91,6 @@ test('TC-54 The sign-in panel names its server, and a changed address is used an
   await expect(page.getByTestId('server-host')).toHaveText('127.0.0.1:8000');
 });
 
-test('TC-55 Something that is not a server address is refused before anything is sent', async ({ page }) => {
-  await page.goto('/');
-  await page.getByTestId('server-change').click();
-  const api = recordApi(page);
-  await page.getByTestId('server-field').fill('not a server');
-  await page.getByTestId('server-save').click();
-  await expect(alert(page)).toHaveText('That isn’t a server address. It looks like abc-def.trycloudflare.com');
-  await page.getByTestId('server-cancel').click();
-  await expect(page.getByTestId('server-host')).toHaveText('localhost:8000');
-  expect(api.sent).toHaveLength(0);
-});
-
 test('TC-56 An unreachable server is named as the problem', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('server-change').click();
@@ -113,4 +101,16 @@ test('TC-56 An unreachable server is named as the problem', async ({ page }) => 
   await page.getByTestId('login-submit').click();
   await expect(alert(page)).toHaveText('Could not reach the server. Check your connection and the server address.');
   await expect(page.getByTestId('login-submit')).toBeVisible();
+});
+
+test('TC-57 Something that is not a server address is refused before anything is sent', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('server-change').click();
+  const api = recordApi(page);
+  await page.getByTestId('server-field').fill('not a server');
+  await page.getByTestId('server-save').click();
+  await expect(alert(page)).toHaveText('That isn’t a server address. It looks like laptop-name.tailnet.ts.net');
+  await page.getByTestId('server-cancel').click();
+  await expect(page.getByTestId('server-host')).toHaveText('localhost:8000');
+  expect(api.sent).toHaveLength(0);
 });

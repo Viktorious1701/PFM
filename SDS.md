@@ -1,6 +1,6 @@
 # Software Design Specification (SDS)
 ## Personal Finance Management (PFM) System
-**Document Version:** 1.5.0  
+**Document Version:** 1.5.1  
 **Status:** Approved for Implementation  
 **Aligned to:** SRS v2.2.0 (see §1.6 Revision History)  
 
@@ -149,6 +149,7 @@ refer to the same stories. Always cite both.
 | **1.3.0** | **§4.4.1's sequence diagram redrawn to the `constitution.md` `DG` group** adopted this session: four lanes only (`UI → API → Service → Store`), no SQL or repository lane, no parameter lists, every request answered with an HTTP status. v1.2.0's diagram — while itself an improvement over v1.0.0's sketch — had reintroduced a `Repo`/`DB` lane and query-shaped labels (`INSERT x2`, `UPDATE x2, same flush`, `SELECT`), which is exactly what `DG-01`/`DG-04` now forbid. No design fact changes: the same commit boundary, the same fixed check order, the same post-commit mail dispatch — only how they are drawn. |
 | **1.4.0** | **Aligned an internal contradiction found while specifying CM-US-01** (`specs/004-category-management/`). §2.2's Category domain object and §5.4.4's CM-US-04 goal ("Modify category name, type, or icon") both already treated `icon` as a real Category attribute, but §4.3.3's `CATEGORIES` ERD block omitted it — the same class of ERD gap WM-US-01 found in `wallets.created_at`. The ERD is the one corrected: a nullable `string icon` added to §4.3.3's `CATEGORIES` block, so it matches §2.2 and §5.4.4 rather than the other way around. No requirement was added or reinterpreted — CM-US-01's own AC set (SRS Gherkin, FR-04, SDS §5.4.1) never mentions `icon`, so the `categories` table CM-US-01 itself creates still carries only `id`, `user_id`, `name`, `type`; the `icon` column is left for CM-US-04, the story whose own goal names it (see `specs/004-category-management/plan.md` G1, A4). |
 | **1.5.0** | **§4.5 Physical View aligned to the user's deployment ruling of 2026-10-22** (`constitution.md` ENV-05, ENV-06): Android only, as an EAS-built APK (iOS dropped); the backend served from the family laptop through a Cloudflare quick tunnel instead of a Docker container on a PaaS; SQLite instead of PostgreSQL. Both former choices are kept as the documented alternatives. No requirement, endpoint contract or domain fact changed. |
+| **1.5.1** | **§4.5 corrected the same day:** the backend is published through Tailscale Funnel on a fixed `*.ts.net` address built into the Android app, replacing v1.5.0's Cloudflare quick tunnel, whose address changed on every start and had to be entered on each phone (`constitution.md` ENV-06, amended). Nothing else changed. |
 
 ---
 
@@ -517,7 +518,7 @@ sequenceDiagram
 
 ### 4.5 Physical View
 * **Mobile Client:** Expo native app on **Android**, built in the EAS cloud and installed as an APK. The same codebase also runs as a web app, used for development and as a secondary client.
-* **Backend Application:** FastAPI service on the family's own laptop (WSL2), started by `scripts/serve.sh` and exposed through a Cloudflare quick tunnel (HTTPS; the public address changes on every start, so invitation links carry it). A container on a PaaS remains the documented alternative.
+* **Backend Application:** FastAPI service on the family's own laptop (WSL2), started by `scripts/serve.sh` and published through Tailscale Funnel on a fixed HTTPS address, which the Android build carries built in. A container on a PaaS remains the documented alternative.
 * **Database:** SQLite file on that laptop, with Alembic migrations applied at start. PostgreSQL remains the supported alternative (one `DATABASE_URL` change).
 
 ### 4.6 Key Scenarios
