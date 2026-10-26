@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-02 · SDS §5.1 (SS)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** SS-US-01 *(implemented, verified — 14 tests, 100% coverage on new code)* · SS-US-02 *(planned)*
+> **Stories in this file:** SS-US-01 *(implemented, verified — 14 tests, 100% coverage on new code)* · SS-US-02 *(planned)* · SS-US-03 *(planned)*
 
 ---
 
@@ -329,3 +329,380 @@ story emits only the already-catalogued `NOT_AUTHENTICATED`.
 | T-02 | `auth_service.py`: add `logout()` | `backend/app/services/auth_service.py` | Open |
 | T-03 | `POST /api/v1/auth/logout` router, guarded by `CurrentUserDep` | `backend/app/api/v1/auth.py` | Open |
 | T-04 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_ss_us_02_logout.py` | Open |
+
+---
+
+## SS-US-03: Guest trial
+
+> **IDs in this section are local to SS-US-03**, matching `spec.md`'s convention. Only `TC-NN` in
+> `test_cases.md` runs continuously across the epic.
+
+### Gaps & Decisions (Resolved)
+
+| ID | Area | Decision | Status |
+|----|------|----------|--------|
+| A1 | Data | **`UserRole.GUEST` needs no schema change; `users.expires_at` does.** `users.role` is `Enum(UserRole, native_enum=False, length=10)` — a `VARCHAR(10)` with no `CHECK` constraint (`c9d6ddbb50f4` creates none), so `"GUEST"` fits as a new enum member only. Trial end is a new nullable, timezone-aware, **indexed** `users.expires_at` (indexed because purge and the cap both filter on it, PF-02), added by an Alembic migration that copies `e7a1c3f9b2d4`'s `batch_alter_table` add-column pattern. `NULL` for every member — no backfill. Name follows NC-04 (`expires_at`, as on `invitations`). SDS §2.2/§2.3/§4.3.3 aligned at v1.6.0. | ✅ Resolved |
+| A2 | Security | **Placeholder address `guest-<uuid4>@guest.invalid`.** `.invalid` is reserved (RFC 2606, RFC 6761) and can never resolve, so a guest is never mailable (SEC-12) while `users.email` stays `NOT NULL` + unique with no change anywhere. **Second, structural guard found while designing:** Pydantic's `EmailStr` already rejects special-use domains — checked 2026-10-26 with `uv run python -c …` in `backend/`: `guest-1234@guest.invalid REJECT … "The part after the @-sign is a special-use or reserved name that cannot be used with email."` — so no request body anywhere (login, invite) can even name a guest's address; it fails at `422` before any service runs. | ✅ Resolved |
+| A3 | API | **`POST /api/v1/auth/guest`, public, no body, `201`.** `201` because it creates an account (API-03); login stays `200` because it creates nothing. Response `GuestSessionRead` = `TokenResponse` + `expires_at` (tz-aware, `clock.ensure_aware`); `TokenResponse.role` widens to `Literal["ADMIN", "USER", "GUEST"]` so the subclass need not override it. `expires_in` = seconds until `expires_at` (604800). **This is the ADR API-08 requires for a new public route:** the route must be public because a visitor by definition holds no credential; its exposure is bounded by A10/A12 and SEC-12. Registered as `SS-API-03` (SDS §6.3/§6.5, v1.6.0). | ✅ Resolved |
+| A4 | Security | **The guest token's `exp` is the trial end**, via the existing `security.encode_jwt(..., ttl_minutes=guest_ttl_days * 24 * 60)` — no signature change. `encode_jwt` reads `clock.utcnow()` itself, so `exp` and `expires_at` come from two clock reads microseconds apart, and JWT `exp` is whole seconds. That is acceptable because the token's `exp` is only a backstop: the **authoritative** check is A5's comparison against the stored `expires_at`, which is what EC-01's boundary is tested against. This is SEC-12's one exception to SEC-06's 60 minutes (spec AC-04), and it is also what lets a saved trial be continued days later (A17). | ✅ Resolved |
+| A5 | Security | **`get_current_user` refuses a `GUEST` whose `expires_at` has passed** — `clock.utcnow() >= clock.ensure_aware(user.expires_at)` → `NotAuthenticatedError`, the existing single `401` (spec AC-05, EC-01, EC-02; SEC-10). This *does* change already-verified code that SS-US-01 A4 and SS-US-02 A4 recorded as untouched: stated here rather than done silently, and bounded by re-running every existing suite unmodified (T-11). A purged guest needs no new check — its row is gone, so `get_by_id` already returns `None` → `401`. | ✅ Resolved |
+| A6 | Code | **The example is created by calling the existing services, not by writing rows directly.** `wallet_service.create_wallet(owner=guest, name="Example wallet", wallet_type="Cash", currency="VND", initial_balance=Decimal("500000.00"))`, `category_service.create_category(owner=guest, name="Food", category_type=EXPENSE)`, `transaction_service.create_transaction(owner=guest, …, amount=Decimal("50000.00"), type=EXPENSE, note="Example: lunch")` — so ownership, type agreement, and the conditional balance decrement are the members' own rules, and the balance reads 450,000.00 because the same code that serves a member put it there (spec FR-03). A category is required because `transactions.category_id` is `NOT NULL`. Wallet type `"Cash"` is chosen from the client's own type list (`WalletsPage.tsx` `TYPES`) and SRS FR-03's examples; no rule names one. | ✅ Resolved |
+| A7 | Code | **One request, one transaction** (NFR-05, AR-06). `guest_service.start()` flushes only; the router commits. The lazy purge runs first **inside the same transaction**, so a `503` refusal rolls the purge back too — harmless, since a purge that freed a place would have left the count under the cap and no refusal would have happened. A failure anywhere in seeding rolls back the guest row with it (spec AC-12). | ✅ Resolved |
+| A8 | Data | **Purge deletes child-first, explicitly, inside `purge_expired()`.** No foreign key declares `ondelete`, no ORM relationship cascades, and SQLite does not enforce foreign keys here — nothing removes a guest's rows unless the purge does. Per ended guest, in order: transactions whose wallet **or** category is the guest's · budgets whose wallet or category is the guest's · the guest's categories · the guest's wallets · the guest's `users` row. "Or category" is defensive — the services already refuse cross-owner references — and costs nothing. Child-first is also the only order PostgreSQL (FK-enforcing) accepts, so the same code is correct on both (ENV-03). Each entity's repository gets one bulk `delete_all_for_owner(user_id)` returning its row count (AR-03, NC-01) — no `guest_repo` that would reach into four tables. The purge is the **only** caller (sign-out deletes nothing, A17), so no separate shared deletion function is introduced. Members' and live guests' rows are untouched because every predicate is ownership by an *ended* guest's id. | ✅ Resolved |
+| A9 | Code | **Purge runs at three points and nowhere else** (spec FR-07): a new FastAPI `lifespan` in `main.py` at startup (own session, commits — EC-04); lazily at the start of every `guest_service.start()` (EC-03); and a new CLI `python -m app.cli purge-guests` (own session, commits, prints the counts). No background scheduler — none exists in this codebase and SDS §2.4.2 already says "no sweeper in the MVP"; A5 is what makes the gap between trial end and deletion safe (EC-02). | ✅ Resolved |
+| A10 | Security | **Per-client rate limit with `slowapi`** — the library SDS §7.3 already names; new dependency. `Limiter(key_func=get_remote_address)`, decorator on `POST /auth/guest` only, limit string from a new setting `guest_rate_limit = "5/hour"`. Its exception is mapped to the flat envelope `429 RATE_LIMIT_EXCEEDED` (the code `main.py`'s `_HTTP_ERROR_CODES` already lists) — slowapi's default handler returns its own body, which would break API-02. In-memory storage: per process and reset on restart, which is acceptable for one uvicorn process on one laptop (ENV-06). **Configurable for one reason only:** the dev backend that `mobile/e2e/` runs against sees every e2e request from `127.0.0.1`, and the guest e2e tests start more than 5 trials an hour across the desktop and phone projects — so the dev `.env` raises it; production keeps 5/hour. Tests reset the limiter's storage between tests (TST-08). | ✅ Resolved |
+| A11 | Environment | **Assumption — the client address behind Funnel is the visitor's, to be confirmed at Implement/Deploy (T-15).** `scripts/serve.sh` runs uvicorn with defaults: `--proxy-headers` on, `forwarded_allow_ips=127.0.0.1`. Funnel reaches uvicorn from `127.0.0.1` (Windows forwards into WSL), so uvicorn should replace the peer address with the `X-Forwarded-For` client. `backend/var/live/backend.log` supports this: public remote addresses such as `45.138.12.65` and `45.138.12.6`, and the tailnet's `100.116.139.73`, all logged with port `0` — the signature of proxy-header rewriting. If confirmation fails, the limiter would count every visitor as one client (a 5-per-hour limit for the whole internet) and `key_func` must read the forwarded client from the trusted proxy explicitly — a plan change made before code, not after. Whether a visitor can spoof `X-Forwarded-For` through Funnel is part of the same confirmation. | ✅ Resolved *(assumption, confirmation is T-15)* |
+| A12 | Security | **Global cap: `guest_max_active = 200`, refused `503 GUEST_LIMIT_REACHED`** (new `GuestLimitReachedError`). Counted *after* the lazy purge, as all `GUEST` rows (every remaining one is live). `503`, not `409`/`429`: the condition is the server's capacity, not the caller's state or rate. Soft under concurrency — two simultaneous starts at 199 could both pass — bounded by the number of concurrent requests to one process, with SQLite serialising writers; accepted. A saved trial a device has replaced (spec AC-19) still holds a place until its own end — bounded by A10's per-client limit. | ✅ Resolved |
+| A13 | Security | **Guests are invisible to, and inert towards, the family.** `user_repo.list_users` adds `role != GUEST` to **both** the page query and the count (spec AC-08). Invite: A2 already refuses a `@guest.invalid` address at `422`; `invitation_service.create_invitation` adds a defensive check on the normalised address (suffix `@guest.invalid`) raising the same `ValidationError` (`422`), so the two layers cannot disagree if `EmailStr` ever changes. `cli promote-admin` refuses a row whose role is `GUEST` (exit `1`, message on stderr, row unchanged). Invite and list are already `AdminDep` → `403` for a guest (spec AC-09). | ✅ Resolved |
+| A14 | Logging | **Two audit events** (spec AC-13): `GUEST_CREATED` — actor and target the guest's id, result `SUCCESS`, plus `expires_at`; `GUEST_PURGED` — one per ended guest, actor `None` (the system), target the guest's id, result `SUCCESS`, plus `wallets`, `categories`, `budgets`, `transactions` counts. None of those keys contains `token`/`password`/`hash`/`secret`, so `audit.record()`'s guard admits them; the token itself is never passed. Refused starts (`429`, `503`) are not audited — LA-03 covers only `401`/`403`, and no AC asks. A guest's sign-out emits nothing, exactly as SS-US-02 A2 decided for every sign-out. | ✅ Resolved |
+| A15 | Client | **Session changes are additive.** `UserRole` gains `'GUEST'`; `api/auth.ts` `guestLogin()`; `store/auth.ts` `signInAsGuest()` reuses `signIn`'s set-and-store path and also stores `expires_at`, exposing `isGuest` and `trialEndsAt` from `useAuth()`. Banner under the header with `testID="guest-banner"`, SRS text unchanged. **Sign-out is unchanged for a guest** — the same one-tap `signOut()` a member uses, calling `POST /auth/logout` then clearing the active session; no confirmation dialog, because nothing is lost (spec AC-15). A `429`/`503` from the guest button shows the envelope's message. The Family tab is already hidden for every non-ADMIN (`index.tsx` `TAB_ADMIN_ONLY`). | ✅ Resolved |
+| A16 | Config | **Three new settings, each justified by an AC:** `guest_ttl_days = 7` (BR-01), `guest_max_active = 200` (AC-11), `guest_rate_limit = "5/hour"` (AC-10). `.env.example` documents all three. | ✅ Resolved |
+| A17 | Client | **The saved guest trial lives only on the device; the server is unchanged for it.** `session-storage.ts` gains a second slot beside the active session — `pfm.guest_trial.token` and `pfm.guest_trial.expires_at` — with the same platform split as the existing keys (`expo-secure-store` on Android, `localStorage` on web), and `getSavedGuestTrial()` / `setSavedGuestTrial()` / `clearSavedGuestTrial()`. **Written when a trial starts**, not at sign-out: `signInAsGuest()` stores the new trial in both the active session and the saved slot, overwriting any earlier saved trial — that is BR-08's one-per-device and AC-19's replacement, with no extra step at sign-out. `signOut()` clears only the active session, so the slot survives a guest's sign-out (AC-15), a member's sign-in and sign-out (AC-20), and a failed logout request (EC-11). The server keeps nothing about it: `POST /auth/logout` stays exactly as SS-US-02 built it — stateless, deletes nothing — for members and guests alike, and a guest's token stays valid until `expires_at` (A4/A5), which is all continuing needs. | ✅ Resolved |
+| A18 | Client | **Continuing confirms with the server first, through an existing route.** On "Continue guest trial", `continueGuestTrial()` sends one `GET /api/v1/wallets?page=1&page_size=1` with the saved token — any `CurrentUserDep` route would do; the Wallets list is what Home loads anyway, so no new endpoint and no API change. `200` → the saved token becomes the active session (role `GUEST`, its `expires_at`) and Home loads. `401` → the saved slot is cleared, the button disappears, and `"Your guest trial has ended."` is shown (`testID="guest-trial-ended"`, spec AC-18). Any other failure (network, `5xx`) keeps the saved trial and shows the usual connection message, since nothing says the trial has ended. A saved trial whose `expires_at` is already past by the device's clock is cleared when the sign-in screen renders, **without** a request and without a message (spec AC-17 — the ruling names a message only for the server's refusal). The existing 401 handler additionally clears the saved slot when the session it ends was a guest's, and the sign-in screen then shows the same ended message (spec EC-12). | ✅ Resolved |
+| A19 | Client | **N = whole days left, rounded down, never below 1 while live:** `max(1, floor((expires_at − now) / 1 day))`, computed on the device from the saved `expires_at` (spec EC-07). Right after a trial starts that reads "6 days left" — the literal reading of the ruling's "whole days until expires_at, at least 1"; the label is "1 day left" when N is 1. Shown as "Continue guest trial — N days left" (`testID="guest-continue"`), below "Try as a guest" (`testID="login-guest"`). | ✅ Resolved |
+| A20 | Security | **Whoever holds the device can continue its saved trial — accepted.** The saved token is a 7-day bearer credential kept after sign-out. The product owner chose this (2026-10-26): a trial holds only trial data, ends on its own, and a visitor can always start a new one; only invited members get permanent accounts. It sits in the same storage the active session already uses (SDS §7.4), so it adds no new exposure *class*, only a longer-lived instance — and it can never reach a member's data (SEC-08). | ✅ Resolved |
+| F1 | Finding | **A latent login hole, found by tracing `auth_service.authenticate()` for a guest row.** It verifies `security.verify_password(password, hash_to_check or _DUMMY_PASSWORD_HASH)`. For any matched user whose `password_hash` is `NULL` and who is not `PENDING`, that compares the submitted password against the **dummy** hash — whose plaintext, `"dummy-placeholder-for-timing-parity"`, is in the source. Until now unreachable: every non-`PENDING` account had a hash. A guest is the first `ACTIVE` account without one, so `{guest address, dummy plaintext}` would be issued a token. Today only A2's `EmailStr` rejection stands in the way — one layer, and not one this service owns. **Fixed in design:** the password counts as verified only when the matched user has a real hash, and a `GUEST` account is refused with the generic `INVALID_CREDENTIALS` (SEC-10 — no new outcome), the dummy-hash comparison still running for timing parity (SS-US-01 A1). This **contradicts the brief's settled fact** "password_hash NULL so password login can never match a guest" — it could, through the dummy hash; recorded rather than assumed. Proven by `TC-77`, which calls the service directly because the API boundary (A2) would hide it. | ✅ Resolved |
+| F2 | Finding | **What a guest's sign-out does to its trial.** The first design left sign-out unspecified for a guest (data deleted only at expiry, with a confirmation dialog warning that leaving was final), and the question was raised at the design review. **Final product-owner ruling, 2026-10-26: sign-out does not delete the trial.** The device keeps it, and the sign-in screen offers "Continue guest trial — N days left" beside "Try as a guest", which always starts a new trial and replaces the saved one on that device; one saved trial per device; a member's sign-in does not discard it; data is deleted only when the 7 days end. Carried into spec AC-15…AC-20, BR-07, BR-08, FR-15…FR-17, EC-07, EC-10…EC-12; SRS US-02-03 (v2.4.0); SDS §2.2/§2.4.1/§5.1.3 (v1.6.0); SEC-12; designed as A15, A17–A20. | ✅ Resolved |
+
+---
+
+### Architecture
+
+**Package layout** (additions and changes only; everything else reused as-is).
+
+```text
+backend/
+├── pyproject.toml                       # update: add slowapi (A10)
+├── .env.example                         # update: GUEST_TTL_DAYS, GUEST_MAX_ACTIVE, GUEST_RATE_LIMIT
+├── migrations/versions/
+│   └── <rev>_add_expires_at_to_users.py # NEW  down_revision e7a1c3f9b2d4 — nullable tz DateTime + index (A1)
+└── app/
+    ├── core/
+    │   ├── config.py                    # update: guest_ttl_days, guest_max_active, guest_rate_limit (A16)
+    │   ├── deps.py                      # update: get_current_user refuses an ended GUEST (A5)
+    │   ├── errors.py                    # update: GuestLimitReachedError (503)
+    │   └── rate_limit.py                # NEW  the slowapi Limiter instance (A10)
+    ├── models/user.py                   # update: UserRole.GUEST, UserModel.expires_at
+    ├── repositories/
+    │   ├── user_repo.py                 # update: add_guest_user, list_ended_guests, count_guests,
+    │   │                                #         delete_user; list_users excludes GUEST (A13)
+    │   ├── transaction_repo.py          # update: delete_all_for_owner (A8)
+    │   ├── budget_repo.py               # update: delete_all_for_owner
+    │   ├── category_repo.py             # update: delete_all_for_owner
+    │   └── wallet_repo.py               # update: delete_all_for_owner
+    ├── schemas/auth.py                  # update: TokenResponse.role + GUEST, GuestSessionRead (A3)
+    ├── services/
+    │   ├── guest_service.py             # NEW  start(), purge_expired()
+    │   ├── auth_service.py              # update: F1 — no NULL-hash or GUEST login (logout() unchanged)
+    │   └── invitation_service.py        # update: refuse @guest.invalid (A13)
+    ├── api/v1/auth.py                   # update: POST /auth/guest, rate-limited (logout route unchanged)
+    ├── cli.py                           # update: purge-guests command; promote-admin refuses GUEST
+    └── main.py                          # update: lifespan purge, limiter state, 429 envelope handler
+
+backend/tests/integration/test_ss_us_03_guest_trial.py   # NEW  written at the Implement step
+
+mobile/
+├── src/api/types.ts                     # update: UserRole + 'GUEST', GuestSessionResponse
+├── src/api/auth.ts                      # update: guestLogin()
+├── src/store/session-storage.ts         # update: the trial end; the saved guest trial slot (A17)
+├── src/store/auth.ts                    # update: signInAsGuest(), continueGuestTrial(), isGuest,
+│                                        #         trialEndsAt, savedGuestTrial; 401 handler clears it (A18)
+├── src/components/wallet/LoginPanel.tsx # update: "Try as a guest", "Continue guest trial — N days left",
+│                                        #         the ended message (A18, A19)
+├── src/components/AppHeader.tsx         # update: guest banner (sign-out button unchanged)
+└── e2e/auth.spec.ts                     # update: TC-86…TC-95 appended at the Implement step (SS's e2e file)
+```
+
+**Domain objects**
+
+| Entity | Table | Key Fields | Notes |
+|--------|-------|------------|-------|
+| `UserModel` | `users` | `role` (+ `GUEST`), `expires_at` (new, nullable, indexed) | A guest: `status=ACTIVE`, `role=GUEST`, `email=guest-<uuid4>@guest.invalid`, `password_hash=NULL`, `full_name=NULL`, `expires_at=created + 7 days`. Members: `expires_at=NULL`. |
+| `WalletModel`, `CategoryModel`, `BudgetModel`, `TransactionModel` | unchanged | — | Owned by a guest exactly as by a member; removed child-first by the purge (A8). |
+| Saved guest trial | *none — device storage* | `token`, `expires_at` | One per device, written when a trial starts, kept through sign-out (A17). Not a server entity. |
+
+**DTOs** (`app/schemas/auth.py`)
+
+```python
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
+    role: Literal["ADMIN", "USER", "GUEST"]      # widened (A3) — login itself never returns GUEST (F1)
+
+class GuestSessionRead(TokenResponse):
+    expires_at: datetime                         # the trial end, tz-aware (clock.ensure_aware)
+```
+
+No request DTO — the route takes no body. `GuestSessionRead` has no field for the placeholder email,
+a password or a hash: the structural guard, same technique as `TokenResponse`/`LogoutResult`.
+`LogoutResult` and the logout route are untouched (A17).
+
+**API contract — `SS-API-03`**
+
+| | |
+|---|---|
+| Route | `POST /api/v1/auth/guest` — public (API-08, A3), no request body |
+| Success | `201` `GuestSessionRead` — `{"access_token": "…", "token_type": "bearer", "expires_in": 604800, "role": "GUEST", "expires_at": "2026-11-02T09:00:00+00:00"}` |
+| Limits | `5/hour` per client address → `429`; 200 live trials → `503` |
+| Afterwards | The token works on every `CurrentUserDep` route exactly as a `USER`'s, until `expires_at`; `AdminDep` routes `403` |
+| Sign-out | `POST /api/v1/auth/logout` (`SS-API-02`) unchanged — `200`, nothing deleted, the token keeps working, so the device can continue the trial (A17) |
+
+**Business rules enforced in service layer**
+
+| Rule | Source | Enforcement |
+|------|--------|-------------|
+| No credentials needed to start | AC-01, FR-01 | Router declares no `CurrentUserDep`/`AdminDep` — the fifth public route (A3) |
+| Per-client limit before anything else | AC-10, FR-10, BR-06 | `@limiter.limit(settings.guest_rate_limit)` on the route; `429` before the service runs (A10) |
+| Ended trials deleted before the cap is counted | EC-03, FR-07 | `guest_service.start()` calls `purge_expired()` first, same transaction (A7) |
+| Cap of 200 live trials | AC-11, FR-11, BR-06 | `user_repo.count_guests()` ≥ `guest_max_active` → `GuestLimitReachedError` (A12) |
+| Guest has no real email, no password, 7-day end | AC-01, AC-07, FR-02, BR-01, BR-03 | `user_repo.add_guest_user(email=f"guest-{uuid4()}@guest.invalid", expires_at=clock.utcnow() + timedelta(days=guest_ttl_days))`, `password_hash=None`, `status=ACTIVE`, `role=GUEST` (A2) |
+| Exactly one example, through members' rules | AC-02, FR-03 | `wallet_service` → `category_service` → `transaction_service`, owner = the new guest (A6) |
+| Session as long as the trial | AC-04, FR-04 | `encode_jwt(ttl_minutes=guest_ttl_days*24*60)`; `expires_in` = seconds to `expires_at` (A4) |
+| All-or-nothing | AC-12, FR-12 | Service flushes only; router commits once (A7) |
+| Audit on creation | AC-13, FR-13 | `audit.record(action="GUEST_CREATED", actor_id=guest.id, target=guest.id, result="SUCCESS", expires_at=…)` (A14) |
+| Ended guest refused everywhere | AC-05, EC-01, EC-02, FR-05 | `get_current_user`: `GUEST` and `utcnow() >= expires_at` → `NotAuthenticatedError` (A5) |
+| Ended trial deleted with all its data, nothing else | AC-06, FR-06 | `purge_expired()`: per guest from `list_ended_guests(now)` (`expires_at <= now`), the five child-first deletes of A8 |
+| Deletion audited with counts | AC-13, FR-13 | `GUEST_PURGED` per guest, counts from the bulk deletes (A14) |
+| Deletion at startup and on command | AC-06, EC-04, FR-07 | `main.py` lifespan and `cli purge-guests`, each with its own session and commit (A9) |
+| Sign-out never deletes a trial | AC-15, FR-15, BR-07 | `auth_service.logout()` unchanged — no repository call, no write, for any role (SS-US-02 FR-05) |
+| No sign-in to a guest by credentials | AC-07, EC-09, FR-08 | `EmailStr` refuses the address at `422` (A2); `auth_service.authenticate()` refuses a NULL-hash or `GUEST` row with `INVALID_CREDENTIALS` (F1) |
+| No invite or promotion of a guest | AC-07, FR-08 | `invitation_service` `422` on `@guest.invalid`; `cli promote-admin` refuses `GUEST` (A13) |
+| Guests absent from the family list | AC-08, FR-09, BR-05 | `user_repo.list_users` filters `role != GUEST` in page and count (A13) |
+| Guest is not an ADMIN | AC-09, BR-05 | Existing `AdminDep` → `403 FORBIDDEN` |
+| Guest data is the guest's own | AC-03, BR-04, EC-05 | Existing ownership filters (SEC-08) — unchanged |
+
+**Client rules** (the saved trial is a device concern — no server enforcement exists or is needed)
+
+| Rule | Source | Enforcement |
+|------|--------|-------------|
+| One saved trial per device, the newest started | AC-19, FR-16, BR-08 | `signInAsGuest()` overwrites the saved slot (A17) |
+| Sign-out keeps it — guest or member | AC-15, AC-20, EC-11, FR-16 | `signOut()` clears only the active session (A17) |
+| Offered while live, with N days | AC-16, EC-07, FR-17 | `LoginPanel` reads the slot; `max(1, floor(days left))` (A19) |
+| Ended by the device's clock → dropped silently | AC-17, EC-10, FR-16 | Cleared on render, no request (A18) |
+| Server refuses → dropped with a message | AC-18, EC-10, EC-12, FR-16 | `continueGuestTrial()` `401`, or the 401 handler for a guest session (A18) |
+
+**Sequence diagram — Start a guest trial**
+
+Drawn to `constitution.md` DG-01…DG-07.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Visitor
+    participant API as API
+    participant Svc as GuestService
+    participant Store as Store
+
+    Note over UI,Store: Start a guest trial — public, no credentials, no body (AC-01)
+    UI->>API: POST /auth/guest
+    alt More than 5 trial starts from this client address in the last hour (AC-10)
+        API-->>UI: 429 RATE_LIMIT_EXCEEDED
+    else Within the per-client limit
+        API->>Svc: start(input)
+        Svc->>Store: delete ended trials and everything they own (EC-03)
+        Store-->>Svc: removed counts
+        Svc->>Store: count live trials
+        Store-->>Svc: live count
+        alt 200 trials already live (AC-11)
+            Svc-->>API: limit reached
+            Note over API: the request rolls back — nothing is created (AC-12)
+            API-->>UI: 503 GUEST_LIMIT_REACHED
+        else Capacity available
+            Svc->>Store: create guest account — placeholder address, no password, trial ends in 7 days
+            Store-->>Svc: guest
+            Svc->>Store: save example wallet, category and expense through the members' own rules (A6)
+            Store-->>Svc: example saved — balance 450,000.00
+            Svc->>Svc: issue a token that expires with the trial (AC-04)
+            Svc->>Svc: audit — trial created, never the token
+            Svc-->>API: guest session and trial end
+            Note over API: router commits — account and example in one transaction (AC-12)
+            API-->>UI: 201 guest session
+            Note over UI: the app keeps the trial as this device's one saved trial, replacing any earlier one (A17)
+        end
+    end
+```
+
+**Sequence diagram — A guest's request, before and after the trial ends**
+
+The Wallets list stands for every protected route; the guest-specific part is the caller check, which
+the auth dependency performs inside `API` (DG-01, A5).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Guest
+    participant API as API
+    participant Svc as WalletService
+    participant Store as Store
+
+    Note over UI,Store: Any protected request from a guest (AC-04, AC-05)
+    UI->>API: GET /wallets
+    Note over API: resolve the caller — token valid, account ACTIVE, and for a guest the trial not yet ended (A5)
+    alt Trial ended — now at or past its end — or the account already deleted (EC-01, EC-02)
+        API-->>UI: 401 NOT_AUTHENTICATED
+        Note over UI: the 401 handler ends the session, drops the saved trial and shows the ended message (EC-12)
+    else Trial live
+        API->>Svc: list(input)
+        Svc->>Store: find the caller's own wallets
+        Store-->>Svc: the guest's wallets only (AC-03)
+        Svc-->>API: page of wallets
+        API-->>UI: 200 wallets
+    end
+```
+
+**Sequence diagram — Continue a saved guest trial**
+
+After a guest signs out — `POST /auth/logout`, unchanged from SS-US-02 and drawn there — the device
+still holds the trial (A17). Continuing confirms with the server through the Wallets list (A18).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Visitor
+    participant API as API
+    participant Svc as WalletService
+    participant Store as Store
+
+    Note over UI,Store: Sign-in screen with a saved guest trial on this device (AC-16)
+    Note over UI: saved trial already past its end by the device clock — dropped here, no request, no button (AC-17)
+    UI->>API: GET /wallets
+    Note over API: resolve the caller from the saved token — trial not yet ended, account still there (A5)
+    alt Trial ended or already deleted on the server (AC-18, EC-10)
+        API-->>UI: 401 NOT_AUTHENTICATED
+        Note over UI: drop the saved trial, hide Continue, show Your guest trial has ended.
+    else Trial live
+        API->>Svc: list(input)
+        Svc->>Store: find the caller's own wallets
+        Store-->>Svc: the guest's wallets, as left
+        Svc-->>API: page of wallets
+        API-->>UI: 200 wallets
+        Note over UI: the saved trial becomes the active session — Home loads (AC-16)
+    end
+```
+
+**Sequence diagram — Delete ended trials**
+
+No visitor request drives this flow: it runs at application startup, as the first step of every trial
+start (the first diagram's step 3), and from the `purge-guests` command (A9). `API` here is the
+application process; there is no `UI → API` arrow to answer.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UI as Visitor
+    participant API as API
+    participant Svc as GuestService
+    participant Store as Store
+
+    Note over UI,Store: No UI request — startup, every trial start, or the purge-guests command (A9)
+    API->>Svc: purge(input)
+    Svc->>Store: find guests whose trial has ended
+    Store-->>Svc: ended guests
+    loop Each ended guest
+        Note over Svc,Store: children first — nothing cascades, and PostgreSQL refuses parent-first (A8)
+        Svc->>Store: delete transactions on its wallets or categories
+        Svc->>Store: delete budgets on its wallets or categories
+        Svc->>Store: delete its categories
+        Svc->>Store: delete its wallets
+        Svc->>Store: delete the guest account
+        Store-->>Svc: rows removed per kind
+        Svc->>Svc: audit — trial purged, with counts (AC-13)
+    end
+    Svc-->>API: totals removed
+    Note over API: startup and the command commit their own session — inside a trial start, the request's commit covers it (A7)
+```
+
+**Error flows**
+
+| Scenario | HTTP | Error Code |
+|----------|------|------------|
+| Trial started (AC-01) | 201 | *(success — `GuestSessionRead`)* |
+| Sixth start from one client address within an hour (AC-10) | 429 | `RATE_LIMIT_EXCEEDED` |
+| 200 trials already live (AC-11) | 503 | `GUEST_LIMIT_REACHED` *(new)* |
+| Unexpected failure while seeding — everything rolled back (AC-12) | 500 | `INTERNAL_ERROR` |
+| *Other routes:* a guest whose trial has ended, or was deleted — including continuing a saved trial (AC-05, AC-18) | 401 | `NOT_AUTHENTICATED` |
+| *Other routes:* a guest calling invite or list-users (AC-09) | 403 | `FORBIDDEN` |
+| *Other routes:* a login or invite naming a `@guest.invalid` address (AC-07, A2, A13) | 422 | `VALIDATION_ERROR` |
+| *Service level, unreachable through the API:* login against a guest row (F1) | 401 | `INVALID_CREDENTIALS` |
+| *Logout (`SS-API-02`, unchanged):* a guest signs out — nothing deleted (AC-15) | 200 | *(success — `LogoutResult`)* |
+
+All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, API-02) — including the
+`429`, whose slowapi default body is replaced (A10). No CSRF concern — stateless bearer auth, no
+cookie (SDS §7.1.9). `GUEST_LIMIT_REACHED` and `RATE_LIMIT_EXCEEDED` added to SDS §6.6 at v1.6.0.
+
+**Constitution notes**
+
+| Rule | Status | Note |
+|------|--------|------|
+| AR-01 Service owns business rules | Required | Cap, seeding, expiry, purge order all in `guest_service`; the F1 refusal in `auth_service` |
+| AR-02 Thin router | Required | Route binds settings and the limiter, calls `start()`, commits, returns — no branching |
+| AR-03 Repository isolation | Required | Bulk deletes and guest queries in each entity's own repo (A8) — no business rule in them |
+| AR-04 DTO mapping | Required | `GuestSessionRead` built in `guest_service` |
+| AR-05 No framework objects in services | Required | The limiter reads the `Request` in the router decorator only; `start()` takes plain values |
+| AR-06 One transaction per request | Required | Router commits once (A7); startup and CLI own their sessions (A9); logout writes nothing (A17) |
+| AR-07 Call chain | Required | `guest_service` → other services → repos; never router → repo |
+| DG-01…DG-07 Diagrams | Required | Four diagrams, four lanes each, intent-only `Store` arrows, every `UI→API` request answered in every branch; parsed clean (step 2 evidence) |
+| API-01 Versioned path | Required | `POST /api/v1/auth/guest`, beside `/auth/login` and `/auth/logout` |
+| API-02 Flat envelope | Required | Including the `429` (A10) |
+| API-03 Status codes | Required | `201` creation · `429` · `503` · reused `401`/`403`/`422` |
+| API-04 Prefixed codes | Required | `GUEST_LIMIT_REACHED` new; `RATE_LIMIT_EXCEEDED` already in `main.py`'s map — both catalogued in SDS §6.6 v1.6.0 |
+| API-05 Explicit transitions | Required | Starting a trial is its own route; no status field anywhere |
+| API-07 Explicit response_model | Required | `response_model=GuestSessionRead`, `status_code=201`; logout untouched |
+| API-08 Public endpoint list | Required | The fifth public route — A3 is its ADR; `constitution.md` API-08 updated |
+| NC-02/NC-04/NC-05 Naming | Required | `GuestSessionRead`; `expires_at`; `"GUEST"` |
+| NC-06 Concise service methods | Required | `guest_service.start`, `guest_service.purge_expired` |
+| VL-01 Pydantic source of truth | N/A | The route takes no body |
+| VL-07 Decimal money | Required | Example amounts are `Decimal("500000.00")`/`Decimal("50000.00")` |
+| SEC-01 Password hashing | Required (reused) | A guest has no hash; F1 makes that a refusal, never a dummy-hash match |
+| SEC-06 JWT parameters | Required (exempt) | HS256 and `sub` unchanged; expiry is the trial end — SEC-12's stated exception (A4) |
+| SEC-07 Authz proven by test | Required | Guest `403` on invite/list (`TC-83`), ended or deleted guest `401` (`TC-65`, `TC-66`, `TC-67`) |
+| SEC-08 Ownership filters | Required (reused) | Guest data isolation is the existing filter (`TC-63`, `TC-64`); a saved trial reaches only its own data (A20) |
+| SEC-10 No enumeration | Required | Ended/purged guest gets the generic `401`; F1 uses the generic `INVALID_CREDENTIALS` |
+| SEC-11 Rate limiting | Required | Implemented for this route, not deferred (A10); the invite/activate deferrals are unchanged |
+| SEC-12 Guest containment | Required | This story is its origin: A2, A13, F1, A8; never deleted on sign-out (A17) |
+| LA-01 No secrets in logs | Required | Token never passed to `audit.record()`; placeholder address not logged (id instead) |
+| LA-02 Audit five fields | Required | `GUEST_CREATED`, `GUEST_PURGED` (A14) |
+| LA-04 Audited events | Required (spec-stricter) | LA-04 names invitations, activations and logins; spec AC-13 adds trial creation and deletion |
+| PF-01 300 ms p95 | Required | One count, a handful of writes, no SMTP, no bcrypt — the token is signed, no password hashed |
+| PF-02 Indexed lookups | Required | `users.expires_at` indexed (A1); wallet/category `user_id` already indexed |
+| PF-03 DTO projection | Required | `GuestSessionRead` — five fields |
+| TST-01/02 AC→TC coverage | Required | Every AC/EC mapped in `test_cases.md` before code |
+| TST-05 Boundaries | Required | Trial end exactly and one second before (`TC-66`); the 5th/6th start (`TC-75`); a full cap (`TC-74`); N days at the edges (`TC-90`, `EC-07`) |
+| DOD-02 Migration ships | Required | T-01; `alembic upgrade head` on an empty database |
+| DOD-03 Coverage > 80% | Required | Measured at the Implement step |
+| ENV-03 SQLite/PostgreSQL parity | Required | Child-first deletes (A8); `ensure_aware` on `expires_at` (A5) |
+| ENV-05 Android primary | Required | Saved trial in `expo-secure-store` on Android, `localStorage` on web (A17); verified by hand on a phone at Deploy |
+| ENV-06 Live server | Required | A11's confirmation is against the live Funnel address |
+
+**Element IDs**
+
+| Element | ID | Status | File |
+|---------|----|--------|------|
+| "Try as a guest" button, under Sign in | `login-guest` | Missing | `mobile/src/components/wallet/LoginPanel.tsx` |
+| "Continue guest trial — N days left" button | `guest-continue` | Missing | `mobile/src/components/wallet/LoginPanel.tsx` |
+| "Your guest trial has ended." message | `guest-trial-ended` | Missing | `mobile/src/components/wallet/LoginPanel.tsx` |
+| Guest trial banner, under the header | `guest-banner` | Missing | `mobile/src/components/AppHeader.tsx` |
+| Sign out | `sign-out` | Present | `mobile/src/components/AppHeader.tsx` |
+| Family tab | `tab-family` | Present | `mobile/src/components/TabBar.tsx` (absent for non-ADMIN) |
+| Wallet form and submit | `add-wallet-form`, `wallet-name`, `wallet-balance`, `wallet-submit` | Present | `mobile/src/components/pages/WalletsPage.tsx` |
+
+**Open tasks**
+
+| ID | Task | File | Status |
+|----|------|------|--------|
+| T-01 | Migration: nullable tz-aware `users.expires_at` + index, `down_revision = "e7a1c3f9b2d4"`, batch pattern (A1) | `backend/migrations/versions/<rev>_add_expires_at_to_users.py` | Open |
+| T-02 | Model: `UserRole.GUEST`, `UserModel.expires_at` | `backend/app/models/user.py` | Open |
+| T-03 | Settings `guest_ttl_days`, `guest_max_active`, `guest_rate_limit`; `.env.example`; `uv add slowapi` (A10, A16) | `backend/app/core/config.py`, `backend/.env.example`, `backend/pyproject.toml` | Open |
+| T-04 | Repositories: `user_repo.add_guest_user`/`list_ended_guests`/`count_guests`/`delete_user`, `list_users` excludes `GUEST`; `delete_all_for_owner` in transaction/budget/category/wallet repos (A8, A13) | `backend/app/repositories/*.py` | Open |
+| T-05 | `GuestLimitReachedError` (503); `TokenResponse.role` widened; `GuestSessionRead` (A3, A12) | `backend/app/core/errors.py`, `backend/app/schemas/auth.py` | Open |
+| T-06 | `auth_service.authenticate()`: NULL-hash or `GUEST` row → `INVALID_CREDENTIALS`, dummy comparison kept for timing (F1). `logout()` untouched | `backend/app/services/auth_service.py` | Open |
+| T-07 | `get_current_user`: ended `GUEST` → `NotAuthenticatedError` (A5) | `backend/app/core/deps.py` | Open |
+| T-08 | `guest_service.start()` and `purge_expired()` (A6, A7, A8, A12, A14) | `backend/app/services/guest_service.py` | Open |
+| T-09 | `invitation_service` refuses `@guest.invalid` (422); `cli promote-admin` refuses `GUEST`; new `cli purge-guests` (A9, A13) | `backend/app/services/invitation_service.py`, `backend/app/cli.py` | Open |
+| T-10 | Router `POST /auth/guest` (`201`, `GuestSessionRead`, rate-limited); `main.py` lifespan purge, `app.state.limiter`, `429` envelope handler (A3, A9, A10) | `backend/app/api/v1/auth.py`, `backend/app/core/rate_limit.py`, `backend/app/main.py` | Open |
+| T-11 | Integration tests from `test_cases.md` TC-58…TC-85, seen failing first; full existing suite re-run unmodified (A5) | `backend/tests/integration/test_ss_us_03_guest_trial.py` | Open |
+| T-12 | Client session: `UserRole` + `'GUEST'`, `guestLogin()`, `signInAsGuest()` writing the active session and the saved slot, `continueGuestTrial()`, `isGuest`/`trialEndsAt`/`savedGuestTrial`, 401 handler clears a guest's saved slot; saved-slot storage with the SecureStore/`localStorage` split (A15, A17, A18) | `mobile/src/api/types.ts`, `mobile/src/api/auth.ts`, `mobile/src/store/session-storage.ts`, `mobile/src/store/auth.ts` | Open |
+| T-13 | Client screens: "Try as a guest", "Continue guest trial — N days left" (A19), the ended message, the guest banner, `429`/`503` message | `mobile/src/components/wallet/LoginPanel.tsx`, `mobile/src/components/AppHeader.tsx` | Open |
+| T-14 | E2E tests TC-86…TC-95; dev `.env` raises `GUEST_RATE_LIMIT` (and, if e2e runs accumulate, `GUEST_MAX_ACTIVE`) for the e2e backend only (A10) | `mobile/e2e/auth.spec.ts` (appended) | Open |
+| T-15 | Confirm the client address behind Funnel is the visitor's, and whether `X-Forwarded-For` can be spoofed through it (A11) — before relying on the limiter live; evidence pasted at the Deploy gate | live server, `scripts/serve.sh` | Open |

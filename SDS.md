@@ -1,8 +1,8 @@
 # Software Design Specification (SDS)
 ## Personal Finance Management (PFM) System
-**Document Version:** 1.5.1  
+**Document Version:** 1.6.0  
 **Status:** Approved for Implementation  
-**Aligned to:** SRS v2.2.0 (see §1.6 Revision History)  
+**Aligned to:** SRS v2.4.0 (see §1.6 Revision History)  
 
 ---
 
@@ -93,7 +93,7 @@ This document specifies the initial **Core Technology Stack** and system archite
 
 #### 1.3.1 Assumptions
 1. **Manual Entry Focus:** Financial transactions are manually logged via the React Native mobile application or web client in early releases.
-2. **Email Verification:** Account creation is strictly controlled via an Email Invitation + Token + TTL mechanism to prevent non-existent emails from registering.
+2. **Email Verification:** Account creation is strictly controlled via an Email Invitation + Token + TTL mechanism to prevent non-existent emails from registering. The one exception is the **guest trial** (§5.1.3, SRS §1.3 v2.4.0): a time-limited account created without an invitation, holding a reserved never-deliverable placeholder address rather than a real one, deleted with all its data when its 7-day trial ends. Signing out does not delete it — the trial can be continued on the same device until then.
 3. **Monolithic Backend Core:** The core backend is constructed as a clean, layered FastAPI modular monolith.
 
 #### 1.3.2 Constraints
@@ -111,7 +111,7 @@ This document specifies the initial **Core Technology Stack** and system archite
 * **DAO:** Data Access Object / Repository Pattern
 
 ### 1.5 Related Documents
-* Personal Finance Management System Requirements Specification (SRS) v2.2.0 — **the authoritative requirements baseline.** Where this SDS and the SRS disagree, the SRS wins and this document is corrected. SRS §1.5 (added v2.2.0) is the conceptual domain model this document's §2 realises technically — see §2's own note.
+* Personal Finance Management System Requirements Specification (SRS) v2.4.0 — **the authoritative requirements baseline.** Where this SDS and the SRS disagree, the SRS wins and this document is corrected. SRS §1.5 (added v2.2.0) is the conceptual domain model this document's §2 realises technically — see §2's own note.
 * `constitution.md` — project rules with stable IDs (AR/API/NC/VL/SEC/LA/PF/TST/DOD/ENV) derived from this document.
 * `specs/<NNN>-<epic>/{spec,plan,test_cases}.md` — the working artifacts. Per-story design detail, error catalogues, and the decisions behind any deviation live there, never in this document.
 * §1.6 Revision History below is the audit trail of every alignment edit applied to this document.
@@ -125,6 +125,7 @@ refer to the same stories. Always cite both.
 | :--- | :--- | :--- | :-: |
 | SS-US-01 | US-02-01 | Login | ✔ |
 | SS-US-02 | US-02-02 | Logout | ✔ |
+| SS-US-03 | US-02-03 | Guest trial | ✔ |
 | UM-US-01 | US-01-01 | Invite a user via email (ADMIN) | ✔ |
 | UM-US-02 | US-01-02 | Activate user account | ✔ |
 | UM-US-03 | US-01-03 | List users (ADMIN) | ✔ |
@@ -150,6 +151,7 @@ refer to the same stories. Always cite both.
 | **1.4.0** | **Aligned an internal contradiction found while specifying CM-US-01** (`specs/004-category-management/`). §2.2's Category domain object and §5.4.4's CM-US-04 goal ("Modify category name, type, or icon") both already treated `icon` as a real Category attribute, but §4.3.3's `CATEGORIES` ERD block omitted it — the same class of ERD gap WM-US-01 found in `wallets.created_at`. The ERD is the one corrected: a nullable `string icon` added to §4.3.3's `CATEGORIES` block, so it matches §2.2 and §5.4.4 rather than the other way around. No requirement was added or reinterpreted — CM-US-01's own AC set (SRS Gherkin, FR-04, SDS §5.4.1) never mentions `icon`, so the `categories` table CM-US-01 itself creates still carries only `id`, `user_id`, `name`, `type`; the `icon` column is left for CM-US-04, the story whose own goal names it (see `specs/004-category-management/plan.md` G1, A4). |
 | **1.5.0** | **§4.5 Physical View aligned to the user's deployment ruling of 2026-10-22** (`constitution.md` ENV-05, ENV-06): Android only, as an EAS-built APK (iOS dropped); the backend served from the family laptop through a Cloudflare quick tunnel instead of a Docker container on a PaaS; SQLite instead of PostgreSQL. Both former choices are kept as the documented alternatives. No requirement, endpoint contract or domain fact changed. |
 | **1.5.1** | **§4.5 corrected the same day:** the backend is published through Tailscale Funnel on a fixed `*.ts.net` address built into the Android app, replacing v1.5.0's Cloudflare quick tunnel, whose address changed on every start and had to be entered on each phone (`constitution.md` ENV-06, amended). Nothing else changed. |
+| **1.6.0** | **Aligned to SRS v2.4.0, which added US-02-03 Guest Trial** (product-owner decision, 2026-10-23; design in `specs/002-system-security/plan.md` SS-US-03). **Domain:** `User.role` gains `GUEST`, and `users` gains a nullable `expires_at`, set only for a guest (§2.2, §2.3, §4.3.3); §2.4.1 draws the guest's lifecycle — deleted when its trial ends, never at sign-out. **Stories:** §1.5.1 and §5.1.3 add SS-US-03; §5.2.2's heading drops the word `GUEST` — it meant *unauthenticated*, and `GUEST` is now a real role. **API:** `SS-API-03` `POST /api/v1/auth/guest` registered in §6.3/§6.5; `GuestSessionRead` in §6.2.1, and `GUEST_LIMIT_REACHED` (503) and `RATE_LIMIT_EXCEEDED` (429) added to §6.6. Logout, built and verified as SS-US-02 but never registered, is registered as `SS-API-02` in the same pass, unchanged — it stays stateless and deletes nothing for a guest too, so a signed-out guest can continue its trial on the same device (product-owner ruling 2026-10-26). **Security:** §1.3.1, §7.1.2, §7.1.6, §7.1.7 and §7.1.8 note the guest exception (no real email, session as long as the trial, refused after expiry, fifth public route); §7.3's DoS row makes rate limiting a requirement of `POST /auth/guest` itself — delivered with SS-US-03 rather than deferred — while it stays deferred for invite and activate. §1.5 now cites SRS v2.4.0. |
 
 ---
 
@@ -177,7 +179,7 @@ not get lost: the next alignment of this document should add it to both places.
 
 ### 2.2 Domain Object
 
-* **User:** Represents the application account owner (`id`, `email`, `password_hash`, `full_name`, `status`, `role`, `created_at`). An invited account exists with `password_hash` and `full_name` both null until activation sets them.
+* **User:** Represents the application account owner (`id`, `email`, `password_hash`, `full_name`, `status`, `role`, `created_at`, `expires_at`). An invited account exists with `password_hash` and `full_name` both null until activation sets them. `role` is `ADMIN`, `USER` or `GUEST`. A **guest** (SS-US-03) is created `ACTIVE` without an invitation, with a reserved never-deliverable placeholder email (`guest-<uuid>@guest.invalid`), no password, and `expires_at` set to the end of its 7-day trial; `expires_at` is null for every other account. A guest owns Wallets, Categories, Budgets and Transactions exactly like a `USER` until its trial ends and all of it is deleted. Signing out (`SS-API-02`) deletes nothing, for a guest as for a member; the client keeps the guest's token on that device so the trial can be continued until `expires_at`.
 * **Invitation:** Tracks email invitations (`id`, `email`, `token_hash`, `expires_at`, `status`, `invited_by_id`, `created_at`). One row per invitation *attempt*, so the history of attempts survives and an expired attempt leaves the account untouched. **Only the SHA-256 hash of the token is stored** (`token_hash`) — the raw token exists solely in the delivered email, and activation finds the row by hashing what the user presents (§7.4, constitution SEC-03). `invited_by_id` records which ADMIN issued it.
 * **Wallet:** Financial container holding funds (`id`, `user_id`, `name`, `type`, `balance`, `currency`).
 * **Category:** Classification for monetary activities (`id`, `user_id`, `name`, `type`, `icon`).
@@ -194,6 +196,7 @@ classDiagram
         +String email
         +String status
         +String role
+        +DateTime expires_at
     }
     class Invitation {
         +UUID id
@@ -250,6 +253,20 @@ stateDiagram-v2
     PENDING --> ACTIVE : User opens link & sets password
     ACTIVE --> DEACTIVATED : Admin disables account
     DEACTIVATED --> ACTIVE : Admin reactivates account
+```
+
+A **guest** (role `GUEST`, §5.1.3) skips `PENDING` entirely: it is created `ACTIVE` without an
+invitation and never changes status. Its trial ends when `expires_at` passes — from that moment every
+request it makes is refused (§7.1.7), whether or not the account has been deleted yet — and the account
+and everything it owns are then **deleted**, not moved to another status. Signing out does **not** end the trial: it
+ends the session only, and the same device can continue the trial until `expires_at` (product-owner
+ruling 2026-10-26). There is no
+`GUEST → USER` transition: a guest who wants to stay is invited like anyone else and starts fresh.
+
+```mermaid
+stateDiagram-v2
+    [*] --> ACTIVE : Visitor starts a guest trial — expires_at set 7 days ahead
+    ACTIVE --> [*] : Trial ends — account and all its data deleted
 ```
 
 #### 2.4.2 Invitation State
@@ -408,6 +425,7 @@ erDiagram
         string status
         string role
         timestamp created_at
+        timestamp expires_at
     }
 
     INVITATIONS {
@@ -552,6 +570,9 @@ sequenceDiagram
 #### 5.1.2 SS-US-02: Logout (All)
 * **Goal:** Invalidate local tokens and terminate user session context.
 
+#### 5.1.3 SS-US-03: Guest Trial (unauthenticated) — *SRS §6 US-02-03*
+* **Goal:** Let a visitor without an invitation try the real app for 7 days as a temporary guest account on the server — seeded with one example wallet holding one example transaction — that is never upgraded and is deleted with all of its data when the trial ends. Signing out keeps the trial, which the same device can continue until then.
+
 ---
 
 ### 5.2 User Management (UM) — *SRS §6 Feature-01*
@@ -567,7 +588,7 @@ sequenceDiagram
   6. Returns the new account's id, email, status and token expiry — and never the token, which reaches the invited mailbox alone.
   7. ADMIN only. An unauthenticated caller is refused before the payload is examined.
 
-#### 5.2.2 UM-US-02: Activate a User Account (GUEST — unauthenticated)
+#### 5.2.2 UM-US-02: Activate a User Account (unauthenticated)
 * **Goal:** Allow an invited user to set their full name and password to activate their account.
 * **Acceptance Criteria:**
   1. Validates that the presented token matches an invitation, that the invitation is still outstanding, that its user is `PENDING`, and — **checked last** — that `expires_at > CURRENT_TIMESTAMP`. The order fixes which refusal is reported when more than one condition fails.
@@ -726,6 +747,7 @@ Onboarding DTOs use the names the code uses (aligned v1.2.0 — v1.0.0 called th
 * **`ActivationResult`**: `{ "status": "SUCCESS", "message": "string" }` — no session, no token.
 * **`TokenStateRead`**: `{ "state": "usable" | "expired" | "not_usable" }`
 * **`UserRead`**: `{ "id": "UUID", "email": "string", "full_name": "string", "status": "string", "created_at": "datetime" }` — never `password_hash`.
+* **`GuestSessionRead`**: `{ "access_token": "string", "token_type": "bearer", "expires_in": 604800, "role": "GUEST", "expires_at": "datetime" }` — the login `TokenResponse` plus the moment the trial ends.
 * **`WalletCreate`**: `{ "name": "string", "type": "string", "currency": "string", "initial_balance": 0.00 }`
 * **`TransactionCreate`**: `{ "wallet_id": "UUID", "category_id": "UUID", "amount": 0.00, "type": "EXPENSE", "note": "string" }`
 
@@ -734,6 +756,8 @@ Onboarding DTOs use the names the code uses (aligned v1.2.0 — v1.0.0 called th
 | ID | Method | Endpoint | Description |
 | :--- | :--- | :--- | :--- |
 | **SS-API-01** | `POST` | `/api/v1/auth/login` | Authenticate user and issue JWT |
+| **SS-API-02** | `POST` | `/api/v1/auth/logout` | Confirm the caller's session has ended |
+| **SS-API-03** | `POST` | `/api/v1/auth/guest` | Start a guest trial and issue its JWT |
 | **UM-API-01** | `POST` | `/api/v1/users/invite` | Send email invitation |
 | **UM-API-02** | `POST` | `/api/v1/users/activate` | Activate account with token |
 | **UM-API-03** | `GET` | `/api/v1/users` | List all users |
@@ -810,6 +834,8 @@ Onboarding DTOs use the names the code uses (aligned v1.2.0 — v1.0.0 called th
 | API Endpoint | Feature Area | User Story Code |
 | :--- | :--- | :--- |
 | `POST /api/v1/auth/login` | System Security | SS-US-01 |
+| `POST /api/v1/auth/logout` | System Security | SS-US-02 |
+| `POST /api/v1/auth/guest` | System Security | SS-US-03 |
 | `POST /api/v1/users/invite` | User Management | UM-US-01 |
 | `POST /api/v1/users/activate` | User Management | UM-US-02 |
 | `GET /api/v1/users/activate` | User Management | UM-US-02 |
@@ -843,6 +869,8 @@ each story's `plan.md` catalogues the subset that story emits.
 | `EMAIL_DELIVERY_FAILED` | 502 | Mail dispatch was attempted inline and could not complete. A delivery failure never reports success. |
 | `INVITATION_TOKEN_EXPIRED` | 400 | The token matches an outstanding invitation whose user is still `PENDING`, and it is past its TTL. The only refusal reason named specifically. |
 | `INVITATION_TOKEN_INVALID` | 400 | Every other refusal: unrecognised, already accepted, superseded, or the user is no longer `PENDING` — including when such a token is also expired. One code so these cases stay indistinguishable. |
+| `RATE_LIMIT_EXCEEDED` | 429 | Too many requests from one client address — currently only for starting a guest trial (5 per hour, §7.3). |
+| `GUEST_LIMIT_REACHED` | 503 | The number of live guest trials is at its cap (200). No account is created; the visitor can try again later. |
 | `INTERNAL_ERROR` | 500 | Unexpected server error. Never carries internal detail. |
 
 `400` rather than `404` for a bad token is deliberate: a `404` would itself be a distinguishable
@@ -858,7 +886,7 @@ each story's `plan.md` catalogues the subset that story emits.
 Ensure only verified, authenticated users can access financial data, while completely preventing unverified/fake registration attempts.
 
 #### 7.1.2 Identity Model
-User identity is bound to a verified email address with status tracking (`PENDING`, `ACTIVE`, `DEACTIVATED`). Invitation lifecycle state is tracked separately on the invitation record (§2.4.2).
+User identity is bound to a verified email address with status tracking (`PENDING`, `ACTIVE`, `DEACTIVATED`). Invitation lifecycle state is tracked separately on the invitation record (§2.4.2). The one exception is a guest (§5.1.3): no real email, no password — the token issued when its trial starts is its only credential.
 
 #### 7.1.3 Authentication Mechanism
 JWT-based Bearer token authentication signed via HMAC-SHA256 (`HS256`).
@@ -879,14 +907,18 @@ they are already 256 bits of uniform randomness, so they use plain SHA-256 (§7.
 would add latency on every activation and buy nothing.
 
 #### 7.1.6 Session Management
-Short-lived access tokens (60 minutes).
+Short-lived access tokens (60 minutes). **Exception — a guest's token** lasts until its trial ends
+(`expires_at`): a guest has no password to sign in again with, so a 60-minute token would lock it out of
+its own trial.
 
 #### 7.1.7 Authentication Controls
-Endpoints check user context and reject tokens belonging to non-active user accounts.
+Endpoints check user context and reject tokens belonging to non-active user accounts, and tokens
+belonging to a guest whose `expires_at` has passed.
 
 #### 7.1.8 Public vs Protected Endpoints
-* **Public** — exactly these four, listed by method so the set is unambiguous (constitution API-08):
+* **Public** — exactly these five, listed by method so the set is unambiguous (constitution API-08):
   * `POST /api/v1/auth/login`
+  * `POST /api/v1/auth/guest` — starts a guest trial (§5.1.3), rate-limited and capped (§7.3)
   * `POST /api/v1/users/activate` — the one unauthenticated **write** in the system
   * `GET /api/v1/users/activate` — the token state check (`UM-API-04`)
   * `GET /health` — liveness probe
@@ -911,7 +943,7 @@ Ownership-based access control: Service queries append `WHERE user_id = :authent
 | **Tampering** | Modifying transaction amounts in transit | TLS 1.3 encryption for all endpoint interactions |
 | **Repudiation** | User denies performing transaction | Structured audit logs recording timestamps and user context |
 | **Information Leak** | Viewing another user's balance | Strict user ownership filter on data repository layer |
-| **Denial of Service** | Spamming the invitation API, or brute-forcing the public token state check | Rate limiting middleware (`slowapi`) on the invite and activate endpoints — **specified, not yet implemented.** Deferred as an explicit task in each story's `plan.md` (UM-US-01 T-13, UM-US-02 T-08) because no acceptance criterion requires it. The unauthenticated `GET /users/activate` is the stronger case of the two, since it answers a yes/no question about a secret. |
+| **Denial of Service** | Spamming the invitation API, brute-forcing the public token state check, or creating guest trials in bulk | Rate limiting middleware (`slowapi`). **Required for `POST /auth/guest` and delivered with that story, not deferred** (SS-US-03 — designed at v1.6.0, built at its Implement step): 5 trial starts per hour per client address → `429 RATE_LIMIT_EXCEEDED`, plus a global cap of 200 live guest trials → `503 GUEST_LIMIT_REACHED`, since that route creates server-side rows for anyone on the internet. **Still specified, not yet implemented, on the invite and activate endpoints** — deferred as an explicit task in each story's `plan.md` (UM-US-01 T-13, UM-US-02 T-08) because no acceptance criterion requires it. The unauthenticated `GET /users/activate` is the stronger case of those two, since it answers a yes/no question about a secret. |
 | **Elevation of Privilege** | Normal user accessing admin endpoints | Role checks on user management routes |
 
 ### 7.4 Data Protection

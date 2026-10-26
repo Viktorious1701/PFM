@@ -1,6 +1,6 @@
 # 📋 Software Requirements Specification (SRS)
 ## System: Personal & Family Finance Management (PFM)
-**Document Version:** 2.3.0  
+**Document Version:** 2.4.0  
 **Status:** Approved for Development  
 **Revision History:** see [§8](#8-revision-history)  
 
@@ -60,7 +60,7 @@ The PFM system supports users in:
 * Initial deployment utilizes a secure monolithic web application with API integration capabilities.
 
 #### Constraints
-* **Verified Accounts Only:** Open self-registration without email verification is disabled to prevent non-existent emails in the database.
+* **Verified Accounts Only:** Open self-registration without email verification is disabled to prevent non-existent emails in the database. **One exception (v2.4.0): the guest trial** (US-02-03). A visitor may start a time-limited guest trial without an invitation. A guest trial carries no real email address and receives no email, cannot be upgraded into a member account, and is deleted together with all of its data 7 days after it starts. Signing out does not delete it: the trial can be continued on the same device until those 7 days end — so no unverified address ever enters the database, and nothing from a trial outlives it.
 * **MVP Focus:** Direct open-banking live feeds and automated stock exchange ticker feeds are deferred to future releases; asset values can be manually updated or batch-refreshed.
 
 ### 1.4 Definitions and Acronyms
@@ -89,7 +89,7 @@ the next time it is aligned, the same treatment already given the `User receives
 relationship noted below.
 
 The domain consists of nine key entities:
-* **User** — The person the system knows: an account holder, invited by another User with the ADMIN role, who owns Wallets, Categories, Asset Holdings, sets Budgets, logs Transactions, and receives Notifications (FR-01, FR-02).
+* **User** — The person the system knows: an account holder, invited by another User with the ADMIN role, who owns Wallets, Categories, Asset Holdings, sets Budgets, logs Transactions, and receives Notifications (FR-01, FR-02). The one exception is a **guest**: a time-limited trial account created without an invitation, which owns data exactly like any other User until it is deleted at the end of its 7-day trial (§1.3, US-02-03).
 * **Invitation** — A single email invitation attempt, distinct from the User it may create — its own history survives independently of whether the invited person ever activates (FR-01; SRS §6 US-01-01/US-01-02).
 * **Wallet** — A named store of liquid money a User holds — cash, a bank account, a credit line — that Transactions move money into or out of (FR-03).
 * **Category** — A label a User defines to classify money movement as one kind of income or expense, e.g. "Groceries" or "Salary" (FR-04).
@@ -434,6 +434,63 @@ Feature: User Login
 * **I want to** log out of the system  
 * **So that** my session is terminated securely.
 
+#### US-02-03: Guest Trial [MVP]
+* **As a** Visitor without an invitation  
+* **I want to** try the app as a guest  
+* **So that** I can see what it does before asking my family's admin for an invitation.
+
+```gherkin
+Feature: Guest Trial
+
+  Scenario: Start a guest trial without an invitation
+    Given a Visitor is on the sign-in screen and is not signed in
+    When the Visitor clicks "Try as a guest"
+    Then the System creates a temporary guest account that expires 7 days from now
+    And the System signs the Visitor in as a guest
+    And the Visitor sees one example wallet holding one example transaction
+    And the System displays "Guest trial — deleted on <date>. Ask your family's admin for an invitation to keep using PFM."
+
+  Scenario: A guest uses the app like a member
+    Given a Visitor is signed in as a guest
+    When the guest adds a wallet, a category, a budget or a transaction
+    Then the System saves it to the guest's own trial
+    And no other User can see it
+
+  Scenario: The trial ends after 7 days
+    Given a guest trial started 7 days ago
+    When the guest opens the app
+    Then the System denies access
+    And the guest is returned to the sign-in screen
+    And the System deletes the guest account and all of its data
+
+  Scenario: A guest trial cannot be upgraded
+    Given a Visitor is signed in as a guest
+    When the Visitor wants to keep using PFM
+    Then the Visitor must be invited by an ADMIN like any other User
+    And nothing from the guest trial is carried into the new account
+
+  Scenario: A guest signs out and continues the trial later on the same device
+    Given a Visitor is signed in as a guest
+    When the guest clicks "Sign out"
+    Then the guest is returned to the sign-in screen
+    And the System keeps the guest trial and all of its data
+    And the sign-in screen offers "Continue guest trial — N days left", where N is the whole days until the trial ends
+    When the guest clicks "Continue guest trial — N days left"
+    Then the guest is signed in to the same trial with all of its data
+
+  Scenario: A guest trial that has ended cannot be continued
+    Given a device holds a guest trial that has ended
+    When the Visitor clicks "Continue guest trial"
+    Then the System denies access
+    And the sign-in screen no longer offers to continue the trial
+    And the System displays "Your guest trial has ended."
+
+  Scenario: Guests are not family members
+    Given a guest trial exists
+    When an ADMIN views the list of users
+    Then the guest does not appear in the list
+```
+
 ---
 
 ### Feature-03: Wallet Management
@@ -648,3 +705,4 @@ Feature: Asset Valuation & Net Worth Summary
 | 2.1.0 | Alignment pass — corrected UXR-04 redirect target, US-01-02 token format description, BF-02 steps, and FR-01 status vocabulary. |
 | 2.2.0 | Added §1.5 Conceptual Domain Model defining User, Invitation, Wallet, Category, Budget, Transaction, Notification. |
 | **2.3.0** | **Refined Feature-11 into Asset & Investment Holdings Tracking**, promoted from a Phase-3 placeholder to a specified feature. Added `Asset` and `AssetHolding` entities to the Conceptual Domain Model (§1.5), added `FR-10`, updated `FR-09`'s net worth calculation, added business flow `BF-03`, and specified `US-11-01`/`US-11-02` with Gherkin. `US-11-03` (Goal Milestones) carries over unchanged as a Phase-3 placeholder, renumbered from the prior `US-11-02`. Roadmap (§7) row 11 updated and split into rows 11–12 to keep both threads visible. |
+| **2.4.0** | **Added US-02-03 Guest Trial** (product-owner decision, 2026-10-23). §1.3's *Verified Accounts Only* constraint now allows exactly one exception — a time-limited guest trial that carries no real email, receives no email, cannot be upgraded into a member account, and is deleted with all of its data after 7 days. Signing out keeps the trial, which can be continued on the same device until then (product-owner ruling 2026-10-26). US-02-03 specified under Feature-02 with seven Gherkin scenarios. §1.5's *User* entity notes the guest as the one account not created by invitation. No other requirement changed. |

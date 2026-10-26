@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-02 · SDS §5.1 (SS)
 > **Spec:** [spec.md](spec.md) · **Plan:** [plan.md](plan.md)
-> **Stories in this file:** SS-US-01 *(TC-01…TC-11)* · SS-US-02 *(TC-12…TC-15)*
+> **Stories in this file:** SS-US-01 *(TC-01…TC-11)* · SS-US-02 *(TC-12…TC-15)* · SS-US-03 *(TC-58…TC-96)*
 
 ---
 
@@ -417,3 +417,530 @@ rework was needed and no defect was found along the way.
 - **AC:** — (`constitution.md` ENV-06)
 - **Type:** e2e
 
+---
+
+## SS-US-03: Guest trial
+
+> **IDs in this section are local to SS-US-03.** `AC-NN`/`EC-NN`/`FR-NN` below refer to `spec.md`'s
+> SS-US-03 section. `TC-NN` continues the epic from `TC-57`; `QF-NN` continues from SS-US-01's
+> `QF-02`. Written at step 3, **before any test code** (TST-02). Integration TCs run under
+> `uv run pytest` against `backend/tests/integration/test_ss_us_03_guest_trial.py`; e2e TCs are
+> appended to `mobile/e2e/auth.spec.ts` (the epic's e2e file) and run with `npm run test:e2e` against
+> the real backend — behaviour only, never visual design (`CLAUDE.md` §1.1 rule 0).
+
+### Acceptance Criteria Classification
+
+| AC/EC | Title | Label | Rationale |
+|---|---|---|---|
+| AC-01 | Start a guest trial without an invitation or credentials | **[BOTH]** | API: `201` and the session's shape; UI: the button signs the visitor in |
+| AC-02 | The first view holds exactly one example | **[BOTH]** | API: exact rows and balance; UI: the example wallet is on screen |
+| AC-03 | A guest uses the app as a member does | **[BOTH]** | API: every member route works and is owner-scoped; UI: adding a wallet works |
+| AC-04 | The guest stays signed in for the whole trial | **[BOTH]** | API: token lifetime; UI: still a guest after a reload |
+| AC-05 | Access ends when the trial ends | **[BOTH]** | API: `401`; UI: back to sign-in — a refused session simulated in the browser (QF-05) |
+| AC-06 | An ended trial is deleted with everything in it | **[API]** | Server-side deletion; nothing on screen |
+| AC-07 | A guest can never be signed into with credentials, emailed, or upgraded | **[API]** | Validation, service and CLI refusals |
+| AC-08 | Guests are not family members | **[API]** | List contents and total |
+| AC-09 | A guest cannot act as an administrator | **[BOTH]** | API: `403`; UI: no Family tab |
+| AC-10 | Trial starts from one client are limited | **[API]** | `429` — not constructible against a shared e2e backend (QF-06) |
+| AC-11 | The number of live trials is capped | **[API]** | `503` — same reason |
+| AC-12 | Starting a trial is all-or-nothing | **[API]** | Rollback, forced by a failing seed step |
+| AC-13 | Trial creation and deletion are recorded | **[API]** | Log-boundary assertion (QF-07) |
+| AC-14 | The guest is always told they are on a trial | **[UI]** | Banner text and date |
+| AC-15 | Signing out keeps the trial | **[BOTH]** | API: logout deletes nothing and the token still works; UI: no dialog, Continue offered |
+| AC-16 | A saved trial can be continued on the same device | **[BOTH]** | API: the token still works after logout; UI: Continue lands on Home with the data |
+| AC-17 | A saved trial that has ended by the device's clock is not offered | **[UI]** | Device-only decision, no request |
+| AC-18 | A saved trial the server no longer accepts is discarded with a message | **[BOTH]** | API: ended or deleted guest `401`; UI: message, button gone |
+| AC-19 | "Try as a guest" always starts a new trial | **[BOTH]** | API: a second trial is a separate account; UI: replaces the saved one |
+| AC-20 | Signing in as a member keeps the saved trial | **[UI]** | Device storage across a member session |
+| EC-01 | The exact moment the trial ends | **[API]** | Clock-seam boundary |
+| EC-02 | Ended but not yet deleted | **[API]** | Stored end time in the past, row still present |
+| EC-03 | Cap reached, but some counted trials have ended | **[API]** | Lazy purge before counting |
+| EC-04 | The server restarts | **[API]** | Startup purge |
+| EC-05 | Two guests at once | **[API]** | Isolation |
+| EC-06 | A guest removes the example | **[API]** | Member rules on the example |
+| EC-07 | How many days are left | **[UI]** | N from the saved trial end (QF-08) |
+| EC-08 | A former guest is later invited | **[API]** | Invitation unaffected by the trial |
+| EC-09 | Sign-in naming a guest's placeholder address | **[API]** | `422` at the boundary, `INVALID_CREDENTIALS` at the service (`plan.md` F1) |
+| EC-10 | The device's clock disagrees with the server's | **[UI]** | Both directions, simulated in device storage |
+| EC-11 | A guest signs out while the server cannot be reached | **[UI]** | Network failure simulated in the browser |
+| EC-12 | A guest is refused while using the app | **[BOTH]** | API: `401`; UI: ended message, saved trial dropped |
+
+### Quality Findings
+
+#### QF-03
+
+**Description.** PyJWT validates a token's `exp` against the real wall clock, not the
+`app.core.clock` seam that `TST-06` tests freeze. A test that advances the seam past the trial end
+does not make the token itself expire, and a token minted under a frozen clock far from real time
+could already be expired in real terms.
+
+**Impact.** A boundary test written against the token's own `exp` would be measuring PyJWT and real
+time, not this story's rule.
+
+**Recommendation.** The trial-end boundary (EC-01) is asserted against the **stored end time**, which
+is the authoritative check (`plan.md` A4/A5): `TC-65`/`TC-66` move the seam, never the token. The
+token's lifetime is asserted separately by decoding it (`TC-62`: `exp − iat` equals the trial
+length). Tests freeze the clock near real time, as the existing suites already do.
+
+#### QF-04
+
+**Description.** AC-10's limit is **per client address**, but every request from the `httpx` test
+client arrives from the same address.
+
+**Impact.** The integration suite can prove that the sixth start from one address is refused; it
+cannot prove that a different visitor is unaffected, nor that the address counted behind Tailscale
+Funnel is the visitor's (`plan.md` A11).
+
+**Recommendation.** `TC-75` proves the count and the refusal. The per-visitor half is `plan.md` T-15 —
+two real requests through the live Funnel address from different networks, pasted at the Deploy gate.
+If the implementation keys on a forwarded header explicitly (A11's fallback), `TC-75` gains a second
+client value and asserts it is unaffected.
+
+#### QF-05
+
+**Description.** A genuinely ended trial cannot be produced end-to-end: the e2e suite drives the real
+backend, which has no clock seam, and a trial lasts 7 days.
+
+**Impact.** The client paths that react to an ended trial — AC-05, AC-17, AC-18, EC-10, EC-12 — cannot
+be driven by a real expiry in the browser.
+
+**Recommendation.** The e2e TCs produce the two observable conditions instead, through device storage:
+a token the server refuses (`401`, exactly what an ended or purged trial returns — `TC-92`, `TC-96`),
+and a saved trial end already in the past (`TC-93`). The server side of a real expiry is proven by
+`TC-65`/`TC-66`/`TC-67` under the clock seam.
+
+#### QF-06
+
+**Description.** The e2e backend sees every request from `127.0.0.1`, so the suite's own guest tests
+spend the per-client allowance (5 per hour) and accumulate live trials toward the cap (200) — trials
+stay in the dev database until 7 days after they started.
+
+**Impact.** Run as configured for production, the guest e2e tests would start failing with `429` after
+the fifth trial in an hour, and `429`/`503` themselves cannot be produced on demand without starving
+every other test.
+
+**Recommendation.** The e2e backend's `.env` raises `GUEST_RATE_LIMIT` (and `GUEST_MAX_ACTIVE` if
+needed) — the reason those are settings at all (`plan.md` A10, T-14). `429` and `503` are proven by
+integration TCs only (`TC-75`, `TC-74`); the client's display of their message is not e2e-tested.
+
+#### QF-07
+
+**Description.** AC-13's audit entries are structured log lines; there is no audit-read endpoint
+(UM-US-01 `plan.md` A9, unchanged).
+
+**Impact.** Same limit as QF-02: the tests prove the emitted line's shape, not that it can be retrieved
+later.
+
+**Recommendation.** `TC-69`/`TC-70` use `caplog`, as `TC-07`/`TC-08` do.
+
+#### QF-08
+
+**Description.** "N days left" depends on the moment it is rendered (`plan.md` A19: whole days,
+rounded down, at least 1).
+
+**Impact.** A literal such as "6 days left" in a test is right only if the test runs within the same
+day-boundary as the trial's start — usually, but not by construction.
+
+**Recommendation.** `TC-90` computes the expected N from the trial end the server returned, with the
+same rule, at assertion time; the rule's two edges (6 days 23 hours → 6, under one day → 1) are
+asserted by `TC-93` through device storage, not by waiting.
+
+### Coverage Matrix
+
+| AC/EC | Label | Integration TC(s) | E2E TC(s) | Blocked on |
+|---|---|---|---|---|
+| AC-01 | [BOTH] | TC-58, TC-59 | TC-86 | — |
+| AC-02 | [BOTH] | TC-60 | TC-86 | — |
+| AC-03 | [BOTH] | TC-61, TC-63 | TC-88 | — |
+| AC-04 | [BOTH] | TC-62 | TC-87 | — |
+| AC-05 | [BOTH] | TC-65, TC-67 | TC-96 | — |
+| AC-06 | [API] | TC-68 | — | — |
+| AC-07 | [API] | TC-59, TC-77, TC-78, TC-79, TC-80, TC-81 | — | — |
+| AC-08 | [API] | TC-82 | — | — |
+| AC-09 | [BOTH] | TC-83 | TC-89 | — |
+| AC-10 | [API] | TC-75 | — *(QF-06)* | per-visitor half: `plan.md` T-15 (QF-04) |
+| AC-11 | [API] | TC-74 | — *(QF-06)* | — |
+| AC-12 | [API] | TC-76 | — | — |
+| AC-13 | [API] | TC-69, TC-70 | — | — |
+| AC-14 | [UI] | — | TC-86, TC-87 | — |
+| AC-15 | [BOTH] | TC-85 | TC-90 | — |
+| AC-16 | [BOTH] | TC-85 | TC-90 | — |
+| AC-17 | [UI] | — | TC-93 | — |
+| AC-18 | [BOTH] | TC-65, TC-67 | TC-92 | — |
+| AC-19 | [BOTH] | TC-64 | TC-94 | — |
+| AC-20 | [UI] | — | TC-95 | — |
+| EC-01 | [API] | TC-66 | — | — |
+| EC-02 | [API] | TC-65 | — | — |
+| EC-03 | [API] | TC-73 | — | — |
+| EC-04 | [API] | TC-71 | — | — |
+| EC-05 | [API] | TC-64 | — | — |
+| EC-06 | [API] | TC-61 | — | — |
+| EC-07 | [UI] | — | TC-90, TC-93 | — |
+| EC-08 | [API] | TC-84 | — | — |
+| EC-09 | [API] | TC-77, TC-78 | — | — |
+| EC-10 | [UI] | — | TC-92, TC-93 | — |
+| EC-11 | [UI] | — | TC-91 | — |
+| EC-12 | [BOTH] | TC-65 | TC-96 | — |
+
+> Every AC and EC has at least one TC; every `[BOTH]`/`[UI]` row has an e2e TC. FR-07's operator
+> command is `TC-72`. **Known coverage limits, accepted:** the per-visitor half of AC-10 (QF-04, closed
+> by T-15 at Deploy), real expiry in the browser (QF-05 — simulated through device storage), the
+> client's `429`/`503` message (QF-06), audit durability (QF-07).
+
+### Test Implementation Map *(filled at step 4)*
+
+| TC | pytest node id / e2e test | Result |
+|---|---|---|
+| TC-58 … TC-85 | `backend/tests/integration/test_ss_us_03_guest_trial.py` — *pending step 4* | — |
+| TC-86 … TC-96 | `mobile/e2e/auth.spec.ts` › TC-86 … TC-96 — *pending step 4* | — |
+
+### TC-58: Starting a trial needs no credentials and returns a guest session
+
+- **US:** SS-US-03
+- **Given:** A caller presenting no `Authorization` header, and the clock frozen
+- **When:** `POST /api/v1/auth/guest` is sent with no body
+- **Then:** The response is `201` with exactly `access_token`, `token_type: "bearer"`, `expires_in: 604800`, `role: "GUEST"`, and `expires_at` equal to the frozen time plus 7 days, carrying a UTC offset; the body contains no email, password or hash field
+- **AC:** AC-01, FR-01, FR-02, FR-04
+- **Type:** integration
+
+### TC-59: The guest account has a placeholder address, no password, and a 7-day end
+
+- **US:** SS-US-03
+- **Given:** The clock frozen
+- **When:** A trial is started and the new account is read back from the database
+- **Then:** Its status is `ACTIVE` and role `GUEST`; its email matches `guest-<uuid4>@guest.invalid`; its password hash and full name are empty; its trial end is exactly the frozen time plus 7 days
+- **AC:** AC-01, AC-07, FR-02, BR-01, BR-03
+- **Type:** integration
+
+### TC-60: A new trial holds exactly one example wallet with one example expense
+
+- **US:** SS-US-03
+- **Given:** A trial that has just started
+- **When:** The guest lists its wallets, categories, transactions and budgets with its token
+- **Then:** Exactly one wallet — "Example wallet", `VND`, balance `450000.00`; exactly one category — "Food", `EXPENSE`; exactly one transaction — `50000.00`, `EXPENSE`, note "Example: lunch", against that wallet and category; no budgets
+- **AC:** AC-02, FR-03
+- **Type:** integration
+
+### TC-61: A guest can do everything a member can, including removing the example
+
+- **US:** SS-US-03
+- **Given:** A guest holding its token
+- **When:** It creates a wallet, a category, a transaction and a budget; edits and deletes the example transaction; archives the example wallet; and requests its summary report
+- **Then:** Each answers exactly as for a member — `201` for each creation, `200` for the edit, the deletion, the archive and the report — and the report reflects only the guest's own data
+- **AC:** AC-03, EC-06, BR-04
+- **Type:** integration
+
+### TC-62: A guest's token lasts the whole trial, not 60 minutes
+
+- **US:** SS-US-03
+- **Given:** A trial started under a frozen clock
+- **When:** Its token is decoded with the configured secret; then the clock seam is advanced 61 minutes and the guest lists its wallets
+- **Then:** The token's `exp − iat` is 7 days (604800 seconds) and its `role` claim is `GUEST`; the request 61 minutes later is answered `200`
+- **AC:** AC-04, FR-04
+- **Type:** integration
+
+### TC-63: A guest and a member cannot see each other's data
+
+- **US:** SS-US-03
+- **Given:** An `ACTIVE` member with a wallet, and a guest
+- **When:** The guest lists wallets and requests the member's wallet by id; the member lists wallets
+- **Then:** The guest's list holds only its example; its request for the member's wallet is `404 WALLET_NOT_FOUND`; the member's list holds none of the guest's wallets
+- **AC:** AC-03, BR-04
+- **Type:** integration
+
+### TC-64: Two trials are two separate guests, each with a fresh example
+
+- **US:** SS-US-03
+- **Given:** No trials
+- **When:** Two trials are started, one after the other
+- **Then:** The two tokens name different accounts; each guest sees exactly one example wallet, and the two example wallets have different ids; neither guest can read the other's wallet by id (`404`)
+- **AC:** EC-05, AC-19, AC-03
+- **Type:** integration
+
+### TC-65: A guest whose trial has ended is refused even before deletion
+
+- **US:** SS-US-03
+- **Given:** A guest whose stored trial end has been moved one minute into the past, its row and data still present, its token still cryptographically valid
+- **When:** It lists its wallets
+- **Then:** The response is `401 NOT_AUTHENTICATED`, byte-identical to the response for a request with no token at all
+- **AC:** AC-05, EC-02, FR-05
+- **Type:** integration
+
+### TC-66: The trial ends exactly at its end time
+
+- **US:** SS-US-03
+- **Given:** A guest, and the clock seam set first to one second before its trial end, then to exactly its trial end
+- **When:** It lists its wallets at each moment
+- **Then:** One second before, the response is `200`; exactly at the end, it is `401 NOT_AUTHENTICATED`
+- **AC:** EC-01, BR-01, FR-05
+- **Type:** integration
+
+### TC-67: A deleted guest's token is refused
+
+- **US:** SS-US-03
+- **Given:** A guest whose trial has ended and has been purged
+- **When:** Its token is presented to any protected route
+- **Then:** The response is `401 NOT_AUTHENTICATED`
+- **AC:** AC-05, FR-05
+- **Type:** integration
+
+### TC-68: Purge removes an ended trial with all its data, and nothing else
+
+- **US:** SS-US-03
+- **Given:** An ended guest owning its example plus an extra wallet, category, budget and transaction; a live guest with its example; an `ACTIVE` member with a wallet, category, budget and transaction
+- **When:** The purge runs
+- **Then:** The ended guest's account, wallets, categories, budgets and transactions are all gone; the live guest's and the member's rows are all present with unchanged balances; the purge reports the counts it removed per kind
+- **AC:** AC-06, FR-06
+- **Type:** integration
+
+### TC-69: Starting a trial is audited without the token
+
+- **US:** SS-US-03
+- **Given:** Log capture enabled
+- **When:** A trial is started
+- **Then:** One `GUEST_CREATED` record is emitted with result `SUCCESS`, the guest's id as actor and target, and the trial end; neither the access token nor the placeholder address appears in it
+- **AC:** AC-13, FR-13
+- **Type:** integration
+
+### TC-70: Deleting an ended trial is audited with counts
+
+- **US:** SS-US-03
+- **Given:** An ended guest owning one wallet, one category, one transaction and one budget, and log capture enabled
+- **When:** The purge runs
+- **Then:** One `GUEST_PURGED` record is emitted with result `SUCCESS`, the guest's id as target, and counts `wallets: 1`, `categories: 1`, `transactions: 1`, `budgets: 1`; no token, password or hash appears in it
+- **AC:** AC-13, FR-13
+- **Type:** integration
+
+### TC-71: Ended trials are deleted when the server starts
+
+- **US:** SS-US-03
+- **Given:** An ended guest with its example in the database, and a live guest
+- **When:** The application starts (its startup hook runs)
+- **Then:** The ended guest and its data are gone; the live guest is untouched
+- **AC:** EC-04, AC-06, FR-07
+- **Type:** integration
+
+### TC-72: The purge-guests command deletes ended trials and reports what it removed
+
+- **US:** SS-US-03
+- **Given:** An ended guest with its example, and a live guest
+- **When:** `python -m app.cli purge-guests` is run against the same database
+- **Then:** It exits `0` and prints the number of trials and rows removed; the ended guest and its data are gone; the live guest is untouched
+- **AC:** AC-06, FR-07
+- **Type:** integration
+
+### TC-73: An ended trial never holds a place under the cap
+
+- **US:** SS-US-03
+- **Given:** The cap set to 2, one live guest and one ended guest
+- **When:** A trial is started
+- **Then:** The response is `201`; the ended guest has been deleted; two guests remain, both live
+- **AC:** EC-03, AC-11, FR-07
+- **Type:** integration
+
+### TC-74: At the cap, a new trial is refused and nothing is created
+
+- **US:** SS-US-03
+- **Given:** The cap set to 2, and two live guests
+- **When:** A third trial is started
+- **Then:** The response is `503 GUEST_LIMIT_REACHED` in the flat envelope; the number of accounts, wallets, categories and transactions is unchanged
+- **AC:** AC-11, FR-11, BR-06
+- **Type:** integration
+
+### TC-75: The sixth trial start from one client within an hour is refused
+
+- **US:** SS-US-03
+- **Given:** The production limit (`5/hour`) and a reset limiter
+- **When:** Six trials are started in succession from the same client
+- **Then:** The first five are `201`; the sixth is `429 RATE_LIMIT_EXCEEDED` in the flat envelope (`error_code`, `message`, `details`); exactly five guest accounts exist
+- **AC:** AC-10, FR-10, BR-06
+- **Type:** integration
+
+### TC-76: A failure while creating the example leaves nothing behind
+
+- **US:** SS-US-03
+- **Given:** Creating the example transaction forced to fail with an unexpected error
+- **When:** A trial is started
+- **Then:** The response is `500 INTERNAL_ERROR`; no guest account, wallet, category or transaction from that attempt exists
+- **AC:** AC-12, FR-12
+- **Type:** integration
+
+### TC-77: The login service never authenticates a guest, whatever password is submitted
+
+- **US:** SS-US-03
+- **Given:** A guest account, and the login service called directly with that guest's placeholder address (the API boundary would reject the address first — TC-78)
+- **When:** It is called with the timing-parity dummy password, then with an arbitrary password
+- **Then:** Both raise the generic invalid-credentials refusal; no token is issued (`plan.md` F1)
+- **AC:** AC-07, EC-09, FR-08
+- **Type:** integration
+
+### TC-78: A login naming a guest's placeholder address is rejected before any lookup
+
+- **US:** SS-US-03
+- **Given:** A guest account
+- **When:** `POST /api/v1/auth/login` is sent with its placeholder address and any password
+- **Then:** The response is `422 VALIDATION_ERROR` naming the email field; no token is issued and no login audit record is emitted
+- **AC:** AC-07, EC-09, FR-08
+- **Type:** integration
+
+### TC-79: An ADMIN cannot invite a guest's address, or any guest-style address
+
+- **US:** SS-US-03
+- **Given:** An ADMIN, a live guest, and email capture
+- **When:** The ADMIN invites the guest's exact placeholder address, then a fresh `someone@guest.invalid`
+- **Then:** Both responses are `422 VALIDATION_ERROR`; no invitation row is created and no email is sent; the guest's account is unchanged
+- **AC:** AC-07, FR-08
+- **Type:** integration
+
+### TC-80: The invitation service refuses a guest address even past the validation layer
+
+- **US:** SS-US-03
+- **Given:** An ADMIN, and the invitation service called directly with `guest-x@guest.invalid`
+- **When:** It runs
+- **Then:** It raises the validation refusal (`422`) and creates neither a user nor an invitation (`plan.md` A13's defensive layer)
+- **AC:** AC-07, FR-08
+- **Type:** integration
+
+### TC-81: promote-admin refuses a guest account
+
+- **US:** SS-US-03
+- **Given:** A guest account
+- **When:** `python -m app.cli promote-admin --email <its placeholder address> --password '…'` is run
+- **Then:** It exits `1` with a message on stderr; the account is still `GUEST`, still `ACTIVE`, still without a password
+- **AC:** AC-07, FR-08, BR-02
+- **Type:** integration
+
+### TC-82: Guests are absent from the ADMIN's user list and its total
+
+- **US:** SS-US-03
+- **Given:** An ADMIN, one `ACTIVE` member, one `PENDING` invitee, and two live guests
+- **When:** The ADMIN lists users
+- **Then:** The items contain the ADMIN, the member and the invitee and no guest; the total counts exactly those three
+- **AC:** AC-08, FR-09, BR-05
+- **Type:** integration
+
+### TC-83: A guest cannot invite or list users
+
+- **US:** SS-US-03
+- **Given:** A guest holding its token
+- **When:** It sends `POST /api/v1/users/invite` with a valid address, then `GET /api/v1/users`
+- **Then:** Both are `403 FORBIDDEN`; no invitation is created
+- **AC:** AC-09, BR-05
+- **Type:** integration
+
+### TC-84: A former guest's invitation starts an ordinary account with nothing from the trial
+
+- **US:** SS-US-03
+- **Given:** A live guest, and an ADMIN
+- **When:** The ADMIN invites a real address for the same person
+- **Then:** The response is `201`; the new account is `PENDING`, role `USER`, with no wallets or categories; the guest account and its example are unchanged
+- **AC:** EC-08, AC-07, BR-02
+- **Type:** integration
+
+### TC-85: A guest's sign-out deletes nothing, and its token keeps working
+
+- **US:** SS-US-03
+- **Given:** A live guest with its example and one extra wallet, holding its token
+- **When:** It calls `POST /api/v1/auth/logout`, then lists its wallets with the same token
+- **Then:** The logout is `200` with the same `LogoutResult` shape SS-US-02 returns to anyone; the guest account, its wallets, category and transaction are all still present; the later wallet list is `200` with both wallets — the trial can be continued
+- **AC:** AC-15, AC-16, FR-15, BR-07
+- **Type:** integration
+
+### TC-86: "Try as a guest" lands on Home with the example and the trial notice
+
+- **US:** SS-US-03
+- **Given:** The sign-in panel, with no saved guest trial on the device
+- **When:** "Try as a guest" is pressed; then the Wallets tab is opened
+- **Then:** The trial request is answered `201`; the Home tab is shown; the banner reads "Guest trial — deleted on <date>. Ask your family's admin for an invitation to keep using PFM." with the date of the response's trial end; the Wallets tab lists "Example wallet"
+- **AC:** AC-01, AC-02, AC-14
+- **Type:** e2e
+
+### TC-87: A guest is still a guest after a reload
+
+- **US:** SS-US-03
+- **Given:** A guest who has just started a trial from the sign-in panel
+- **When:** The page is reloaded
+- **Then:** The Home tab is shown without signing in, and the trial banner is still shown with the same date
+- **AC:** AC-04, AC-14
+- **Type:** e2e
+
+### TC-88: A guest can add a wallet
+
+- **US:** SS-US-03
+- **Given:** A guest on the Wallets tab
+- **When:** The add-wallet form is filled with a new name and balance and submitted
+- **Then:** The create request is answered `201`; the new wallet is listed beside "Example wallet"
+- **AC:** AC-03
+- **Type:** e2e
+
+### TC-89: A guest sees no Family tab
+
+- **US:** SS-US-03
+- **Given:** A guest
+- **When:** The tab bar is shown
+- **Then:** There is no Family tab
+- **AC:** AC-09
+- **Type:** e2e
+
+### TC-90: A guest signs out, and continues the same trial from the sign-in screen
+
+- **US:** SS-US-03
+- **Given:** A guest who started a trial and added a wallet
+- **When:** Sign out is pressed; then the page is reloaded; then "Continue guest trial" is pressed and the Wallets tab opened
+- **Then:** No confirmation is asked; the logout request is answered `200` and the sign-in panel is shown with "Continue guest trial — N days left", N computed from the trial end the server returned (whole days, rounded down, at least 1 — QF-08), beside "Try as a guest"; after the reload it is still offered; pressing it sends one wallet-list request answered `200`, the Home tab and the trial banner are shown, and the Wallets tab lists "Example wallet" and the added wallet
+- **AC:** AC-15, AC-16, EC-07
+- **Type:** e2e
+
+### TC-91: A guest's sign-out while the server cannot be reached still keeps the trial
+
+- **US:** SS-US-03
+- **Given:** A guest, and the browser set to fail the logout request with a network error
+- **When:** Sign out is pressed; then the network is restored and "Continue guest trial" is pressed
+- **Then:** The sign-in panel is shown with "Continue guest trial" offered; continuing answers `200` and lands on Home with the guest's data
+- **AC:** EC-11, AC-15
+- **Type:** e2e
+
+### TC-92: A saved trial the server refuses is dropped with a message
+
+- **US:** SS-US-03
+- **Given:** A guest who has signed out, and the saved trial's token in device storage replaced by one the server refuses — the same `401` an ended or deleted trial gets (QF-05)
+- **When:** "Continue guest trial" is pressed; then the page is reloaded
+- **Then:** The wallet-list request is answered `401`; "Your guest trial has ended." is shown; the sign-in panel stays and "Continue guest trial" is gone; after the reload it is still gone, and "Try as a guest" is still offered
+- **AC:** AC-18, EC-10
+- **Type:** e2e
+
+### TC-93: A saved trial whose end has passed by the device's clock is not offered, and N is never 0
+
+- **US:** SS-US-03
+- **Given:** A saved guest trial in device storage, its trial end set in turn to one minute in the past, to five hours ahead, and to 6 days 23 hours ahead
+- **When:** The sign-in panel is shown for each
+- **Then:** One minute past: no "Continue guest trial", no message, and no request is sent; five hours ahead: "Continue guest trial — 1 day left"; 6 days 23 hours ahead: "Continue guest trial — 6 days left"
+- **AC:** AC-17, EC-07, EC-10
+- **Type:** e2e
+
+### TC-94: "Try as a guest" with a saved trial starts a new one and replaces it
+
+- **US:** SS-US-03
+- **Given:** A guest who added a wallet named for this test, then signed out — so the device holds that trial
+- **When:** "Try as a guest" is pressed; the Wallets tab is opened; then Sign out is pressed and "Continue guest trial" pressed
+- **Then:** The trial request is answered `201`; the Wallets tab lists only "Example wallet", not the earlier trial's wallet; after signing out, exactly one "Continue guest trial" is offered, and continuing shows the new trial — still only "Example wallet"
+- **AC:** AC-19, BR-08, FR-16
+- **Type:** e2e
+
+### TC-95: A member's sign-in leaves the saved trial for later
+
+- **US:** SS-US-03
+- **Given:** A guest who added a wallet and signed out, and an `ACTIVE` member
+- **When:** The member signs in, opens the Wallets tab, and signs out; then "Continue guest trial" is pressed and the Wallets tab opened
+- **Then:** The member's Wallets tab shows none of the guest's wallets; after the member signs out, "Continue guest trial" is still offered; continuing lists the guest's "Example wallet" and its added wallet
+- **AC:** AC-20, FR-16
+- **Type:** e2e
+
+### TC-96: A guest refused while using the app returns to sign-in, told the trial has ended
+
+- **US:** SS-US-03
+- **Given:** A signed-in guest whose session token, and its saved copy, are replaced in device storage by one the server refuses (QF-05)
+- **When:** The page is reloaded
+- **Then:** The first data request is answered `401`; the sign-in panel is shown with "Your guest trial has ended."; "Continue guest trial" is not offered
+- **AC:** EC-12, AC-05, FR-16
+- **Type:** e2e

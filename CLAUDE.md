@@ -10,14 +10,14 @@ The purpose of this project is to practise the **AIF-SDLC cycle**, where documen
 
 | File | Owner | Rule |
 | :-- | :-- | :-- |
-| `SRS.md` v2.2.0 | the user; AI may **align**, not extend | Requirements baseline: FR, NFR, UXR, BF, Features 01–11 with Gherkin, §1.5 Conceptual Domain Model. See *They are references, not contracts* below. |
-| `SDS.md` v1.5.1 | the user; AI may **align** | Technical baseline: domain model, ERD, architecture, API design, security design. See *They are references, not contracts* below. |
+| `SRS.md` v2.4.0 | the user; AI may **align**, not extend | Requirements baseline: FR, NFR, UXR, BF, Features 01–11 with Gherkin, §1.5 Conceptual Domain Model. See *They are references, not contracts* below. |
+| `SDS.md` v1.6.0 | the user; AI may **align** | Technical baseline: domain model, ERD, architecture, API design, security design. See *They are references, not contracts* below. |
 | `aif-review-checklist.md` | the user | Run before claiming any step gate. Edited once to remove Jira and record stack adaptations; otherwise treat as the user's. |
 | `artifact-templates/*.md` | the user | **Read-only. Never edit. Never split.** The canonical shape of every artifact — see §1.1. |
 | `constitution.md` | AI + user | Project rules with stable IDs (AR/API/NC/VL/LA/PF/SEC/TST/DOD/ENV), derived from the SDS. |
 | `specs/**` | AI + user | The working artifacts, and the only ones. Design output goes here — **never** into `SDS.md`. |
 
-`SDS.md` was aligned to `SRS.md` on 2026-07-30 (v1.1.0), to the built system on 2026-07-31 (v1.2.0), to the `DG` diagram convention the same day (v1.3.0), its Category ERD to §2.2 while specifying CM-US-01 (v1.4.0), and its §4.5 physical view to the laptop-and-Android deployment ruling on 2026-10-22 (v1.5.0, v1.5.1); `SRS.md` was aligned on 2026-07-31 (v2.1.0) and gained its conceptual domain model, §1.5, at the user's explicit request the same day (v2.2.0). **`SRS.md` wins any remaining disagreement** — the rulings are in *Resolved contradictions* below.
+`SDS.md` was aligned to `SRS.md` on 2026-07-30 (v1.1.0), to the built system on 2026-07-31 (v1.2.0), to the `DG` diagram convention the same day (v1.3.0), its Category ERD to §2.2 while specifying CM-US-01 (v1.4.0), its §4.5 physical view to the laptop-and-Android deployment ruling on 2026-10-22 (v1.5.0, v1.5.1), and the guest trial on 2026-10-26 (v1.6.0); `SRS.md` was aligned on 2026-07-31 (v2.1.0), gained its conceptual domain model, §1.5, at the user's explicit request the same day (v2.2.0), had Feature-11 refined into Asset & Investment Holdings Tracking (v2.3.0), and gained US-02-03 Guest Trial with its one exception to §1.3's *Verified Accounts Only* constraint on the product owner's decision of 2026-10-23 (v2.4.0). **`SRS.md` wins any remaining disagreement** — the rulings are in *Resolved contradictions* below.
 
 ## 1.1 Artifact rules
 
@@ -115,6 +115,7 @@ Where a deviation remains the right answer:
 | Sequence diagram shape | Four lanes only, `UI → API → <Name>Service → Store`. No `Repo`/`DB` lane, no SQL, no real parameter lists, every `UI→API` request answered with an HTTP status in every branch. The prior session's `plan.md` diagrams and the SDS §4.4.1 diagram violated this — an already-cited checklist rule that had been marked passed in error — and were redrawn. | constitution `DG-01`…`DG-07` |
 | Automation test location | Backend in `backend/tests/` (pytest); functional UI in `mobile/e2e/` (`@playwright/test`, real backend). UI tests assert behaviour, never visual design. | §1.1 rule 0; user ruling 2026-10-19 |
 | UI fast-track | Presentation and interaction work in `mobile/` may go from request to code; `[UI]` test cases and e2e tests follow. Backend, API and requirement changes keep the full cycle. | §2 *UI fast-track*; user ruling 2026-10-19 |
+| Guest trial | A visitor may try the app without an invitation: a **server-side** guest account (role `GUEST`) on the members' APIs, **7 days** then deleted with all its data; **Sign out deletes nothing** — the phone keeps the trial and the sign-in screen offers "Continue guest trial — N days left" (one saved trial per phone; "Try as a guest" always starts a new one); **never upgraded** (an invited guest starts fresh), first view **one example wallet with one example transaction**. The one exception to SRS §1.3 *Verified Accounts Only*. | SRS US-02-03 v2.4.0; `constitution.md` SEC-12; product-owner rulings 2026-10-23, 2026-10-26 |
 | Deployment | **Android only** (APK via EAS cloud, no store, no iOS); the backend on this laptop, published on a fixed Tailscale Funnel address built into the APK; SQLite in production. Web stays the dev surface and e2e target. | `constitution.md` ENV-05/ENV-06; SDS §4.5 v1.5.1; user ruling 2026-10-22 |
 
 ### Story ID map
@@ -128,6 +129,7 @@ The two documents number the same stories differently. Always cite both.
 | US-01-03 | UM-US-03 | List users (ADMIN) | `specs/001-user-onboarding/` | 3rd |
 | US-02-01 | SS-US-01 | Login | `specs/002-system-security/` | before implementing US-01-01 |
 | US-02-02 | SS-US-02 | Logout | `specs/002-system-security/` | deferred |
+| US-02-03 | SS-US-03 | Guest trial | `specs/002-system-security/` | after SS-US-02 (product-owner ruling 2026-10-23) |
 | — | UM-US-04/05, DC-US-01/02 | SDS-only stories | — | out of MVP scope |
 
 Note the split between *specification* order and *implementation* order: UM-US-01 is specified first because it is the first story of the first epic, but it **cannot be implemented** until login (US-02-01, a different epic) exists, since its ACs require an authenticated ADMIN. That dependency belongs in the spec's *Assumptions & Dependencies* section.
@@ -187,7 +189,7 @@ specs/
 │   ├── plan.md                   same story sections, design detail
 │   └── test_cases.md             TC-NN continuous across all three stories
 └── 002-system-security/          Feature-02 / SS
-    ├── spec.md                   ## SS-US-01, ## SS-US-02
+    ├── spec.md                   ## SS-US-01, ## SS-US-02, ## SS-US-03
     └── …
 ```
 

@@ -6,7 +6,7 @@ Groups: **AR** architecture · **DG** diagrams · **API** API design · **NC** n
 
 Every rule has a permanent ID. Cite them in `plan.md`, in review findings, and in ADRs. Never renumber — supersede instead.
 
-**Source of authority:** `SRS.md` v2.2.0 is the requirements baseline. `SDS.md` v1.3.0 supplies the technical rules cited here — §4.7 (architecture principles), §6.1 (API standards), §7 (security), §8 (NFR), §12 (naming, DoD).
+**Source of authority:** `SRS.md` v2.4.0 is the requirements baseline. `SDS.md` v1.6.0 supplies the technical rules cited here — §4.7 (architecture principles), §6.1 (API standards), §7 (security), §8 (NFR), §12 (naming, DoD).
 
 Precedence: **SRS → SDS → this file.** Where this file and the SDS disagree, the SDS wins and this file gets corrected; where the SDS and the SRS disagree, the SRS wins and the SDS gets corrected. Each document's own revision-history section is the audit trail for its alignment edits.
 
@@ -74,7 +74,7 @@ prose or in the code. These rules are how that stays true.
 - **API-05** No generic `updateStatus` endpoint. Each business state transition gets its own explicit endpoint (`/users/activate`, not `PATCH /users/{id}` with a status field).
 - **API-06** List endpoints accept `page` and `page_size`; default 25, maximum 100. Responses carry a total count.
 - **API-07** Every endpoint declares an explicit `response_model` and status code so the generated OpenAPI schema is accurate (SDS §4.7 API-First).
-- **API-08** Public endpoints are exactly: `POST /api/v1/auth/login`, `POST /api/v1/users/activate`, `GET /api/v1/users/activate`, `GET /health`. Everything else requires a bearer token (SDS §7.1.8). Adding a public route requires an ADR.
+- **API-08** Public endpoints are exactly: `POST /api/v1/auth/login`, `POST /api/v1/auth/guest`, `POST /api/v1/users/activate`, `GET /api/v1/users/activate`, `GET /health`. Everything else requires a bearer token (SDS §7.1.8). Adding a public route requires an ADR — in this repo, a row in the story's `plan.md` *Gaps & Decisions* (`CLAUDE.md` §1.1 rule 0). *(`POST /api/v1/auth/guest` added 2026-10-26 for SS-US-03 — its `plan.md` records the justification and its abuse limits, SEC-12.)*
 
 ## NC — Naming Conventions
 
@@ -115,6 +115,7 @@ prose or in the code. These rules are how that stays true.
 - **SEC-09** No secret is hardcoded. All come from `.env` via `pydantic-settings`; `.env` is gitignored and `.env.example` lists every key with no real values.
 - **SEC-10** Error messages must not reveal whether an account exists, except where a story deliberately does so (an ADMIN inviting an existing active address — documented in that story's spec).
 - **SEC-11** Rate limiting on the invitation **and activation** endpoints — to blunt invite spam, and to stop the unauthenticated `GET /users/activate` being brute-forced as an oracle over token values (SDS §7.3 DoS row). Specified, not yet implemented: deferred as an explicit task in each story's `plan.md` (UM-US-01 T-13, UM-US-02 T-08) because no AC requires it. A story that adds a public route inherits this rule and must state where it stands on it.
+- **SEC-12** **Guest trials** (SS-US-03 / SRS US-02-03, product-owner ruling 2026-10-23) are the one account created without an invitation, and stay contained: a guest account (role `GUEST`) **never receives email** — its address is a reserved, never-deliverable placeholder (`guest-<uuid>@guest.invalid`) — holds no password, and **cannot be upgraded**: nothing converts a guest, or its data, into a member account, and nothing may promote, invite or sign in to one. It is **deleted together with all of its data** when its 7-day trial ends — **never on sign-out**, which keeps the trial resumable on the same device (product-owner ruling 2026-10-26) — and is refused on every request from that moment even before the deletion runs (SDS §7.1.7). Its token lives as long as the trial — the one exception to SEC-06's 60 minutes — and the public route that creates it is rate-limited per client address and capped globally (SDS §7.3), the first public route to satisfy SEC-11 rather than defer it.
 
 ## LA — Logging & Audit
 
