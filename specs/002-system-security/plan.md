@@ -679,10 +679,10 @@ cookie (SDS §7.1.9). `GUEST_LIMIT_REACHED` and `RATE_LIMIT_EXCEEDED` added to S
 
 | Element | ID | Status | File |
 |---------|----|--------|------|
-| "Try as a guest" button, under Sign in | `login-guest` | Missing | `mobile/src/components/wallet/LoginPanel.tsx` |
-| "Continue guest trial — N days left" button | `guest-continue` | Missing | `mobile/src/components/wallet/LoginPanel.tsx` |
-| "Your guest trial has ended." message | `guest-trial-ended` | Missing | `mobile/src/components/wallet/LoginPanel.tsx` |
-| Guest trial banner, under the header | `guest-banner` | Missing | `mobile/src/components/AppHeader.tsx` |
+| "Try as a guest" button, under Sign in | `login-guest` | Present | `mobile/src/components/wallet/LoginPanel.tsx` |
+| "Continue guest trial — N days left" button | `guest-continue` | Present | `mobile/src/components/wallet/LoginPanel.tsx` |
+| "Your guest trial has ended." message | `guest-trial-ended` | Present | `mobile/src/components/wallet/LoginPanel.tsx` |
+| Guest trial banner, under the header | `guest-banner` | Present | `mobile/src/components/AppHeader.tsx` |
 | Sign out | `sign-out` | Present | `mobile/src/components/AppHeader.tsx` |
 | Family tab | `tab-family` | Present | `mobile/src/components/TabBar.tsx` (absent for non-ADMIN) |
 | Wallet form and submit | `add-wallet-form`, `wallet-name`, `wallet-balance`, `wallet-submit` | Present | `mobile/src/components/pages/WalletsPage.tsx` |
@@ -691,18 +691,18 @@ cookie (SDS §7.1.9). `GUEST_LIMIT_REACHED` and `RATE_LIMIT_EXCEEDED` added to S
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | Migration: nullable tz-aware `users.expires_at` + index, `down_revision = "e7a1c3f9b2d4"`, batch pattern (A1) | `backend/migrations/versions/<rev>_add_expires_at_to_users.py` | Open |
-| T-02 | Model: `UserRole.GUEST`, `UserModel.expires_at` | `backend/app/models/user.py` | Open |
-| T-03 | Settings `guest_ttl_days`, `guest_max_active`, `guest_rate_limit`; `.env.example`; `uv add slowapi` (A10, A16) | `backend/app/core/config.py`, `backend/.env.example`, `backend/pyproject.toml` | Open |
-| T-04 | Repositories: `user_repo.add_guest_user`/`list_ended_guests`/`count_guests`/`delete_user`, `list_users` excludes `GUEST`; `delete_all_for_owner` in transaction/budget/category/wallet repos (A8, A13) | `backend/app/repositories/*.py` | Open |
-| T-05 | `GuestLimitReachedError` (503); `TokenResponse.role` widened; `GuestSessionRead` (A3, A12) | `backend/app/core/errors.py`, `backend/app/schemas/auth.py` | Open |
-| T-06 | `auth_service.authenticate()`: NULL-hash or `GUEST` row → `INVALID_CREDENTIALS`, dummy comparison kept for timing (F1). `logout()` untouched | `backend/app/services/auth_service.py` | Open |
-| T-07 | `get_current_user`: ended `GUEST` → `NotAuthenticatedError` (A5) | `backend/app/core/deps.py` | Open |
-| T-08 | `guest_service.start()` and `purge_expired()` (A6, A7, A8, A12, A14) | `backend/app/services/guest_service.py` | Open |
-| T-09 | `invitation_service` refuses `@guest.invalid` (422); `cli promote-admin` refuses `GUEST`; new `cli purge-guests` (A9, A13) | `backend/app/services/invitation_service.py`, `backend/app/cli.py` | Open |
-| T-10 | Router `POST /auth/guest` (`201`, `GuestSessionRead`, rate-limited); `main.py` lifespan purge, `app.state.limiter`, `429` envelope handler (A3, A9, A10) | `backend/app/api/v1/auth.py`, `backend/app/core/rate_limit.py`, `backend/app/main.py` | Open |
-| T-11 | Integration tests from `test_cases.md` TC-58…TC-85, seen failing first; full existing suite re-run unmodified (A5) | `backend/tests/integration/test_ss_us_03_guest_trial.py` | Open |
-| T-12 | Client session: `UserRole` + `'GUEST'`, `guestLogin()`, `signInAsGuest()` writing the active session and the saved slot, `continueGuestTrial()`, `isGuest`/`trialEndsAt`/`savedGuestTrial`, 401 handler clears a guest's saved slot; saved-slot storage with the SecureStore/`localStorage` split (A15, A17, A18) | `mobile/src/api/types.ts`, `mobile/src/api/auth.ts`, `mobile/src/store/session-storage.ts`, `mobile/src/store/auth.ts` | Open |
-| T-13 | Client screens: "Try as a guest", "Continue guest trial — N days left" (A19), the ended message, the guest banner, `429`/`503` message | `mobile/src/components/wallet/LoginPanel.tsx`, `mobile/src/components/AppHeader.tsx` | Open |
-| T-14 | E2E tests TC-86…TC-95; dev `.env` raises `GUEST_RATE_LIMIT` (and, if e2e runs accumulate, `GUEST_MAX_ACTIVE`) for the e2e backend only (A10) | `mobile/e2e/auth.spec.ts` (appended) | Open |
-| T-15 | Confirm the client address behind Funnel is the visitor's, and whether `X-Forwarded-For` can be spoofed through it (A11) — before relying on the limiter live; evidence pasted at the Deploy gate | live server, `scripts/serve.sh` | Open |
+| T-01 | Migration: nullable tz-aware `users.expires_at` + index, `down_revision = "e7a1c3f9b2d4"`, batch pattern (A1) | `backend/migrations/versions/<rev>_add_expires_at_to_users.py` | Done — `c9b32a49eaf6_add_expires_at_to_users.py`; upgrade, downgrade, upgrade on an empty database clean |
+| T-02 | Model: `UserRole.GUEST`, `UserModel.expires_at` | `backend/app/models/user.py` | Done |
+| T-03 | Settings `guest_ttl_days`, `guest_max_active`, `guest_rate_limit`; `.env.example`; `uv add slowapi` (A10, A16) | `backend/app/core/config.py`, `backend/.env.example`, `backend/pyproject.toml` | Done — `slowapi 0.1.10` |
+| T-04 | Repositories: `user_repo.add_guest_user`/`list_ended_guests`/`count_guests`/`delete_user`, `list_users` excludes `GUEST`; `delete_all_for_owner` in transaction/budget/category/wallet repos (A8, A13) | `backend/app/repositories/*.py` | Done |
+| T-05 | `GuestLimitReachedError` (503); `TokenResponse.role` widened; `GuestSessionRead` (A3, A12) | `backend/app/core/errors.py`, `backend/app/schemas/auth.py` | Done |
+| T-06 | `auth_service.authenticate()`: NULL-hash or `GUEST` row → `INVALID_CREDENTIALS`, dummy comparison kept for timing (F1). `logout()` untouched | `backend/app/services/auth_service.py` | Done — F1 hole confirmed real (`test_cases.md` note 2) |
+| T-07 | `get_current_user`: ended `GUEST` → `NotAuthenticatedError` (A5) | `backend/app/core/deps.py` | Done |
+| T-08 | `guest_service.start()` and `purge_expired()` (A6, A7, A8, A12, A14) | `backend/app/services/guest_service.py` | Done |
+| T-09 | `invitation_service` refuses `@guest.invalid` (422); `cli promote-admin` refuses `GUEST`; new `cli purge-guests` (A9, A13) | `backend/app/services/invitation_service.py`, `backend/app/cli.py` | Done |
+| T-10 | Router `POST /auth/guest` (`201`, `GuestSessionRead`, rate-limited); `main.py` lifespan purge, `app.state.limiter`, `429` envelope handler (A3, A9, A10) | `backend/app/api/v1/auth.py`, `backend/app/core/rate_limit.py`, `backend/app/main.py` | Done — the limit is read from the app's own settings through `rate_limit.configure()`; startup purge logs and continues on failure (access already ends at `expires_at`, A5) |
+| T-11 | Integration tests from `test_cases.md` TC-58…TC-85, seen failing first; full existing suite re-run unmodified (A5) | `backend/tests/integration/test_ss_us_03_guest_trial.py` | Done — 28 tests seen failing, then green; full suite 660 passed unmodified |
+| T-12 | Client session: `UserRole` + `'GUEST'`, `guestLogin()`, `signInAsGuest()` writing the active session and the saved slot, `continueGuestTrial()`, `isGuest`/`trialEndsAt`/`savedGuestTrial`, 401 handler clears a guest's saved slot; saved-slot storage with the SecureStore/`localStorage` split (A15, A17, A18) | `mobile/src/api/types.ts`, `mobile/src/api/auth.ts`, `mobile/src/store/session-storage.ts`, `mobile/src/store/auth.ts` | Done |
+| T-13 | Client screens: "Try as a guest", "Continue guest trial — N days left" (A19), the ended message, the guest banner, `429`/`503` message | `mobile/src/components/wallet/LoginPanel.tsx`, `mobile/src/components/AppHeader.tsx` | Done |
+| T-14 | E2E tests TC-86…TC-95; dev `.env` raises `GUEST_RATE_LIMIT` (and, if e2e runs accumulate, `GUEST_MAX_ACTIVE`) for the e2e backend only (A10) | `mobile/e2e/auth.spec.ts` (appended) | Done — 22 e2e (11 × desktop + phone); limits raised by **environment variables** on the e2e backend, not in `.env`, which the live server also reads (`test_cases.md`) |
+| T-15 | Confirm the client address behind Funnel is the visitor's, and whether `X-Forwarded-For` can be spoofed through it (A11) — before relying on the limiter live; evidence pasted at the Deploy gate | live server, `scripts/serve.sh` | Done 2026-10-26 — the limiter keys on the real visitor behind Funnel, and a forged `X-Forwarded-For` is ignored (`test_cases.md` note 3) |

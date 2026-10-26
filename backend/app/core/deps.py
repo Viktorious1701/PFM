@@ -17,7 +17,7 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.core import security
+from app.core import clock, security
 from app.core.config import Settings, get_settings
 from app.core.errors import ForbiddenError, NotAuthenticatedError
 
@@ -138,6 +138,16 @@ def get_current_user(
     # DEACTIVATED one has had them withdrawn. Neither may pass, even holding a
     # token that is still cryptographically valid.
     if user.status is not UserStatus.ACTIVE:
+        raise NotAuthenticatedError()
+
+    # SS-US-03 plan.md A5: a guest's trial is over *at* its stored end (spec
+    # BR-01, EC-01), whether or not the purge has deleted it yet (EC-02). This
+    # stored end is the authoritative check — the token's own `exp` is only a
+    # backstop (A4). Same single 401 as every other failure (SEC-10). A purged
+    # guest needs nothing here: its row is gone, so the lookup above refused it.
+    if user.role is UserRole.GUEST and (
+        user.expires_at is None or clock.utcnow() >= clock.ensure_aware(user.expires_at)
+    ):
         raise NotAuthenticatedError()
 
     return user

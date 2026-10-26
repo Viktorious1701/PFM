@@ -558,7 +558,7 @@ asserted by `TC-93` through device storage, not by waiting.
 | AC-07 | [API] | TC-59, TC-77, TC-78, TC-79, TC-80, TC-81 | — | — |
 | AC-08 | [API] | TC-82 | — | — |
 | AC-09 | [BOTH] | TC-83 | TC-89 | — |
-| AC-10 | [API] | TC-75 | — *(QF-06)* | per-visitor half: `plan.md` T-15 (QF-04) |
+| AC-10 | [API] | TC-75 | — *(QF-06)* | per-visitor half: `plan.md` T-15 (QF-04) — closed 2026-10-26, Test Implementation Map note 3 |
 | AC-11 | [API] | TC-74 | — *(QF-06)* | — |
 | AC-12 | [API] | TC-76 | — | — |
 | AC-13 | [API] | TC-69, TC-70 | — | — |
@@ -589,10 +589,63 @@ asserted by `TC-93` through device storage, not by waiting.
 
 ### Test Implementation Map *(filled at step 4)*
 
+Integration TCs: `backend/tests/integration/test_ss_us_03_guest_trial.py`. E2E TCs: `mobile/e2e/auth.spec.ts`, run on both Playwright projects (`desktop`, `phone`) against the real dev backend.
+
 | TC | pytest node id / e2e test | Result |
 |---|---|---|
-| TC-58 … TC-85 | `backend/tests/integration/test_ss_us_03_guest_trial.py` — *pending step 4* | — |
-| TC-86 … TC-96 | `mobile/e2e/auth.spec.ts` › TC-86 … TC-96 — *pending step 4* | — |
+| TC-58 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_starting_a_trial_needs_no_credentials_and_returns_a_guest_session` | PASS — 2026-10-26 |
+| TC-59 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_guest_account_has_placeholder_address_no_password_and_seven_day_end` | PASS — 2026-10-26 |
+| TC-60 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_new_trial_holds_exactly_one_example_wallet_with_one_example_expense` | PASS — 2026-10-26 |
+| TC-61 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_guest_can_do_everything_a_member_can_including_removing_the_example` | PASS — 2026-10-26 — see note 1 |
+| TC-62 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_guest_token_lasts_the_whole_trial_not_sixty_minutes` | PASS — 2026-10-26 |
+| TC-63 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_guest_and_member_cannot_see_each_others_data` | PASS — 2026-10-26 |
+| TC-64 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_two_trials_are_two_separate_guests_each_with_a_fresh_example` | PASS — 2026-10-26 |
+| TC-65 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_guest_whose_trial_has_ended_is_refused_even_before_deletion` | PASS — 2026-10-26 |
+| TC-66 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_trial_ends_exactly_at_its_end_time` | PASS — 2026-10-26 |
+| TC-67 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_deleted_guests_token_is_refused` | PASS — 2026-10-26 |
+| TC-68 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_purge_removes_an_ended_trial_with_all_its_data_and_nothing_else` | PASS — 2026-10-26 |
+| TC-69 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_starting_a_trial_is_audited_without_the_token` | PASS — 2026-10-26 |
+| TC-70 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_deleting_an_ended_trial_is_audited_with_counts` | PASS — 2026-10-26 |
+| TC-71 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_ended_trials_are_deleted_when_the_server_starts` | PASS — 2026-10-26 |
+| TC-72 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_purge_guests_command_deletes_ended_trials_and_reports_what_it_removed` | PASS — 2026-10-26 |
+| TC-73 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_an_ended_trial_never_holds_a_place_under_the_cap` | PASS — 2026-10-26 |
+| TC-74 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_at_the_cap_a_new_trial_is_refused_and_nothing_is_created` | PASS — 2026-10-26 |
+| TC-75 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_sixth_trial_start_from_one_client_within_an_hour_is_refused` | PASS — 2026-10-26 — see note 3 (per-visitor half) |
+| TC-76 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_failure_while_creating_the_example_leaves_nothing_behind` | PASS — 2026-10-26 |
+| TC-77 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_login_service_never_authenticates_a_guest_whatever_the_password` | PASS — 2026-10-26 — see note 2 |
+| TC-78 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_login_naming_a_guests_placeholder_address_is_rejected_before_any_lookup` | PASS — 2026-10-26 |
+| TC-79 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_admin_cannot_invite_a_guests_address_or_any_guest_style_address` | PASS — 2026-10-26 |
+| TC-80 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_invitation_service_refuses_a_guest_address_past_the_validation_layer` | PASS — 2026-10-26 |
+| TC-81 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_promote_admin_refuses_a_guest_account` | PASS — 2026-10-26 |
+| TC-82 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_guests_are_absent_from_the_admins_user_list_and_its_total` | PASS — 2026-10-26 |
+| TC-83 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_guest_cannot_invite_or_list_users` | PASS — 2026-10-26 |
+| TC-84 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_former_guests_invitation_starts_an_ordinary_account_with_nothing_from_the_trial` | PASS — 2026-10-26 |
+| TC-85 | `backend/tests/integration/test_ss_us_03_guest_trial.py::test_guests_sign_out_deletes_nothing_and_its_token_keeps_working` | PASS — 2026-10-26 |
+| TC-86 | `mobile/e2e/auth.spec.ts` › TC-86 "Try as a guest" lands on Home with the example and the trial notice | PASS — 2026-10-26, desktop + phone |
+| TC-87 | `mobile/e2e/auth.spec.ts` › TC-87 A guest is still a guest after a reload | PASS — 2026-10-26, desktop + phone |
+| TC-88 | `mobile/e2e/auth.spec.ts` › TC-88 A guest can add a wallet | PASS — 2026-10-26, desktop + phone |
+| TC-89 | `mobile/e2e/auth.spec.ts` › TC-89 A guest sees no Family tab | PASS — 2026-10-26, desktop + phone |
+| TC-90 | `mobile/e2e/auth.spec.ts` › TC-90 A guest signs out, and continues the same trial from the sign-in screen | PASS — 2026-10-26, desktop + phone |
+| TC-91 | `mobile/e2e/auth.spec.ts` › TC-91 A guest's sign-out while the server cannot be reached still keeps the trial | PASS — 2026-10-26, desktop + phone |
+| TC-92 | `mobile/e2e/auth.spec.ts` › TC-92 A saved trial the server refuses is dropped with a message | PASS — 2026-10-26, desktop + phone |
+| TC-93 | `mobile/e2e/auth.spec.ts` › TC-93 A saved trial whose end has passed by the device's clock is not offered, and N is never 0 | PASS — 2026-10-26, desktop + phone |
+| TC-94 | `mobile/e2e/auth.spec.ts` › TC-94 "Try as a guest" with a saved trial starts a new one and replaces it | PASS — 2026-10-26, desktop + phone |
+| TC-95 | `mobile/e2e/auth.spec.ts` › TC-95 A member's sign-in leaves the saved trial for later | PASS — 2026-10-26, desktop + phone |
+| TC-96 | `mobile/e2e/auth.spec.ts` › TC-96 A guest refused while using the app returns to sign-in, told the trial has ended | PASS — 2026-10-26, desktop + phone |
+
+Full backend suite: `660 passed` (632 pre-existing, unmodified, + 28 here — `plan.md` A5's condition for changing `get_current_user`). `ruff check` and `ruff format --check` clean, `mypy app` clean, coverage **99%**; `guest_service.py`, `rate_limit.py`, `auth_service.py`, `user_repo.py` and the four changed repositories **100%**. Full e2e suite: `110 passed` (88 pre-existing + 22 here: TC-86…TC-96 × desktop + phone). `npm run typecheck` clean.
+
+**Seen failing first.** Before any implementation code existed, all 28 integration tests ran red for the right reason — the route absent (`404 NOT_FOUND` on `POST /auth/guest`) and, for TC-80, `DID NOT RAISE ValidationError`. The 11 e2e tests were run against the pre-story client (the six client files restored from `HEAD` for the run) and all 11 failed on the missing buttons, then passed on the story's client after a clean Metro restart. Each key guard was also mutated out once to prove its TC can fail: removing the `role != GUEST` filter fails TC-82; removing the ended-guest check in `get_current_user` fails TC-66; removing the `promote-admin` refusal fails TC-81; removing the lazy purge from `start()` fails TC-73.
+
+**Note 1 — TC-61's wording.** TC-61 names `200` for the deletion of the example transaction; the member's own route answers `204 No Content` (TM-US-05). The TC's stated intent is "each answers exactly as for a member", so the test asserts `204` — the member's status — and the TC text is the imprecision, not the code. TC-61 itself is left unrewritten (`CLAUDE.md` §1.1 rule 4).
+
+**Note 2 — `plan.md` F1 confirmed in code.** With both F1 guards removed from `auth_service.authenticate()` (the real-hash requirement and the `GUEST` refusal), TC-77 fails with `DID NOT RAISE InvalidCredentialsError`: the timing-parity dummy password did sign a guest in. With either guard alone it passes — the two are independent layers, behind `EmailStr`'s `422` at the API boundary (TC-78).
+
+**Note 3 — the per-visitor half of AC-10 (QF-04), closed by `plan.md` T-15 on 2026-10-26.** The live log records public visitor addresses with port `0` (uvicorn's proxy-header rewrite). One request through `https://an-dang.tail8ac910.ts.net/health` carrying a forged `X-Forwarded-For: 203.0.113.7` was logged as `100.116.139.73:0` — this laptop's own tailnet address — not the forged one. So the limiter's key (`request.client.host`) is the real visitor behind Funnel, and a visitor cannot choose it by sending the header. Residual, accepted by the cap: an IPv6 visitor is keyed per full address (the live log already shows one, `2a03:cfc0:…`), so a host with a /64 could rotate addresses; AC-11's 200-trial cap still bounds the total.
+
+**Deployment-time setting (QF-06).** The e2e backend is started with `GUEST_RATE_LIMIT=1000/hour GUEST_MAX_ACTIVE=100000` **as environment variables**, not in `backend/.env` as `plan.md` T-14 says, because `scripts/serve.sh` runs the live server from the same `backend/` directory and pydantic-settings would read `.env` there too — raising the limit in `.env` would raise it on the family's public server. `.env.example` documents this.
+
+Gmail delivery: **N/A** for this story — a guest never receives email (SEC-12), and the story sends none.
 
 ### TC-58: Starting a trial needs no credentials and returns a guest session
 

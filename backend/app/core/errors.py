@@ -317,3 +317,19 @@ class BudgetCategoryArchivedError(AppError):
     status_code = 409
     error_code = "BUDGET_CATEGORY_ARCHIVED"
     default_message = "The referenced category is archived and cannot receive new budgets."
+
+
+# --- SS-US-03: Guest trial --------------------------------------------------
+
+
+class GuestLimitReachedError(AppError):
+    """spec AC-11 / FR-11 / BR-06, plan.md A12. 200 trials are already live.
+
+    503, not 409/429: the condition is the server's capacity, not the caller's
+    state or rate. Raised before anything is written, and the request rolls
+    back, so a refused start creates nothing (AC-12).
+    """
+
+    status_code = 503
+    error_code = "GUEST_LIMIT_REACHED"
+    default_message = "Guest trials are not available right now. Please try again later."

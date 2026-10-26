@@ -7,8 +7,10 @@ decides *what* to do, this module only knows *how* to ask the database.
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
+from typing import Any, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.models.category import CategoryModel
@@ -259,3 +261,29 @@ def get_top_expense_categories(
         .limit(limit)
     ).all()
     return [(row[0], row[1], row[2]) for row in rows]
+
+
+def delete_all_for_owner(db: Session, *, user_id: str) -> int:
+    """Delete every transaction on a wallet **or** a category `user_id` owns;
+    returns how many (SS-US-03 plan.md A8). "Or category" is defensive — the
+    services already refuse cross-owner references. Called only by the guest
+    purge, before that owner's categories and wallets go, since nothing
+    cascades. Flushed, not committed (AR-06).
+    """
+    owned_wallets = select(WalletModel.id).where(WalletModel.user_id == user_id)
+    owned_categories = select(CategoryModel.id).where(CategoryModel.user_id == user_id)
+    result = cast(
+        "CursorResult[Any]",
+        db.execute(
+            delete(TransactionModel)
+            .where(
+                or_(
+                    TransactionModel.wallet_id.in_(owned_wallets),
+                    TransactionModel.category_id.in_(owned_categories),
+                )
+            )
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    db.flush()
+    return int(result.rowcount or 0)

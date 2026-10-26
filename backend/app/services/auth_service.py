@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.core import audit, security
 from app.core.config import Settings
 from app.core.errors import AccountNotActivatedError, InvalidCredentialsError
-from app.models.user import UserModel, UserStatus
+from app.models.user import UserModel, UserRole, UserStatus
 from app.repositories import user_repo
 from app.schemas.auth import LogoutResult, TokenResponse
 
@@ -48,9 +48,17 @@ def authenticate(
         raise AccountNotActivatedError()
 
     hash_to_check = user.password_hash if user is not None else None
+    # SS-US-03 plan.md F1: the dummy comparison runs for timing parity only —
+    # it can never *count* as a match. Before guests, every non-PENDING account
+    # had a hash, so a matched user with no hash was unreachable; a guest is
+    # the first ACTIVE account without one, and the dummy plaintext is in this
+    # file. So a password is verified only against a real hash, and a GUEST is
+    # never signed into by credentials at all (SEC-12) — both refused with the
+    # same generic outcome as a wrong password (SEC-10).
     password_ok = security.verify_password(password, hash_to_check or _DUMMY_PASSWORD_HASH)
+    password_ok = password_ok and hash_to_check is not None
 
-    if user is None or not password_ok:
+    if user is None or not password_ok or user.role is UserRole.GUEST:
         audit.record(
             action="LOGIN_FAILED",
             actor_id=None,
@@ -86,10 +94,11 @@ def authenticate(
         result="SUCCESS",
     )
 
+    # A GUEST was refused above (plan.md F1), so only a member's role remains.
     return TokenResponse(
         access_token=token,
         expires_in=settings.jwt_ttl_minutes * 60,
-        role=user.role.value,
+        role="ADMIN" if user.role is UserRole.ADMIN else "USER",
     )
 
 

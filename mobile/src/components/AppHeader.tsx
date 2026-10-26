@@ -2,15 +2,19 @@
  * The header above every tab: brand, the song controls, sign out. Fixed —
  * it stays put while the page under it changes. Wide screens fit it on one
  * line; on a phone the song controls take a line of their own.
+ *
+ * A guest also sees the trial notice under it, on every tab (SS-US-03 AC-14).
+ * Sign out is the same one tap for a guest as for a member: it deletes
+ * nothing, so there is nothing to confirm (AC-15).
  */
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import { useAuth } from '../store/auth';
+import { formatTrialEnd, useAuth } from '../store/auth';
 import { font, moon } from '../theme/moonlit';
 
 export function AppHeader({ song }: { song: ReactNode }) {
-  const { signOut } = useAuth();
+  const { signOut, isGuest, trialEndsAt } = useAuth();
   const { width } = useWindowDimensions();
   const narrow = width < 600;
 
@@ -47,6 +51,11 @@ export function AppHeader({ song }: { song: ReactNode }) {
           {signOutButton}
         </View>
       )}
+      {isGuest && trialEndsAt ? (
+        <Text style={styles.banner} testID="guest-banner" accessibilityRole="text">
+          {`Guest trial — deleted on ${formatTrialEnd(trialEndsAt)}. Ask your family's admin for an invitation to keep using PFM.`}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -76,4 +85,16 @@ const styles = StyleSheet.create({
   },
   ghostLabel: { ...label, fontSize: 11, color: moon.inkSoft },
   pressed: { opacity: 0.7 },
+  banner: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,196,110,0.35)',
+    backgroundColor: 'rgba(10,18,32,0.7)',
+    color: moon.warning,
+    fontFamily: font.medium,
+    fontSize: 14,
+  },
 });

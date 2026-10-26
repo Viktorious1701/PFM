@@ -78,6 +78,19 @@ class Settings(BaseSettings):
     # Gitignored — these files carry live, unexpired activation tokens.
     outbox_dir: Path = Path("var/outbox")
 
+    # --- Guest trial (SS-US-03, plan.md A16) ------------------------------
+    # spec BR-01: a trial lasts exactly this many days; its token lasts as
+    # long (SEC-12's exception to SEC-06's 60 minutes, A4).
+    guest_ttl_days: int = 7
+    # spec AC-11: no more live trials than this; the next start is a 503.
+    guest_max_active: int = 200
+    # spec AC-10: per client address, in slowapi's limit syntax (A10).
+    # Production keeps 5/hour. Raised only for the dev backend that
+    # mobile/e2e/ runs against — every e2e request comes from 127.0.0.1
+    # (test_cases QF-06) — by an environment variable at launch, never in
+    # backend/.env, which the live server also reads.
+    guest_rate_limit: str = "5/hour"
+
     # --- CORS ---------------------------------------------------------
     # No story specifies this — it's app wiring, not a business rule. The
     # Expo web client (localhost:8081) is a different origin than the API

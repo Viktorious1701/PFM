@@ -64,6 +64,21 @@ def advance_clock(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-d
     return _advance
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limits() -> Iterator[None]:
+    """SS-US-03 plan.md A10 / TST-08: the guest-trial limiter keeps its counts
+    in process memory, so every test starts with an empty allowance.
+    """
+    try:
+        from app.core.rate_limit import limiter
+    except ImportError:  # pragma: no cover - before SS-US-03 T-10 exists
+        yield
+        return
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     """Per-test settings pointing at an isolated database file.

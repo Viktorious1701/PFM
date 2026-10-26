@@ -22,12 +22,14 @@ from app.core.errors import (
     EmailDeliveryError,
     UserEmailAlreadyActiveError,
     UserEmailDeactivatedError,
+    ValidationError,
 )
 from app.models.invitation import InvitationModel
 from app.models.user import UserModel, UserStatus
 from app.repositories import invitation_repo, user_repo
 from app.services.email.sender import EmailDeliveryFailed, EmailSender
 from app.services.email.templates import build_invitation_email
+from app.services.guest_service import GUEST_EMAIL_DOMAIN
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,13 @@ def create_invitation(
     # spec FR-03 / EC-01: normalise before any comparison or insert, so one
     # mailbox maps to exactly one account.
     email = user_repo.normalize_email(raw_email)
+
+    # SS-US-03 plan.md A13 / SEC-12: a guest's placeholder domain is never
+    # invited. EmailStr already rejects `.invalid` at the boundary (A2); this
+    # second layer keeps the two from disagreeing if that ever changes, and
+    # runs before any lookup or write, so nothing is created.
+    if email.endswith(f"@{GUEST_EMAIL_DOMAIN}"):
+        raise ValidationError(message="This address cannot be invited.", details={"email": email})
 
     existing = user_repo.get_by_email(db, email)
 

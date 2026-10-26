@@ -33,10 +33,17 @@ class UserStatus(enum.StrEnum):
 
 
 class UserRole(enum.StrEnum):
-    """SDS §5.2. Invited accounts always get USER (spec FR-06, BR-05)."""
+    """SDS §5.2. Invited accounts always get USER (spec FR-06, BR-05).
+
+    `GUEST` (SS-US-03, plan.md A1): a time-limited trial account — never
+    invited, no real email, no password, deleted when `expires_at` passes
+    (constitution SEC-12). Never written by any path except
+    `guest_service.start()`, and never turned into another role.
+    """
 
     ADMIN = "ADMIN"
     USER = "USER"
+    GUEST = "GUEST"
 
 
 def new_uuid() -> str:
@@ -76,6 +83,14 @@ class UserModel(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=clock.utcnow
+    )
+
+    # SS-US-03 plan.md A1: the guest trial's end — exactly 7 days after it
+    # starts (spec BR-01). NULL for every member. Indexed because the purge and
+    # the live-trial cap both filter on it (PF-02). SQLite reads it back naive:
+    # compare only through `clock.ensure_aware()` (ENV-03).
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid

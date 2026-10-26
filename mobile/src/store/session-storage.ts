@@ -78,3 +78,62 @@ export async function clearStoredRole(): Promise<void> {
   }
   await SecureStore.deleteItemAsync(ROLE_KEY);
 }
+
+// ---------------------------------------------------------------------------
+// Guest trial (SS-US-03 plan.md A17) — same platform split as above.
+// ---------------------------------------------------------------------------
+
+// The active session's trial end, beside its token and role, so a reloaded
+// guest session still knows when its trial ends (spec AC-14).
+const TRIAL_ENDS_KEY = 'pfm.trial_ends_at';
+// The device's one saved guest trial: kept through sign-out (AC-15) and a
+// member's sign-in (AC-20), replaced when a new trial starts (AC-19).
+const SAVED_TRIAL_TOKEN_KEY = 'pfm.guest_trial.token';
+const SAVED_TRIAL_ENDS_KEY = 'pfm.guest_trial.expires_at';
+
+export type SavedGuestTrial = { token: string; expiresAt: string };
+
+async function readKey(key: string): Promise<string | null> {
+  try {
+    if (isWeb) return globalThis.localStorage?.getItem(key) ?? null;
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function writeKey(key: string, value: string): Promise<void> {
+  if (isWeb) {
+    globalThis.localStorage?.setItem(key, value);
+    return;
+  }
+  await SecureStore.setItemAsync(key, value);
+}
+
+async function removeKey(key: string): Promise<void> {
+  if (isWeb) {
+    globalThis.localStorage?.removeItem(key);
+    return;
+  }
+  await SecureStore.deleteItemAsync(key);
+}
+
+export const getStoredTrialEnd = () => readKey(TRIAL_ENDS_KEY);
+export const setStoredTrialEnd = (expiresAt: string) => writeKey(TRIAL_ENDS_KEY, expiresAt);
+export const clearStoredTrialEnd = () => removeKey(TRIAL_ENDS_KEY);
+
+export async function getSavedGuestTrial(): Promise<SavedGuestTrial | null> {
+  const token = await readKey(SAVED_TRIAL_TOKEN_KEY);
+  const expiresAt = await readKey(SAVED_TRIAL_ENDS_KEY);
+  return token && expiresAt ? { token, expiresAt } : null;
+}
+
+export async function setSavedGuestTrial(trial: SavedGuestTrial): Promise<void> {
+  await writeKey(SAVED_TRIAL_TOKEN_KEY, trial.token);
+  await writeKey(SAVED_TRIAL_ENDS_KEY, trial.expiresAt);
+}
+
+export async function clearSavedGuestTrial(): Promise<void> {
+  await removeKey(SAVED_TRIAL_TOKEN_KEY);
+  await removeKey(SAVED_TRIAL_ENDS_KEY);
+}

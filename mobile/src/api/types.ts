@@ -9,8 +9,9 @@
 /** SDS §2.4.1. `PENDING` — SRS wins over the SDS's old `PENDING_INVITATION`. */
 export type UserStatus = 'PENDING' | 'ACTIVE' | 'DEACTIVATED';
 
-/** SDS §5.2.1 / §5.2.3. Invited accounts always get `USER` (spec FR-06). */
-export type UserRole = 'ADMIN' | 'USER';
+/** SDS §5.2.1 / §5.2.3. Invited accounts always get `USER` (spec FR-06).
+ * `GUEST` is a 7-day guest trial (SS-US-03) — never invited, never upgraded. */
+export type UserRole = 'ADMIN' | 'USER' | 'GUEST';
 
 /** SDS §6.2.1 `InviteCreate`. */
 export type InviteCreate = {
@@ -76,6 +77,15 @@ export type LoginResponse = {
   token_type: 'bearer';
   expires_in: number;
   role: UserRole;
+};
+
+/**
+ * `POST /api/v1/auth/guest` (SDS §6.3 SS-API-03) — SS-US-03. A login response
+ * for a new guest trial, plus the moment the trial ends: an ISO-8601 instant
+ * with a UTC offset. `expires_in` covers the whole trial (plan.md A4).
+ */
+export type GuestSessionResponse = LoginResponse & {
+  expires_at: string;
 };
 
 /** SDS §6.2.1 `UserActivate` — UM-US-02. */

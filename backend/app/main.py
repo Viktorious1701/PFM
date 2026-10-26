@@ -7,16 +7,23 @@ Constitution: API-01, API-02, API-07, API-08.
 """
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from sqlalchemy.orm import sessionmaker
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.router import api_router
+from app.core import rate_limit
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError, ValidationError
+from app.db.session import build_engine
+from app.services import guest_service
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +37,43 @@ _HTTP_ERROR_CODES = {
 }
 
 
+def _purge_ended_guests(settings: Settings) -> None:
+    """SS-US-03 plan.md A9 / spec EC-04: trials that ended while the server was
+    down are deleted as it starts, in a session of its own that commits.
+
+    A failure is logged, not raised: access already ends at each trial's end
+    regardless of deletion (A5, EC-02), so a failed purge must not keep the
+    family's server from starting. The next trial start or `purge-guests`
+    retries it.
+    """
+    engine = build_engine(settings.database_url)
+    try:
+        with sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)() as db:
+            result = guest_service.purge_expired(db)
+            db.commit()
+        if result.guests:
+            logger.info("startup purge removed %d ended guest trial(s)", result.guests)
+    except Exception:
+        logger.exception("startup purge of ended guest trials failed")
+    finally:
+        engine.dispose()
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    app_settings = settings
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        _purge_ended_guests(app_settings)
+        yield
+
+    # SS-US-03 plan.md A10: the guest-trial limit is the app's own setting.
+    rate_limit.configure(settings)
 
     app = FastAPI(
         title=settings.app_name,
+        lifespan=lifespan,
         version="0.1.0",
         description=(
             "Personal & Family Finance Management API. "
@@ -50,6 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.state.limiter = rate_limit.limiter
     _register_exception_handlers(app)
 
     @app.get("/health", tags=["ops"], summary="Liveness probe")
@@ -67,6 +107,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(RateLimitExceeded)
+    async def _rate_limited(_request: Request, _exc: RateLimitExceeded) -> JSONResponse:
+        """SS-US-03 plan.md A10: slowapi's own handler returns its own body;
+        this keeps the 429 in the flat envelope (API-02)."""
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error_code": _HTTP_ERROR_CODES[429],
+                "message": "Too many requests. Please try again later.",
+                "details": {},
+            },
+        )
+
     @app.exception_handler(AppError)
     async def _app_error(_request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=exc.to_envelope())

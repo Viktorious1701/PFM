@@ -3,6 +3,7 @@
 Constitution: VL-01, PF-03, NC-02.
 """
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
@@ -28,7 +29,21 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
-    role: Literal["ADMIN", "USER"]
+    # SS-US-03 plan.md A3: widened so `GuestSessionRead` need not override it.
+    # Login itself never returns GUEST — a guest cannot log in (plan.md F1).
+    role: Literal["ADMIN", "USER", "GUEST"]
+
+
+class GuestSessionRead(TokenResponse):
+    """Response DTO for POST /api/v1/auth/guest (SS-US-03 plan.md A3, SS-API-03).
+
+    The session for a new guest trial: `expires_in` is the whole trial (A4),
+    and `expires_at` the moment it ends — tz-aware, so the app can count the
+    days left (A19). No field for the placeholder email, a password or a hash:
+    the structural guard, same technique as `TokenResponse`/`LogoutResult`.
+    """
+
+    expires_at: datetime
 
 
 class LogoutResult(BaseModel):

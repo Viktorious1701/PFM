@@ -14,10 +14,15 @@ has a row — which is exactly the state a real invited address ends up in
 mailbox can never become the ADMIN once it has been invited even once (plan.md
 UM-US-01 A12).
 
+`purge-guests` deletes every guest trial that has ended, with all its data
+(SS-US-03 plan.md A9). The server also does this at startup and before every
+new trial; this is the operator's way to do it on demand.
+
 Run with:
     uv run python -m app.cli create-admin --email you@example.com --password '…'
     uv run python -m app.cli mint-token --email you@example.com
     uv run python -m app.cli promote-admin --email you@example.com --password '…'
+    uv run python -m app.cli purge-guests
 """
 
 import argparse
@@ -28,6 +33,7 @@ from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models.user import UserModel, UserRole, UserStatus
 from app.repositories import user_repo
+from app.services import guest_service
 
 
 def create_admin(email: str, password: str, full_name: str | None) -> int:
@@ -97,6 +103,16 @@ def promote_admin(email: str, password: str, full_name: str | None) -> int:
             )
             return 1
 
+        # SS-US-03 plan.md A13 / SEC-12: a guest is never upgraded into
+        # another kind of account — not even by the operator.
+        if user.role is UserRole.GUEST:
+            print(
+                f"error: {normalised} is a guest trial — guests are never promoted; "
+                "invite the person's real address instead",
+                file=sys.stderr,
+            )
+            return 1
+
         previous_status = user.status
         user.status = UserStatus.ACTIVE
         user.role = UserRole.ADMIN
@@ -147,6 +163,22 @@ def mint_token(email: str) -> int:
     return 0
 
 
+def purge_guests() -> int:
+    """Delete every ended guest trial with all its data (SS-US-03 spec FR-07)."""
+    settings = get_settings()
+    with SessionLocal() as db:
+        result = guest_service.purge_expired(db)
+        db.commit()
+
+    print(
+        f"purged {result.guests} ended guest trial(s): {result.wallets} wallets, "
+        f"{result.categories} categories, {result.budgets} budgets, "
+        f"{result.transactions} transactions"
+    )
+    print(f"database: {settings.database_url}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="app.cli", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -166,6 +198,8 @@ def build_parser() -> argparse.ArgumentParser:
     promote.add_argument("--password", required=True)
     promote.add_argument("--full-name", default=None)
 
+    sub.add_parser("purge-guests", help="Delete every ended guest trial and all its data.")
+
     return parser
 
 
@@ -178,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
         return mint_token(args.email)
     if args.command == "promote-admin":
         return promote_admin(args.email, args.password, args.full_name)
+    if args.command == "purge-guests":
+        return purge_guests()
 
     return 2
 

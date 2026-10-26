@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any, cast
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
@@ -186,3 +186,20 @@ def increment_balance(db: Session, *, wallet_id: str, amount: Decimal) -> None:
         .values(balance=WalletModel.balance + amount)
     )
     db.flush()
+
+
+def delete_all_for_owner(db: Session, *, user_id: str) -> int:
+    """Delete every wallet `user_id` owns; returns how many (SS-US-03 plan.md
+    A8). Called only by the guest purge, after the transactions and budgets on
+    these wallets are gone. Flushed, not committed (AR-06).
+    """
+    result = cast(
+        "CursorResult[Any]",
+        db.execute(
+            delete(WalletModel)
+            .where(WalletModel.user_id == user_id)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    db.flush()
+    return int(result.rowcount or 0)

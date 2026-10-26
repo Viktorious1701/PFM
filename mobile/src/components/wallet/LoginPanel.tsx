@@ -2,24 +2,56 @@
  * Sign-in over the moonlit scene. Real `POST /auth/login` through the
  * session store; the backend's message is shown as-is, since it already
  * collapses unknown email / wrong password into one outcome.
+ *
+ * SS-US-03 adds the guest trial under Sign in: "Try as a guest" always starts
+ * a new trial (AC-01, AC-19); "Continue guest trial — N days left" continues
+ * the device's saved one while it has not ended (AC-16, plan.md A19); and
+ * "Your guest trial has ended." when the server has refused it (AC-18, EC-12).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { errorMessage } from '../../api/errors';
-import { useAuth } from '../../store/auth';
+import { trialDaysLeft, trialHasEnded, useAuth } from '../../store/auth';
 import { useServerAddress } from '../../store/server-address';
 import { font, moon } from '../../theme/moonlit';
 import { ServerLine } from './ServerLine';
 
 export function LoginPanel() {
-  const { signIn } = useAuth();
+  const { signIn, signInAsGuest, continueGuestTrial, forgetEndedGuestTrial, savedGuestTrial, guestTrialEnded } = useAuth();
   const server = useServerAddress();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focused, setFocused] = useState<'email' | 'password' | null>(null);
+  const [guestBusy, setGuestBusy] = useState<'new' | 'continue' | null>(null);
+
+  // AC-17: a saved trial already past its end by this device's clock is
+  // dropped here — no request and no message (plan.md A18).
+  const savedLive = savedGuestTrial !== null && !trialHasEnded(savedGuestTrial.expiresAt);
+  useEffect(() => {
+    if (savedGuestTrial && !savedLive) void forgetEndedGuestTrial();
+  }, [savedGuestTrial, savedLive, forgetEndedGuestTrial]);
+  const daysLeft = savedLive ? trialDaysLeft(savedGuestTrial.expiresAt) : 0;
+
+  const runGuest = async (which: 'new' | 'continue') => {
+    if (busy || guestBusy) return;
+    if (!server) {
+      setError('Enter the server address below first.');
+      return;
+    }
+    setGuestBusy(which);
+    setError(null);
+    try {
+      if (which === 'new') await signInAsGuest();
+      else await continueGuestTrial();
+    } catch (e) {
+      // A 429 / 503 / connection failure: the server's own message.
+      setError(errorMessage(e));
+    }
+    setGuestBusy(null);
+  };
 
   const submit = async () => {
     if (busy) return;
@@ -86,6 +118,11 @@ export function LoginPanel() {
           {error}
         </Text>
       ) : null}
+      {guestTrialEnded && !error ? (
+        <Text style={styles.error} accessibilityRole="alert" testID="guest-trial-ended">
+          Your guest trial has ended.
+        </Text>
+      ) : null}
 
       <Pressable
         testID="login-submit"
@@ -96,6 +133,34 @@ export function LoginPanel() {
       >
         {busy ? <ActivityIndicator color={moon.ink} /> : <Text style={styles.buttonLabel}>Sign in</Text>}
       </Pressable>
+
+      <Pressable
+        testID="login-guest"
+        accessibilityRole="button"
+        onPress={() => void runGuest('new')}
+        disabled={guestBusy !== null}
+        style={({ pressed }) => [styles.ghost, (pressed || guestBusy === 'new') && styles.buttonPressed]}
+      >
+        {guestBusy === 'new' ? <ActivityIndicator color={moon.ink} /> : <Text style={styles.ghostLabel}>Try as a guest</Text>}
+      </Pressable>
+
+      {savedLive ? (
+        <Pressable
+          testID="guest-continue"
+          accessibilityRole="button"
+          onPress={() => void runGuest('continue')}
+          disabled={guestBusy !== null}
+          style={({ pressed }) => [styles.ghost, (pressed || guestBusy === 'continue') && styles.buttonPressed]}
+        >
+          {guestBusy === 'continue' ? (
+            <ActivityIndicator color={moon.ink} />
+          ) : (
+            <Text style={styles.ghostLabel}>
+              {`Continue guest trial — ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left`}
+            </Text>
+          )}
+        </Pressable>
+      ) : null}
 
       <View style={styles.divider} />
       <ServerLine />
@@ -153,6 +218,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(223,232,251,0.9)',
   },
   buttonPressed: { opacity: 0.75 },
+  ghost: {
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: moon.fieldBorder,
+    backgroundColor: 'rgba(10,18,32,0.55)',
+  },
+  ghostLabel: {
+    fontFamily: font.semibold,
+    fontSize: 13,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: moon.ink,
+    textAlign: 'center',
+  },
   divider: { height: 1, backgroundColor: moon.panelBorder, marginTop: 4 },
   buttonLabel: {
     fontFamily: font.bold,

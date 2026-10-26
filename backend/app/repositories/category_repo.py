@@ -5,8 +5,10 @@ decides *what* to do, this module only knows *how* to ask the database.
 """
 
 from collections.abc import Sequence
+from typing import Any, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.core import clock
@@ -129,3 +131,20 @@ def archive_category(db: Session, *, category: CategoryModel) -> CategoryModel:
         db.add(category)
         db.flush()
     return category
+
+
+def delete_all_for_owner(db: Session, *, user_id: str) -> int:
+    """Delete every category `user_id` owns; returns how many (SS-US-03
+    plan.md A8). Called only by the guest purge, after the transactions and
+    budgets on these categories are gone. Flushed, not committed (AR-06).
+    """
+    result = cast(
+        "CursorResult[Any]",
+        db.execute(
+            delete(CategoryModel)
+            .where(CategoryModel.user_id == user_id)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    db.flush()
+    return int(result.rowcount or 0)

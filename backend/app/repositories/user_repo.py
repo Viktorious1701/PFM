@@ -5,6 +5,7 @@ decides *what* to do, this module only knows *how* to ask the database.
 """
 
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -72,18 +73,71 @@ def activate(db: Session, user: UserModel, full_name: str, password_hash: str) -
 
 
 def list_users(db: Session, *, page: int, page_size: int) -> tuple[Sequence[UserModel], int]:
-    """A page of every user, newest first, plus the unfiltered total count
+    """A page of every family member, newest first, plus their total count
     (spec UM-US-03 AC-01, AC-04, AC-05, AC-07; plan.md A1, A3).
 
     No status predicate — `PENDING`/`ACTIVE`/`DEACTIVATED` are all included
     (A1). Two queries: one for the bounded page, one for the total, since a
     single query cannot both `LIMIT` a page and count every row.
+
+    SS-US-03 plan.md A13: guests are not family members (spec AC-08), so both
+    queries exclude `role = GUEST` — the page and the total agree.
     """
-    total = db.scalar(select(func.count()).select_from(UserModel)) or 0
+    not_guest = UserModel.role != UserRole.GUEST
+    total = db.scalar(select(func.count()).select_from(UserModel).where(not_guest)) or 0
     items = db.scalars(
         select(UserModel)
+        .where(not_guest)
         .order_by(UserModel.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
     return items, total
+
+
+# --- SS-US-03: Guest trial ---------------------------------------------------
+
+
+def add_guest_user(db: Session, *, email: str, expires_at: datetime) -> UserModel:
+    """Insert a guest trial account (SS-US-03 spec FR-02; plan.md A1, A2).
+
+    Usable at once (`ACTIVE`), never invited, no password and no name, and a
+    trial end. `email` is the caller's reserved `.invalid` placeholder, so the
+    row is never mailable (SEC-12). Flushed, not committed (AR-06).
+    """
+    user = UserModel(
+        email=email,
+        password_hash=None,
+        full_name=None,
+        status=UserStatus.ACTIVE,
+        role=UserRole.GUEST,
+        expires_at=expires_at,
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+def list_ended_guests(db: Session, *, now: datetime) -> Sequence[UserModel]:
+    """Guests whose trial is over at `now` — `expires_at <= now` (spec BR-01:
+    over *at* its end, not one tick after)."""
+    return db.scalars(
+        select(UserModel).where(UserModel.role == UserRole.GUEST, UserModel.expires_at <= now)
+    ).all()
+
+
+def count_guests(db: Session) -> int:
+    """Every remaining guest row. Called after the purge, so each is live (A12)."""
+    return (
+        db.scalar(
+            select(func.count()).select_from(UserModel).where(UserModel.role == UserRole.GUEST)
+        )
+        or 0
+    )
+
+
+def delete_user(db: Session, user: UserModel) -> None:
+    """Delete one user row. Its owned rows must already be gone (plan.md A8 —
+    nothing cascades). Flushed, not committed (AR-06)."""
+    db.delete(user)
+    db.flush()
