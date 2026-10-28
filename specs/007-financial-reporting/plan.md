@@ -440,6 +440,7 @@ Code and architecture decisions settled during design. Spec-level findings were 
 | A11 | Testing | **FR-US-01's test cases are not rewritten; their test functions are re-pointed.** All 28 FR-US-01 tests build USD wallets only (`_make_wallet(..., currency="USD")` in `test_fr_us_01_view_summary_report.py`), so each assertion on a flat field translates mechanically to the single `currencies[0]` entry with `currency == "USD"`. Two outcomes change and are superseded by this story's TCs, recorded in `test_cases.md` (FR-US-03, *FR-US-01 test cases affected*): FR-US-01 TC-17 (exact top-level fields → TC-40) and TC-18 (no wallets → TC-37). FR-US-01's TC text and Test Implementation Map rows stay as written (`CLAUDE.md` §1.1 rule 4); the re-pointing is task T-06, and its rerun is recorded against FR-US-01's map at the Implement step. | ✅ Resolved |
 | A12 | UI (fast-track) | **Home's *Analysis* section renders one block per `currencies` entry, in response order.** Each block: a heading with the currency code, *Income vs. expenses* bars scaled to that block's own larger figure, net savings with the savings rate, and *Where the money went* (`ExpenseDonut`) fed with that block's `top_categories`, `total_expenses` and `currency`. Every `formatMoney` call takes the block's own `currency`. The `reportCurrency` fallback in `Dashboard.tsx` — today labelling a mixed total with `DEFAULT_CURRENCY` when the wallets disagree — is deleted, since every figure now has a currency. Empty `currencies` → one panel reading "No income or expenses recorded in <Month>." in place of the blocks. The month label stays in the section header, read from the top-level `period`. Presentation only: the client computes no figure the API does not return, beyond the per-block bar widths and savings rate it already derives today. | ✅ Resolved |
 | A13 | Docs alignment | **Nothing is aligned in `SRS.md` or `SDS.md` by this story.** `SDS.md` §6.3/§6.5 still lack an `FR-API-01` row (FR-US-01 A11's open note); this dispatch may edit only this epic's three files. Whether `SRS FR-07` should state "per currency" is a product-owner extension, not an alignment (`spec.md` *Assumptions*). | ✅ Resolved |
+| A14 | Testing | **Added at the Implement step (2026-10-28): a third test module reads the report's flat fields, so T-06 also re-points it.** SS-US-03 (guest trial, built after this plan was written) added `test_ss_us_03_guest_trial.py::test_guest_can_do_everything_a_member_can_including_removing_the_example` (SS-US-03 TC-61), whose last step reads `report.json()["total_income"]` / `["total_expenses"]`. A11's "all affected tests build USD wallets" does not cover it: the guest's wallets are VND (`guest_service.EXAMPLE_CURRENCY`, and the test's own "Savings" wallet). Its two assertions move to the single `currencies` entry, asserted to be `VND` — the same mechanical re-pointing as A11, nothing broader; SS-US-03 TC-61's text ("the report answers exactly as for a member, and is the guest's own") is unchanged and still holds. Found by the full-suite run (1 failed, 681 passed) after T-01…T-05; recorded here before the test was touched. | ✅ Resolved |
 
 ---
 
@@ -703,25 +704,25 @@ Unchanged from FR-US-01 — flat envelope (API-02), no new error code (A10).
 
 | Element | ID | Status | File |
 |---------|----|--------|------|
-| One currency's analysis block | `report-{CUR}` (e.g. `report-VND`) | Missing | `mobile/src/components/wallet/Dashboard.tsx` |
-| Block heading (currency code) | `report-{CUR}-currency` | Missing | same |
-| Income row | `report-{CUR}-flow-Income` | Missing (today `flow-Income`, one per screen) | same |
-| Expenses row | `report-{CUR}-flow-Expenses` | Missing (today `flow-Expenses`) | same |
-| Net savings | `report-{CUR}-net-savings` | Missing (today `net-savings`) | same |
-| Spending breakdown | `report-{CUR}-donut` | Missing | same, wrapping `ExpenseDonut` |
+| One currency's analysis block | `report-{CUR}` (e.g. `report-VND`) | Present | `mobile/src/components/wallet/Dashboard.tsx` |
+| Block heading (currency code) | `report-{CUR}-currency` | Present | same |
+| Income row | `report-{CUR}-flow-Income` | Present | same |
+| Expenses row | `report-{CUR}-flow-Expenses` | Present | same |
+| Net savings | `report-{CUR}-net-savings` | Present | same |
+| Spending breakdown | `report-{CUR}-donut` | Present | same, wrapping `ExpenseDonut` |
 | Breakdown row | `category-{name}`, scoped inside `report-{CUR}-donut` | Present | `mobile/src/components/wallet/ExpenseDonut.tsx` |
-| Empty-analysis message | `report-empty` | Missing | `mobile/src/components/wallet/Dashboard.tsx` |
+| Empty-analysis message | `report-empty` | Present | `mobile/src/components/wallet/Dashboard.tsx` |
 
 **Open tasks**
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `CurrencySummaryRead`; reshape `SummaryReportRead` to `{period, currencies}` (A9) | `backend/app/schemas/report.py` | Open |
-| T-02 | Replace `get_summary_totals()` with `get_summary_totals_by_currency()` (A5) and `get_top_expense_categories()` with `get_top_expense_categories_by_currency()` (A6) | `backend/app/repositories/transaction_repo.py` | Open |
-| T-03 | `wallet_repo.list_active_currencies(db, *, user_id)` (A7) | `backend/app/repositories/wallet_repo.py` | Open |
-| T-04 | `report_service.get_summary_report()` assembles per-currency entries: merge, sort, zero-default, group ranking (A3, A4) | `backend/app/services/report_service.py` | Open |
-| T-05 | Router `description`/docstring text (A2) | `backend/app/api/v1/reports.py` | Open |
-| T-06 | Re-point FR-US-01 tests to `currencies[0]`; TC-17/TC-18 tests rewritten to their superseding outcome and cite TC-40/TC-37 (A11) | `backend/tests/integration/test_fr_us_01_view_summary_report.py` | Open |
-| T-07 | Integration tests TC-29…TC-49 from `test_cases.md` | `backend/tests/integration/test_fr_us_03_summary_per_currency.py` | Open |
-| T-08 | **UI fast-track:** `SummaryReportRead`/`CurrencySummary` types; `Dashboard.tsx` one block per currency with the Element IDs above, empty state, `reportCurrency` removed (A12) | `mobile/src/api/types.ts`, `mobile/src/components/wallet/Dashboard.tsx` | Open |
-| T-09 | **UI fast-track:** e2e tests TC-50…TC-54 against the real backend | `mobile/e2e/home.spec.ts` | Open |
+| T-01 | `CurrencySummaryRead`; reshape `SummaryReportRead` to `{period, currencies}` (A9) | `backend/app/schemas/report.py` | Done — 2026-10-28 |
+| T-02 | Replace `get_summary_totals()` with `get_summary_totals_by_currency()` (A5) and `get_top_expense_categories()` with `get_top_expense_categories_by_currency()` (A6) | `backend/app/repositories/transaction_repo.py` | Done — 2026-10-28 |
+| T-03 | `wallet_repo.list_active_currencies(db, *, user_id)` (A7) | `backend/app/repositories/wallet_repo.py` | Done — 2026-10-28 |
+| T-04 | `report_service.get_summary_report()` assembles per-currency entries: merge, sort, zero-default, group ranking (A3, A4) | `backend/app/services/report_service.py` | Done — 2026-10-28 |
+| T-05 | Router `description`/docstring text (A2) | `backend/app/api/v1/reports.py` | Done — 2026-10-28 |
+| T-06 | Re-point FR-US-01 tests to `currencies[0]`; TC-17/TC-18 tests rewritten to their superseding outcome and cite TC-40/TC-37 (A11); re-point SS-US-03 TC-61's two report assertions to the single `VND` entry (A14) | `backend/tests/integration/test_fr_us_01_view_summary_report.py`, `backend/tests/integration/test_ss_us_03_guest_trial.py` | Done — 2026-10-28 |
+| T-07 | Integration tests TC-29…TC-49 from `test_cases.md` | `backend/tests/integration/test_fr_us_03_summary_per_currency.py` | Done — 2026-10-28 |
+| T-08 | **UI fast-track:** `SummaryReportRead`/`CurrencySummary` types; `Dashboard.tsx` one block per currency with the Element IDs above, empty state, `reportCurrency` removed (A12) | `mobile/src/api/types.ts`, `mobile/src/components/wallet/Dashboard.tsx` | Done — 2026-10-28 |
+| T-09 | **UI fast-track:** e2e tests TC-50…TC-54 against the real backend | `mobile/e2e/home.spec.ts` | Done — 2026-10-28 |

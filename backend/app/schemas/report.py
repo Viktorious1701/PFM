@@ -1,4 +1,4 @@
-"""Financial Reporting DTOs (SDS §5.7.1 FR-US-01; spec FR-US-01).
+"""Financial Reporting DTOs (SDS §5.7.1 FR-US-01; spec FR-US-01, FR-US-03).
 
 Constitution: VL-01 (Pydantic is the source of truth), VL-07 (Decimal money),
 PF-03 (DTO projection -- see plan.md A6 for CategorySpendingRead's one
@@ -24,16 +24,29 @@ class CategorySpendingRead(BaseModel):
     total_amount: Decimal
 
 
-class SummaryReportRead(BaseModel):
-    """SDS §5.7.1's four named figures, plus the period they apply to (spec
-    AC-01, AC-15, FR-11). Not in SDS's DTO registry (§6.2.1) at all -- this
-    story designs the response shape from nothing but the goal sentence and
-    constitution PF-03 (plan.md A11). `net_savings` carries no positivity
-    bound -- it may be negative (spec AC-09, BR-04).
+class CurrencySummaryRead(BaseModel):
+    """One currency's figures (spec FR-US-03 AC-01, FR-03, FR-04; plan.md
+    FR-US-03 A9). Every amount here is in `currency` and never mixed with
+    another currency's amounts (FR-US-03 BR-02). Carries exactly the four
+    figures FR-US-01 put at the top level; `net_savings` may be negative
+    (FR-US-01 AC-09, BR-04). `currency` is serialised as stored -- WM-US-01
+    FR-05 already guarantees three uppercase letters.
     """
 
-    period: date
+    currency: str
     total_income: Decimal
     total_expenses: Decimal
     net_savings: Decimal
     top_categories: list[CategorySpendingRead]
+
+
+class SummaryReportRead(BaseModel):
+    """FR-API-01 response (plan.md FR-US-03 A2, A9): the period, and one entry
+    per currency the caller holds or used (FR-US-03 FR-05), ordered by code
+    (A4). `currencies` is always present -- `[]` when nothing qualifies
+    (FR-US-03 AC-09), never null or omitted. Not in SDS's DTO registry
+    (§6.2.1) -- FR-US-01 plan.md A11.
+    """
+
+    period: date
+    currencies: list[CurrencySummaryRead]

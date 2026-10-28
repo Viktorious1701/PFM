@@ -1,7 +1,9 @@
 /**
  * The wallet dashboard, top to bottom: total balance, every wallet with its
- * own balance, then this month's analysis (income vs. expenses on one scale,
- * net savings, and where the spending went). All figures come from the real
+ * own balance, then this month's analysis — one block per currency (FR-US-03),
+ * each with income vs. expenses on one scale, net savings, and where the
+ * spending went, every amount in that block's own currency. Amounts in
+ * different currencies are never added together. All figures come from the real
  * backend — `GET /wallets` and `GET /reports/summary`. The Home tab; the
  * header and tab bar around it are shared chrome (AppHeader, TabBar).
  */
@@ -10,7 +12,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { errorMessage } from '../../api/errors';
 import { getSummaryReport } from '../../api/reports';
-import type { SummaryReportRead, WalletRead } from '../../api/types';
+import type { CurrencySummary, SummaryReportRead, WalletRead } from '../../api/types';
 import { listWallets } from '../../api/wallets';
 import { font, moon } from '../../theme/moonlit';
 import { DEFAULT_CURRENCY, formatMoney, parseCents, sumMoney } from '../../utils/money';
@@ -35,6 +37,68 @@ function totalsByCurrency(wallets: WalletRead[]): [string, string][] {
   const groups = new Map<string, string[]>();
   for (const w of wallets) groups.set(w.currency, [...(groups.get(w.currency) ?? []), w.balance]);
   return [...groups.entries()].map(([cur, values]) => [cur, sumMoney(values)]);
+}
+
+/** One currency's analysis (FR-US-03 AC-14…AC-16): its own scale, its own
+ * savings rate, its own categories — every amount in `entry.currency`. */
+function CurrencyAnalysis({ entry }: { entry: CurrencySummary }) {
+  const cur = entry.currency;
+  const income = parseCents(entry.total_income);
+  const expenses = parseCents(entry.total_expenses);
+  const net = parseCents(entry.net_savings);
+  const scale = income > expenses ? income : expenses;
+  const share = (c: bigint) => (scale > 0n ? Number((c * 10000n) / scale) / 100 : 0);
+  const savingsRate = income > 0n ? Math.round(Number((net * 1000n) / income) / 10) : null;
+
+  return (
+    <View style={styles.currencyBlock} testID={`report-${cur}`}>
+      <Text style={styles.currencyHead} testID={`report-${cur}-currency`}>
+        {cur}
+      </Text>
+
+      <View style={[styles.panel, styles.analysis]}>
+        <Text style={styles.subTitle}>Income vs. expenses</Text>
+        {(
+          [
+            ['Income', entry.total_income, income, moon.income],
+            ['Expenses', entry.total_expenses, expenses, moon.expense],
+          ] as const
+        ).map(([name, value, cents, color]) => (
+          <View key={name} style={styles.flowRow} testID={`report-${cur}-flow-${name}`}>
+            <View style={styles.flowHead}>
+              <View style={styles.flowName}>
+                <View style={[styles.swatch, { backgroundColor: color }]} />
+                <Text style={styles.flowLabel}>{name}</Text>
+              </View>
+              <Text style={styles.flowValue}>{formatMoney(value, cur)}</Text>
+            </View>
+            <View style={styles.bar}>
+              <View style={[styles.barFill, { width: `${share(cents)}%`, backgroundColor: color }]} />
+            </View>
+          </View>
+        ))}
+
+        <View style={styles.netRow} testID={`report-${cur}-net-savings`}>
+          <Text style={styles.netLabel}>Net savings</Text>
+          <View style={styles.netRight}>
+            <Text style={[styles.netValue, net < 0n && styles.negative]}>
+              {formatMoney(entry.net_savings, cur, { signed: true })}
+            </Text>
+            {savingsRate !== null ? (
+              <Text style={styles.netRate}>
+                {net < 0n ? 'overspent by' : 'saved'} {Math.abs(savingsRate)}% of income
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      </View>
+
+      <View style={[styles.panel, styles.analysis]} testID={`report-${cur}-donut`}>
+        <Text style={styles.subTitle}>Where the money went</Text>
+        <ExpenseDonut categories={entry.top_categories} totalExpenses={entry.total_expenses} currency={cur} />
+      </View>
+    </View>
+  );
 }
 
 export function Dashboard() {
@@ -67,16 +131,6 @@ export function Dashboard() {
 
   const { wallets, summary } = data;
   const totals = totalsByCurrency(wallets);
-  // The report has no currency of its own; it is in the wallets' currency
-  // when they share one, which is the only case it is labelled with one.
-  const reportCurrency = totals.length === 1 ? totals[0][0] : DEFAULT_CURRENCY;
-
-  const income = parseCents(summary.total_income);
-  const expenses = parseCents(summary.total_expenses);
-  const net = parseCents(summary.net_savings);
-  const scale = income > expenses ? income : expenses;
-  const share = (c: bigint) => (scale > 0n ? Number((c * 10000n) / scale) / 100 : 0);
-  const savingsRate = income > 0n ? Math.round(Number((net * 1000n) / income) / 10) : null;
 
   return (
     <ScrollView style={styles.fill} contentContainerStyle={styles.scroll}>
@@ -135,51 +189,13 @@ export function Dashboard() {
             <Text style={styles.count}>{monthLabel(summary.period)}</Text>
           </View>
 
-          <View style={[styles.panel, styles.analysis]}>
-            <Text style={styles.subTitle}>Income vs. expenses</Text>
-            {(
-              [
-                ['Income', summary.total_income, income, moon.income],
-                ['Expenses', summary.total_expenses, expenses, moon.expense],
-              ] as const
-            ).map(([name, value, cents, color]) => (
-              <View key={name} style={styles.flowRow} testID={`flow-${name}`}>
-                <View style={styles.flowHead}>
-                  <View style={styles.flowName}>
-                    <View style={[styles.swatch, { backgroundColor: color }]} />
-                    <Text style={styles.flowLabel}>{name}</Text>
-                  </View>
-                  <Text style={styles.flowValue}>{formatMoney(value, reportCurrency)}</Text>
-                </View>
-                <View style={styles.bar}>
-                  <View style={[styles.barFill, { width: `${share(cents)}%`, backgroundColor: color }]} />
-                </View>
-              </View>
-            ))}
-
-            <View style={styles.netRow} testID="net-savings">
-              <Text style={styles.netLabel}>Net savings</Text>
-              <View style={styles.netRight}>
-                <Text style={[styles.netValue, net < 0n && styles.negative]}>
-                  {formatMoney(summary.net_savings, reportCurrency, { signed: true })}
-                </Text>
-                {savingsRate !== null ? (
-                  <Text style={styles.netRate}>
-                    {net < 0n ? 'overspent by' : 'saved'} {Math.abs(savingsRate)}% of income
-                  </Text>
-                ) : null}
-              </View>
+          {summary.currencies.length === 0 ? (
+            <View style={styles.panel} testID="report-empty">
+              <Text style={styles.stateText}>No income or expenses recorded in {monthLabel(summary.period)}.</Text>
             </View>
-          </View>
-
-          <View style={[styles.panel, styles.analysis]}>
-            <Text style={styles.subTitle}>Where the money went</Text>
-            <ExpenseDonut
-              categories={summary.top_categories}
-              totalExpenses={summary.total_expenses}
-              currency={reportCurrency}
-            />
-          </View>
+          ) : (
+            summary.currencies.map((entry) => <CurrencyAnalysis key={entry.currency} entry={entry} />)
+          )}
         </View>
       </View>
     </ScrollView>
@@ -253,6 +269,8 @@ const styles = StyleSheet.create({
   negative: { color: moon.expense },
 
   analysis: { gap: 16 },
+  currencyBlock: { gap: 12 },
+  currencyHead: { ...label, fontSize: 14, color: moon.ink, paddingHorizontal: 4 },
   subTitle: { fontFamily: font.semibold, fontSize: 17, color: moon.ink, letterSpacing: 0.3 },
   flowRow: { gap: 8 },
   flowHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },

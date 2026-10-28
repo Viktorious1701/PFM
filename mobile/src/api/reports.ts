@@ -1,5 +1,5 @@
 /**
- * Financial Reporting API (FR) — SDS §5.7.1 FR-US-01.
+ * Financial Reporting API (FR) — SDS §5.7.1 FR-US-01, per currency since FR-US-03.
  */
 import { client } from './client';
 import type { SummaryReportRead } from './types';

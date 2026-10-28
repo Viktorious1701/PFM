@@ -1,4 +1,4 @@
-"""Financial Reporting endpoints (SDS §5.7.1 FR-US-01)."""
+"""Financial Reporting endpoints (SDS §5.7.1 FR-US-01; per currency since FR-US-03)."""
 
 from fastapi import APIRouter, status
 
@@ -17,7 +17,8 @@ router = APIRouter(prefix="/reports", tags=["reports"])
     description=(
         "Returns the authenticated caller's total income, total expenses, net "
         "savings, and top spending categories for the current calendar month, "
-        "aggregated across every wallet the caller owns."
+        "reported separately for each currency the caller holds or used — "
+        "amounts in different currencies are never added together."
     ),
     responses={401: {"description": "NOT_AUTHENTICATED"}},
 )

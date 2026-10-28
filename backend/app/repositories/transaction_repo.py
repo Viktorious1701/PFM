@@ -170,17 +170,22 @@ def get_owned_by_id(db: Session, *, transaction_id: str, user_id: str) -> Transa
     )
 
 
-def get_summary_totals(
+def get_summary_totals_by_currency(
     db: Session, *, user_id: str, period_start: datetime, period_end: datetime
-) -> dict[TransactionType, Decimal]:
+) -> dict[tuple[str, TransactionType], Decimal]:
     """Sum the caller's own transactions in [period_start, period_end), one
-    entry per TransactionType actually present (spec AC-07, AC-08, BR-03;
-    plan.md A4).
+    entry per (wallet currency, TransactionType) actually present (spec
+    FR-US-03 AC-01, FR-01, FR-03; plan.md FR-US-03 A5).
 
-    A type with no qualifying transactions in the period produces no row at
-    all -- GROUP BY omits empty groups (plan.md A7, empirically confirmed) --
-    so the caller (report_service.get_summary_report) must default an absent
-    key to Decimal("0.00"); a missing key is never an error.
+    FR-US-01 A4's query with `wallets.currency` added to the select and the
+    GROUP BY -- the wallets row is already joined for ownership. No
+    `archived_at` predicate: an archived wallet's transactions in the period
+    still count (FR-US-03 AC-08).
+
+    A (currency, type) pair with no qualifying transactions produces no row
+    at all -- GROUP BY omits empty groups (FR-US-01 plan.md A7) -- so the
+    caller (report_service.get_summary_report) must default an absent key to
+    Decimal("0.00"); a missing key is never an error.
     """
     conditions = [
         WalletModel.user_id == user_id,
@@ -188,12 +193,12 @@ def get_summary_totals(
         TransactionModel.timestamp < period_end,
     ]
     rows = db.execute(
-        select(TransactionModel.type, func.sum(TransactionModel.amount))
+        select(WalletModel.currency, TransactionModel.type, func.sum(TransactionModel.amount))
         .join(WalletModel, TransactionModel.wallet_id == WalletModel.id)
         .where(*conditions)
-        .group_by(TransactionModel.type)
+        .group_by(WalletModel.currency, TransactionModel.type)
     ).all()
-    return {row[0]: row[1] for row in rows}
+    return {(row[0], row[1]): row[2] for row in rows}
 
 
 def get_expense_totals_by_wallet_category(
@@ -205,8 +210,8 @@ def get_expense_totals_by_wallet_category(
 
     A (wallet_id, category_id) pair with no qualifying EXPENSE transaction in
     the period produces no row at all -- GROUP BY omits empty groups, the
-    same trap get_summary_totals()'s own docstring documents -- so the caller
-    (budget_service.list_budgets) must default a missing key to
+    same trap get_summary_totals_by_currency()'s own docstring documents --
+    so the caller (budget_service.list_budgets) must default a missing key to
     Decimal("0.00"); a missing key is never an error.
     """
     conditions = [
@@ -228,21 +233,29 @@ def get_expense_totals_by_wallet_category(
     return {(row[0], row[1]): row[2] for row in rows}
 
 
-def get_top_expense_categories(
+def get_top_expense_categories_by_currency(
     db: Session,
     *,
     user_id: str,
     period_start: datetime,
     period_end: datetime,
     limit: int,
-) -> Sequence[tuple[str, str, Decimal]]:
-    """The caller's own top `limit` expense categories in
-    [period_start, period_end), highest total first, category_id ascending
-    as a deterministic tie-break (spec AC-10, AC-12, BR-05; plan.md A5).
+) -> Sequence[tuple[str, str, str, Decimal]]:
+    """(currency, category_id, category_name, total): the caller's own top
+    `limit` expense categories in [period_start, period_end) **within each
+    wallet currency**, ordered by currency, then highest total first, then
+    category_id ascending as the deterministic tie-break (spec FR-US-03 AC-05,
+    AC-06, FR-04; plan.md FR-US-03 A6, FR-US-01 A5).
 
-    Grouped by both categories.id and categories.name -- not id alone -- so
-    this stays correct on PostgreSQL without relying on its primary-key
-    functional-dependency allowance for GROUP BY (constitution ENV-03).
+    One round trip (constitution PF-02): the inner query groups EXPENSE rows
+    by (currency, category id, category name) and sums them; the outer query
+    numbers each currency's groups with ROW_NUMBER() OVER (PARTITION BY
+    currency ...) and keeps rank <= limit, so one currency's spending can
+    never crowd out another's. Grouped by both categories.id and
+    categories.name -- not id alone -- so this stays correct on PostgreSQL
+    without its primary-key functional-dependency allowance (ENV-03); window
+    functions are standard on both engines. No `archived_at` filter on
+    wallets or categories (FR-US-03 AC-08, EC-04).
     """
     conditions = [
         WalletModel.user_id == user_id,
@@ -250,17 +263,37 @@ def get_top_expense_categories(
         TransactionModel.timestamp >= period_start,
         TransactionModel.timestamp < period_end,
     ]
-    total = func.sum(TransactionModel.amount)
-    rows = db.execute(
-        select(CategoryModel.id, CategoryModel.name, total)
+    grouped = (
+        select(
+            WalletModel.currency.label("currency"),
+            CategoryModel.id.label("category_id"),
+            CategoryModel.name.label("category_name"),
+            func.sum(TransactionModel.amount).label("total"),
+        )
         .join(WalletModel, TransactionModel.wallet_id == WalletModel.id)
         .join(CategoryModel, TransactionModel.category_id == CategoryModel.id)
         .where(*conditions)
-        .group_by(CategoryModel.id, CategoryModel.name)
-        .order_by(total.desc(), CategoryModel.id.asc())
-        .limit(limit)
+        .group_by(WalletModel.currency, CategoryModel.id, CategoryModel.name)
+        .subquery()
+    )
+    ranked = select(
+        grouped.c.currency,
+        grouped.c.category_id,
+        grouped.c.category_name,
+        grouped.c.total,
+        func.row_number()
+        .over(
+            partition_by=grouped.c.currency,
+            order_by=(grouped.c.total.desc(), grouped.c.category_id.asc()),
+        )
+        .label("rank"),
+    ).subquery()
+    rows = db.execute(
+        select(ranked.c.currency, ranked.c.category_id, ranked.c.category_name, ranked.c.total)
+        .where(ranked.c.rank <= limit)
+        .order_by(ranked.c.currency.asc(), ranked.c.rank.asc())
     ).all()
-    return [(row[0], row[1], row[2]) for row in rows]
+    return [(row[0], row[1], row[2], row[3]) for row in rows]
 
 
 def delete_all_for_owner(db: Session, *, user_id: str) -> int:

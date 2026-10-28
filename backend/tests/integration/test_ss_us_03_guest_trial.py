@@ -382,10 +382,14 @@ def test_guest_can_do_everything_a_member_can_including_removing_the_example(
     assert archived.status_code == 200
     assert archived.json()["archived_at"] is not None
 
+    # Per currency since FR-US-03 (plan.md FR-US-03 A14): every guest wallet
+    # here is VND, so the report carries exactly one entry.
     report = client.get(REPORT_URL, headers=guest.headers)
     assert report.status_code == 200
-    assert Decimal(report.json()["total_income"]) == Decimal("1234.00")
-    assert Decimal(report.json()["total_expenses"]) == Decimal("0")
+    entries = report.json()["currencies"]
+    assert [e["currency"] for e in entries] == ["VND"]
+    assert Decimal(entries[0]["total_income"]) == Decimal("1234.00")
+    assert Decimal(entries[0]["total_expenses"]) == Decimal("0")
 
 
 def test_guest_and_member_cannot_see_each_others_data(

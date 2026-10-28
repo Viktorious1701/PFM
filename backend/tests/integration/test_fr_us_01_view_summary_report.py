@@ -23,10 +23,17 @@ TC-24, TC-25, TC-26) instead freeze the clock explicitly to their own,
 different chosen instants via `_freeze`/`_create_transaction_at`, because
 their entire point is to control which calendar month a transaction and the
 report's own "now" each fall into independently.
+
+FR-US-03 (plan.md FR-US-03 A11, T-06) reshaped the response to
+`{period, currencies: [...]}`. Every wallet here is USD, so each flat-field
+assertion now reads the single USD entry through `_usd()`. TC-17 and TC-18
+describe outcomes FR-US-03 superseded; their functions assert the superseding
+outcome (TC-40, TC-37) and say so in their docstrings.
 """
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -51,6 +58,15 @@ def _make_wallet(
     db.commit()
     db.refresh(wallet)
     return wallet
+
+
+def _usd(body: dict[str, Any]) -> dict[str, Any]:
+    """The report's one currency entry, which must be USD: every wallet in this
+    module is USD (FR-US-03 plan.md A11), so the figures FR-US-01 put at the
+    top level now live in `currencies[0]`."""
+    assert [e["currency"] for e in body["currencies"]] == ["USD"], body
+    entry: dict[str, Any] = body["currencies"][0]
+    return entry
 
 
 def _make_category(
@@ -161,14 +177,11 @@ def test_authenticated_user_retrieves_a_populated_summary_report(
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body.keys()) == {
-        "period",
-        "total_income",
-        "total_expenses",
-        "net_savings",
-        "top_categories",
-    }
-    assert body["top_categories"] != []
+    assert "period" in body
+    assert {"total_income", "total_expenses", "net_savings", "top_categories"} <= set(
+        _usd(body).keys()
+    )
+    assert _usd(body)["top_categories"] != []
 
 
 # --- TC-02: authentication ----------------------------------------------------
@@ -186,6 +199,7 @@ def test_unauthenticated_caller_is_denied_with_401_and_nothing_computed(
     body = response.json()
     assert body["error_code"] == "NOT_AUTHENTICATED"
     assert "total_income" not in body
+    assert "currencies" not in body
 
 
 # --- TC-03: cross-wallet aggregation ------------------------------------------
@@ -214,7 +228,7 @@ def test_report_aggregates_expense_transactions_across_two_wallets_the_same_user
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    assert Decimal(response.json()["total_expenses"]) == Decimal("250.00")
+    assert Decimal(_usd(response.json())["total_expenses"]) == Decimal("250.00")
 
 
 # --- TC-04: cross-user isolation ----------------------------------------------
@@ -248,7 +262,7 @@ def test_another_users_wallet_and_transactions_are_excluded(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    assert Decimal(response.json()["total_expenses"]) == Decimal("100.00")
+    assert Decimal(_usd(response.json())["total_expenses"]) == Decimal("100.00")
 
 
 # --- TC-05: the period is system-computed, from the frozen clock -------------
@@ -286,10 +300,10 @@ def test_caller_with_no_transactions_this_month_receives_a_zero_valued_report(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total_income"] == "0.00"
-    assert body["total_expenses"] == "0.00"
-    assert body["net_savings"] == "0.00"
-    assert body["top_categories"] == []
+    assert _usd(body)["total_income"] == "0.00"
+    assert _usd(body)["total_expenses"] == "0.00"
+    assert _usd(body)["net_savings"] == "0.00"
+    assert _usd(body)["top_categories"] == []
 
 
 # --- TC-07/TC-08: income and expense totals are independent -------------------
@@ -333,7 +347,7 @@ def test_total_income_reflects_only_income_transactions(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    assert Decimal(response.json()["total_income"]) == Decimal("500.00")
+    assert Decimal(_usd(response.json())["total_income"]) == Decimal("500.00")
 
 
 def test_total_expenses_reflects_only_expense_transactions(
@@ -374,7 +388,7 @@ def test_total_expenses_reflects_only_expense_transactions(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    assert Decimal(response.json()["total_expenses"]) == Decimal("200.00")
+    assert Decimal(_usd(response.json())["total_expenses"]) == Decimal("200.00")
 
 
 # --- TC-09/TC-10/TC-11: net savings sign ---------------------------------------
@@ -418,7 +432,7 @@ def test_net_savings_is_negative_when_expenses_exceed_income(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    net_savings = Decimal(response.json()["net_savings"])
+    net_savings = Decimal(_usd(response.json())["net_savings"])
     assert net_savings == Decimal("-200.00")
     assert net_savings < 0
 
@@ -461,7 +475,7 @@ def test_net_savings_is_positive_when_income_exceeds_expenses(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    net_savings = Decimal(response.json()["net_savings"])
+    net_savings = Decimal(_usd(response.json())["net_savings"])
     assert net_savings == Decimal("400.00")
     assert net_savings > 0
 
@@ -503,7 +517,7 @@ def test_net_savings_is_exactly_zero_when_income_equals_expenses(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    assert response.json()["net_savings"] == "0.00"
+    assert _usd(response.json())["net_savings"] == "0.00"
 
 
 # --- TC-12: top-five selection and ordering out of six (QF-04) ----------------
@@ -536,7 +550,7 @@ def test_top_spending_categories_select_and_order_the_highest_five_of_six(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    top = response.json()["top_categories"]
+    top = _usd(response.json())["top_categories"]
     assert len(top) == 5
     assert [entry["category_id"] for entry in top] == [c.id for c in categories[:5]]
     assert [entry["total_amount"] for entry in top] == amounts[:5]
@@ -571,7 +585,7 @@ def test_a_category_with_no_expense_activity_this_period_is_omitted(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    top = response.json()["top_categories"]
+    top = _usd(response.json())["top_categories"]
     ids = {entry["category_id"] for entry in top}
     assert active_category.id in ids
     assert inactive_category.id not in ids
@@ -609,7 +623,7 @@ def test_categories_tied_on_total_expense_amount_are_ordered_by_ascending_catego
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    top = response.json()["top_categories"]
+    top = _usd(response.json())["top_categories"]
     assert [entry["category_id"] for entry in top] == expected_order
 
 
@@ -638,7 +652,7 @@ def test_each_ranked_category_carries_both_an_identifier_and_a_name(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    top = response.json()["top_categories"]
+    top = _usd(response.json())["top_categories"]
     assert len(top) == 1
     assert top[0]["category_id"] == category.id
     assert top[0]["category_name"] == "Groceries"
@@ -678,23 +692,26 @@ def test_a_transaction_dated_in_a_prior_month_never_affects_the_report(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total_expenses"] == "0.00"
-    assert body["top_categories"] == []
+    assert _usd(body)["total_expenses"] == "0.00"
+    assert _usd(body)["top_categories"] == []
 
 
-# --- TC-17: exactly the documented fields, nothing else -----------------------
+# --- TC-17: exactly the documented fields (superseded by FR-US-03 TC-40) ------
 
 
-def test_response_exposes_exactly_the_documented_fields(
+def test_response_exposes_exactly_the_documented_per_currency_fields(
     client: TestClient,
     user_headers: dict[str, str],
     normal_user: UserModel,
     db: Session,
     frozen_now: datetime,
 ) -> None:
-    """TC-17 / AC-15: top-level keys are exactly period, total_income,
-    total_expenses, net_savings, top_categories; each top_categories entry's
-    keys are exactly category_id, category_name, total_amount.
+    """TC-17 / AC-15, superseded by FR-US-03 TC-40 (FR-US-03 plan.md A11): the
+    flat top-level figures moved into a per-currency entry. Top-level keys are
+    exactly period, currencies; the entry's keys are exactly currency,
+    total_income, total_expenses, net_savings, top_categories; each
+    top_categories entry's keys are still exactly category_id, category_name,
+    total_amount.
     """
     wallet = _make_wallet(db, user_id=normal_user.id)
     category = _make_category(db, user_id=normal_user.id, category_type=CategoryType.EXPENSE)
@@ -706,38 +723,38 @@ def test_response_exposes_exactly_the_documented_fields(
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body.keys()) == {
-        "period",
+    assert set(body.keys()) == {"period", "currencies"}
+    entry = _usd(body)
+    assert set(entry.keys()) == {
+        "currency",
         "total_income",
         "total_expenses",
         "net_savings",
         "top_categories",
     }
-    assert len(body["top_categories"]) == 1
-    assert set(body["top_categories"][0].keys()) == {
+    assert len(entry["top_categories"]) == 1
+    assert set(entry["top_categories"][0].keys()) == {
         "category_id",
         "category_name",
         "total_amount",
     }
 
 
-# --- TC-18: a caller who owns no wallets at all (EC-01) ------------------------
+# --- TC-18: a caller who owns no wallets (superseded by FR-US-03 TC-37) -------
 
 
-def test_a_caller_who_owns_no_wallets_at_all_still_receives_a_zero_valued_report(
+def test_a_caller_who_owns_no_wallets_at_all_receives_200_with_no_currency_entries(
     client: TestClient, user_headers: dict[str, str], frozen_now: datetime
 ) -> None:
-    """TC-18 / EC-01: no wallets owned at all -> 200, not 404; every figure
-    zero-valued, top_categories empty.
+    """TC-18 / EC-01, superseded by FR-US-03 TC-37 (FR-US-03 plan.md A11): no
+    wallets owned at all -> still 200, not 404; but no wallets now means no
+    currency entries, not one zero-valued set of figures.
     """
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total_income"] == "0.00"
-    assert body["total_expenses"] == "0.00"
-    assert body["net_savings"] == "0.00"
-    assert body["top_categories"] == []
+    assert body["currencies"] == []
 
 
 # --- TC-19/TC-20: income-only / expense-only periods (QF-02) -----------------
@@ -771,8 +788,8 @@ def test_a_caller_with_only_income_transactions_this_period_reports_zero_expense
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total_expenses"] == "0.00"
-    assert body["top_categories"] == []
+    assert _usd(body)["total_expenses"] == "0.00"
+    assert _usd(body)["top_categories"] == []
 
 
 def test_a_caller_with_only_expense_transactions_this_period_reports_zero_income(
@@ -801,7 +818,7 @@ def test_a_caller_with_only_expense_transactions_this_period_reports_zero_income
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    assert response.json()["total_income"] == "0.00"
+    assert _usd(response.json())["total_income"] == "0.00"
 
 
 # --- TC-21/TC-22: category-count boundaries (EC-04, EC-06) -------------------
@@ -834,7 +851,7 @@ def test_exactly_five_distinct_nonzero_expense_categories_all_appear(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    top = response.json()["top_categories"]
+    top = _usd(response.json())["top_categories"]
     assert len(top) == 5
     assert {entry["category_id"] for entry in top} == {c.id for c in categories}
 
@@ -867,7 +884,7 @@ def test_fewer_than_five_distinct_nonzero_expense_categories_are_never_padded(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    top = response.json()["top_categories"]
+    top = _usd(response.json())["top_categories"]
     assert len(top) == 2
     assert {entry["category_id"] for entry in top} == {category_1.id, category_2.id}
 
@@ -902,7 +919,7 @@ def test_a_transaction_at_the_first_instant_of_the_current_month_is_included(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    assert Decimal(response.json()["total_expenses"]) == Decimal("42.00")
+    assert Decimal(_usd(response.json())["total_expenses"]) == Decimal("42.00")
 
 
 def test_a_transaction_at_the_first_instant_of_the_following_month_is_excluded(
@@ -934,7 +951,7 @@ def test_a_transaction_at_the_first_instant_of_the_following_month_is_excluded(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    assert response.json()["total_expenses"] == "0.00"
+    assert _usd(response.json())["total_expenses"] == "0.00"
 
 
 def test_a_transaction_in_the_immediately_preceding_month_is_excluded(
@@ -966,7 +983,7 @@ def test_a_transaction_in_the_immediately_preceding_month_is_excluded(
     response = client.get(REPORTS_URL, headers=user_headers)
 
     assert response.status_code == 200
-    assert response.json()["total_expenses"] == "0.00"
+    assert _usd(response.json())["total_expenses"] == "0.00"
 
 
 # --- TC-26: December -> January rollover (QF-01) -----------------------------
@@ -1004,8 +1021,8 @@ def test_the_reporting_period_rolls_over_correctly_from_december_into_january(
     assert response.status_code == 200
     body = response.json()
     assert body["period"] == "2026-12-01"
-    assert body["total_expenses"] == "0.00"
-    assert body["top_categories"] == []
+    assert _usd(body)["total_expenses"] == "0.00"
+    assert _usd(body)["top_categories"] == []
 
 
 # --- TC-27: classic float-trap Decimal amounts sum exactly (QF-06) -----------
@@ -1034,9 +1051,9 @@ def test_classic_float_trap_decimal_amounts_sum_exactly_end_to_end(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total_expenses"] == "20.30"
-    assert len(body["top_categories"]) == 1
-    assert body["top_categories"][0]["total_amount"] == "20.30"
+    assert _usd(body)["total_expenses"] == "20.30"
+    assert len(_usd(body)["top_categories"]) == 1
+    assert _usd(body)["top_categories"][0]["total_amount"] == "20.30"
 
 
 # --- TC-28: cross-wallet aggregation and cross-user isolation with -----------
@@ -1080,5 +1097,5 @@ def test_cross_wallet_aggregation_and_cross_user_isolation_with_overlapping_data
 
     assert response_a.status_code == 200
     assert response_b.status_code == 200
-    assert Decimal(response_a.json()["total_expenses"]) == Decimal("42.00")
-    assert Decimal(response_b.json()["total_expenses"]) == Decimal("42.00")
+    assert Decimal(_usd(response_a.json())["total_expenses"]) == Decimal("42.00")
+    assert Decimal(_usd(response_b.json())["total_expenses"]) == Decimal("42.00")

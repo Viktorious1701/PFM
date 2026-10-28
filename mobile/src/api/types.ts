@@ -278,7 +278,7 @@ export type BudgetProgressRead = {
 // ---------------------------------------------------------------------------
 
 /**
- * One ranked entry in `SummaryReportRead.top_categories` (backend
+ * One ranked entry in `CurrencySummary.top_categories` (backend
  * `CategorySpendingRead`). `category_name` is a projected field, not a
  * nested `CategoryRead` — no `GET /categories` endpoint existed anywhere in
  * this codebase when that response shape was designed (plan.md A6), so the
@@ -292,18 +292,28 @@ export type TopCategory = {
 };
 
 /**
- * `GET /api/v1/reports/summary` response — FR-US-01. Always the current
- * calendar month; the endpoint takes no period argument. No currency field
- * at all — the aggregation is currency-naive, summing Decimal amounts across
- * whatever wallets/currencies the caller has (a gap flagged at the Reports
- * screen's own call site, not silently absorbed here).
+ * One currency's figures in `SummaryReportRead.currencies` (backend
+ * `CurrencySummaryRead`, FR-US-03). Every amount is in `currency` — never
+ * mixed with another currency's (FR-US-03 BR-02).
+ */
+export type CurrencySummary = {
+  /** Three-letter code, e.g. `"VND"`. */
+  currency: string;
+  total_income: string;
+  total_expenses: string;
+  /** May be negative (FR-US-01 AC-09, BR-04) — no positivity bound. */
+  net_savings: string;
+  top_categories: TopCategory[];
+};
+
+/**
+ * `GET /api/v1/reports/summary` response — FR-US-01, reshaped by FR-US-03:
+ * one entry per currency the caller holds or used this month, ordered by
+ * code; `[]` when there is nothing to report. Always the current calendar
+ * month; the endpoint takes no period argument.
  */
 export type SummaryReportRead = {
   /** ISO-8601 date, e.g. `"2026-09-01"` — the first of the reported month. */
   period: string;
-  total_income: string;
-  total_expenses: string;
-  /** May be negative (spec AC-09, BR-04) — no positivity bound. */
-  net_savings: string;
-  top_categories: TopCategory[];
+  currencies: CurrencySummary[];
 };

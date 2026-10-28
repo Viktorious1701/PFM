@@ -245,6 +245,14 @@ touched. See the Implement-step gate message for full pasted evidence.
 | TC-27 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_classic_float_trap_decimal_amounts_sum_exactly_end_to_end` | PASS |
 | TC-28 | `backend/tests/integration/test_fr_us_01_view_summary_report.py::test_cross_wallet_aggregation_and_cross_user_isolation_with_overlapping_data` | PASS |
 
+> **Re-run 2026-10-28, after FR-US-03 T-06** (`plan.md` FR-US-03 A11). All 28 functions now read
+> the single `USD` entry of `currencies` and pass (`28 passed`; full suite `682 passed`). The map rows
+> above stay as written. FR-US-03 superseded two of them, and their functions were renamed for what
+> they now prove:
+> TC-17 → `::test_response_exposes_exactly_the_documented_per_currency_fields` (asserts FR-US-03
+> TC-40's outcome) and TC-18 → `::test_a_caller_who_owns_no_wallets_at_all_receives_200_with_no_currency_entries`
+> (asserts FR-US-03 TC-37's outcome). Both PASS. See FR-US-03 *FR-US-01 test cases affected*.
+
 ---
 
 ### TC-01: An authenticated User retrieves a populated summary report
@@ -625,35 +633,94 @@ width, or position is asserted — bar widths in particular are not tested.
 
 | Story | AC/EC | Label | TC(s) | Test node id | Status |
 |---|---|---|---|---|---|
-| FR-US-03 | AC-01 | [API] | TC-29 | — | Not run |
-| FR-US-03 | AC-02 | [API] | TC-30 | — | Not run |
-| FR-US-03 | AC-03 | [API] | TC-31 | — | Not run |
-| FR-US-03 | AC-04 | [API] | TC-32 | — | Not run |
-| FR-US-03 | AC-05 | [API] | TC-33, TC-34 | — | Not run |
-| FR-US-03 | AC-06 | [API] | TC-35 | — | Not run |
-| FR-US-03 | AC-07 | [BOTH] | TC-36 · e2e TC-53 | — | Not run |
-| FR-US-03 | AC-08 | [API] | TC-42 | — | Not run |
-| FR-US-03 | AC-09 | [BOTH] | TC-37, TC-43 · e2e TC-54 | — | Not run |
-| FR-US-03 | AC-10 | [API] | TC-38 | — | Not run |
-| FR-US-03 | AC-11 | [API] | TC-39 | — | Not run |
-| FR-US-03 | AC-12 | [API] | TC-40 | — | Not run |
-| FR-US-03 | AC-13 | [API] | TC-41 | — | Not run |
-| FR-US-03 | AC-14 | [UI] | e2e TC-50 | — | Not run |
-| FR-US-03 | AC-15 | [UI] | e2e TC-51 | — | Not run |
-| FR-US-03 | AC-16 | [UI] | e2e TC-52 | — | Not run |
-| FR-US-03 | EC-01 | [API] | TC-44 | — | Not run |
-| FR-US-03 | EC-02 | [API] | TC-45 | — | Not run |
-| FR-US-03 | EC-03 | [API] | TC-46 | — | Not run |
-| FR-US-03 | EC-04 | [API] | TC-47 | — | Not run |
-| FR-US-03 | EC-05 | [BOTH] | TC-48 · e2e TC-53 | — | Not run |
-| FR-US-03 | EC-06 | [API] | TC-48 | — | Not run |
-| FR-US-03 | EC-07 | [API] | TC-49 | — | Not run |
+| FR-US-03 | AC-01 | [API] | TC-29 | `::test_figures_are_reported_separately_for_vnd_and_usd` | PASS — 2026-10-28 |
+| FR-US-03 | AC-02 | [API] | TC-30 | `::test_amounts_in_different_currencies_are_never_added_together` | PASS — 2026-10-28 |
+| FR-US-03 | AC-03 | [API] | TC-31 | `::test_two_wallets_in_the_same_currency_form_one_entry` | PASS — 2026-10-28 |
+| FR-US-03 | AC-04 | [API] | TC-32 | `::test_currency_entries_are_ordered_by_code_the_same_on_every_request` | PASS — 2026-10-28 |
+| FR-US-03 | AC-05 | [API] | TC-33, TC-34 | `::test_each_currency_has_its_own_top_five_never_crowded_out_by_another` · `::test_tied_categories_within_one_currency_are_ordered_by_identifier` | PASS — 2026-10-28 |
+| FR-US-03 | AC-06 | [API] | TC-35 | `::test_a_category_spent_in_two_currencies_ranks_in_each_with_its_own_total` | PASS — 2026-10-28 |
+| FR-US-03 | AC-07 | [BOTH] | TC-36 · e2e TC-53 | `::test_a_held_currency_with_no_activity_this_month_is_a_zero_entry` · `home.spec.ts` › TC-53 | PASS — 2026-10-28 |
+| FR-US-03 | AC-08 | [API] | TC-42 | `::test_archived_wallet_still_counts_this_month_but_archived_unused_currency_is_absent` | PASS — 2026-10-28 |
+| FR-US-03 | AC-09 | [BOTH] | TC-37, TC-43 · e2e TC-54 | `::test_a_user_with_no_wallets_receives_an_empty_report` · `::test_a_user_with_only_archived_unused_wallets_receives_an_empty_report` · `home.spec.ts` › TC-54 | PASS — 2026-10-28 |
+| FR-US-03 | AC-10 | [API] | TC-38 | `::test_an_unauthenticated_caller_is_denied_with_401` | PASS — 2026-10-28 |
+| FR-US-03 | AC-11 | [API] | TC-39 | `::test_another_users_currency_and_amounts_never_appear` | PASS — 2026-10-28 |
+| FR-US-03 | AC-12 | [API] | TC-40 | `::test_the_response_carries_exactly_the_documented_fields_at_every_level` | PASS — 2026-10-28 |
+| FR-US-03 | AC-13 | [API] | TC-41 | `::test_the_period_applies_to_every_currency_alike` | PASS — 2026-10-28 |
+| FR-US-03 | AC-14 | [UI] | e2e TC-50 | `home.spec.ts` › TC-50 | PASS — 2026-10-28 |
+| FR-US-03 | AC-15 | [UI] | e2e TC-51 | `home.spec.ts` › TC-51 | PASS — 2026-10-28 |
+| FR-US-03 | AC-16 | [UI] | e2e TC-52 | `home.spec.ts` › TC-52 | PASS — 2026-10-28 |
+| FR-US-03 | EC-01 | [API] | TC-44 | `::test_a_currency_with_income_only_reports_zero_expenses` | PASS — 2026-10-28 |
+| FR-US-03 | EC-02 | [API] | TC-45 | `::test_a_currency_with_expenses_only_reports_zero_income_and_negative_net_savings` | PASS — 2026-10-28 |
+| FR-US-03 | EC-03 | [API] | TC-46 | `::test_net_savings_carry_their_own_sign_per_currency` | PASS — 2026-10-28 |
+| FR-US-03 | EC-04 | [API] | TC-47 | `::test_a_category_archived_after_being_spent_against_still_ranks_in_its_currency` | PASS — 2026-10-28 |
+| FR-US-03 | EC-05 | [BOTH] | TC-48 · e2e TC-53 | `::test_a_user_holding_only_eur_gets_exactly_one_eur_entry_and_nothing_invented` · `home.spec.ts` › TC-53 | PASS — 2026-10-28 |
+| FR-US-03 | EC-06 | [API] | TC-48 | `::test_a_user_holding_only_eur_gets_exactly_one_eur_entry_and_nothing_invented` | PASS — 2026-10-28 |
+| FR-US-03 | EC-07 | [API] | TC-49 | `::test_two_currencies_with_identical_figures_stay_two_entries` | PASS — 2026-10-28 |
 
 > Every AC and EC has at least one TC; every `[UI]`/`[BOTH]` row has an e2e TC. Integration TCs go
 > in `backend/tests/integration/test_fr_us_03_summary_per_currency.py` (`plan.md` T-07), e2e TCs in
 > `mobile/e2e/home.spec.ts` (T-09). Node ids are filled at step 4. **Known coverage limit,
 > accepted:** the window-function exactness (`plan.md` A6) is proven on SQLite only — PostgreSQL is
 > not runnable here (constitution ENV-04), the same limit FR-US-01's matrix note records.
+
+### Test Implementation Map *(filled at step 4)*
+
+Integration TCs: `backend/tests/integration/test_fr_us_03_summary_per_currency.py`, one test
+function per `TC-NN`, each naming its `TC-NN` in its docstring (`plan.md` FR-US-03 T-07). E2E TCs: `mobile/e2e/home.spec.ts`, each test title starting with its
+`TC-NN` (T-09). Run on 2026-10-28: backend full suite `682 passed`; `ruff check`, `ruff format
+--check`, `mypy app` clean; coverage TOTAL 99%, 100% on every file this story touched
+(`schemas/report.py`, `transaction_repo.py`, `wallet_repo.py`, `report_service.py`,
+`api/v1/reports.py`); `npm run typecheck` exit 0; full e2e suite `120 passed` (desktop + phone).
+
+| TC | pytest node id / e2e test | Result |
+|---|---|---|
+| TC-29 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_figures_are_reported_separately_for_vnd_and_usd` | PASS — 2026-10-28 |
+| TC-30 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_amounts_in_different_currencies_are_never_added_together` | PASS — 2026-10-28 |
+| TC-31 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_two_wallets_in_the_same_currency_form_one_entry` | PASS — 2026-10-28 |
+| TC-32 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_currency_entries_are_ordered_by_code_the_same_on_every_request` | PASS — 2026-10-28 |
+| TC-33 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_each_currency_has_its_own_top_five_never_crowded_out_by_another` | PASS — 2026-10-28 |
+| TC-34 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_tied_categories_within_one_currency_are_ordered_by_identifier` | PASS — 2026-10-28 |
+| TC-35 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_a_category_spent_in_two_currencies_ranks_in_each_with_its_own_total` | PASS — 2026-10-28 |
+| TC-36 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_a_held_currency_with_no_activity_this_month_is_a_zero_entry` | PASS — 2026-10-28 |
+| TC-37 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_a_user_with_no_wallets_receives_an_empty_report` | PASS — 2026-10-28 |
+| TC-38 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_an_unauthenticated_caller_is_denied_with_401` | PASS — 2026-10-28 (both parametrised cases: `no-header`, `invalid-bearer`) |
+| TC-39 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_another_users_currency_and_amounts_never_appear` | PASS — 2026-10-28 |
+| TC-40 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_the_response_carries_exactly_the_documented_fields_at_every_level` | PASS — 2026-10-28 |
+| TC-41 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_the_period_applies_to_every_currency_alike` | PASS — 2026-10-28 |
+| TC-42 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_archived_wallet_still_counts_this_month_but_archived_unused_currency_is_absent` | PASS — 2026-10-28 |
+| TC-43 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_a_user_with_only_archived_unused_wallets_receives_an_empty_report` | PASS — 2026-10-28 |
+| TC-44 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_a_currency_with_income_only_reports_zero_expenses` | PASS — 2026-10-28 |
+| TC-45 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_a_currency_with_expenses_only_reports_zero_income_and_negative_net_savings` | PASS — 2026-10-28 |
+| TC-46 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_net_savings_carry_their_own_sign_per_currency` | PASS — 2026-10-28 |
+| TC-47 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_a_category_archived_after_being_spent_against_still_ranks_in_its_currency` | PASS — 2026-10-28 |
+| TC-48 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_a_user_holding_only_eur_gets_exactly_one_eur_entry_and_nothing_invented` | PASS — 2026-10-28 |
+| TC-49 | `backend/tests/integration/test_fr_us_03_summary_per_currency.py::test_two_currencies_with_identical_figures_stay_two_entries` | PASS — 2026-10-28 |
+| TC-50 | `mobile/e2e/home.spec.ts` › TC-50 | PASS — 2026-10-28, desktop + phone |
+| TC-51 | `mobile/e2e/home.spec.ts` › TC-51 | PASS — 2026-10-28, desktop + phone |
+| TC-52 | `mobile/e2e/home.spec.ts` › TC-52 | PASS — 2026-10-28, desktop + phone |
+| TC-53 | `mobile/e2e/home.spec.ts` › TC-53 | PASS — 2026-10-28, desktop + phone |
+| TC-54 | `mobile/e2e/home.spec.ts` › TC-54 | PASS — 2026-10-28, desktop + phone |
+
+Notes:
+
+1. **Seen failing first.** Before T-01…T-05 existed, the integration file plus the re-pointed
+   FR-US-01 file ran `46 failed, 4 passed`. The four that passed are `401`/`period` checks
+   (TC-38's two cases, FR-US-01 TC-02 and TC-05), which this story leaves unchanged by design
+   (`plan.md` FR-US-03 A10). Every other failure was `KeyError: 'currencies'` or the old flat key
+   set. Before T-08, `home.spec.ts` ran against HEAD's `Dashboard.tsx` with `5 failed` (desktop),
+   each on a missing `report-…` element.
+2. **The guarding tests can fail.** Two mutations were applied by hand and then reverted. Dropping
+   `partition_by` from the ranking window (a global top five) failed TC-33. Replacing the
+   currency `sorted(...)` with insertion order failed TC-32 and TC-49. This shows QF-08 and QF-09
+   catch the defects they were written for.
+3. **TC-38 is two cases in one TC.** It runs as one parametrised test with two cases, so it
+   reports as two passes.
+4. **E2E titles TC-50…TC-54 also exist in `mobile/e2e/auth.spec.ts`**, which holds
+   `specs/002-system-security`'s UI TCs (TC ids are per epic). The file name tells them apart. To run one, name
+   both the file and the title: `npm run test:e2e -- home.spec.ts -g "TC-50 "`.
+5. **SS-US-03 TC-61's test reads this report** and was re-pointed to the single `VND` entry
+   (`plan.md` FR-US-03 A14, T-06). It passes in the full run, and SS-US-03 TC-61's own result is
+   unchanged.
 
 ---
 
@@ -860,11 +927,11 @@ width, or position is asserted — bar widths in particular are not tested.
 
 | TC | US | AC | E2E test | Status |
 | :-- | :-- | :-- | :-- | :-- |
-| TC-50 | FR-US-03 | AC-14, AC-01, AC-04 | `mobile/e2e/home.spec.ts` › TC-50 | — |
-| TC-51 | FR-US-03 | AC-15 | `mobile/e2e/home.spec.ts` › TC-51 | — |
-| TC-52 | FR-US-03 | AC-16 | `mobile/e2e/home.spec.ts` › TC-52 | — |
-| TC-53 | FR-US-03 | AC-07, EC-05 | `mobile/e2e/home.spec.ts` › TC-53 | — |
-| TC-54 | FR-US-03 | AC-09 | `mobile/e2e/home.spec.ts` › TC-54 | — |
+| TC-50 | FR-US-03 | AC-14, AC-01, AC-04 | `mobile/e2e/home.spec.ts` › TC-50 | PASS — 2026-10-28, desktop + phone |
+| TC-51 | FR-US-03 | AC-15 | `mobile/e2e/home.spec.ts` › TC-51 | PASS — 2026-10-28, desktop + phone |
+| TC-52 | FR-US-03 | AC-16 | `mobile/e2e/home.spec.ts` › TC-52 | PASS — 2026-10-28, desktop + phone |
+| TC-53 | FR-US-03 | AC-07, EC-05 | `mobile/e2e/home.spec.ts` › TC-53 | PASS — 2026-10-28, desktop + phone |
+| TC-54 | FR-US-03 | AC-09 | `mobile/e2e/home.spec.ts` › TC-54 | PASS — 2026-10-28, desktop + phone |
 
 ### TC-50: Home shows one block per currency, in the report's order
 

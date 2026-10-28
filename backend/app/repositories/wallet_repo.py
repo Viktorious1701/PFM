@@ -159,6 +159,21 @@ def list_owned(
     return items, total
 
 
+def list_active_currencies(db: Session, *, user_id: str) -> list[str]:
+    """The distinct currencies of `user_id`'s wallets with `archived_at IS
+    NULL` (spec FR-US-03 AC-07, AC-08, FR-05; plan.md FR-US-03 A7) -- the
+    same active-wallet predicate list_owned() applies (WM-US-05 A3). No
+    order is promised; the report service sorts (FR-US-03 A4).
+    """
+    return list(
+        db.scalars(
+            select(WalletModel.currency)
+            .where(WalletModel.user_id == user_id, WalletModel.archived_at.is_(None))
+            .distinct()
+        ).all()
+    )
+
+
 def archive_wallet(db: Session, *, wallet: WalletModel) -> WalletModel:
     """spec AC-01, AC-05, FR-04, FR-05 (plan.md A1, A6). Idempotent: stamps
     `archived_at` with the current time only if the wallet is not already
