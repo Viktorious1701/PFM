@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-02 · SDS §5.1 (SS)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** SS-US-01 *(implemented, verified — 14 tests, 100% coverage on new code)* · SS-US-02 *(planned)* · SS-US-03 *(planned)*
+> **Stories in this file:** SS-US-01 *(implemented, verified — 14 tests, 100% coverage on new code)* · SS-US-02 *(implemented, verified — TC-12…TC-15, 4/4 PASS)* · SS-US-03 *(implemented, verified — TC-58…TC-96, 39/39 PASS)*
 
 ---
 
@@ -325,10 +325,10 @@ story emits only the already-catalogued `NOT_AUTHENTICATED`.
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `schemas/auth.py`: add `LogoutResult` | `backend/app/schemas/auth.py` | Open |
-| T-02 | `auth_service.py`: add `logout()` | `backend/app/services/auth_service.py` | Open |
-| T-03 | `POST /api/v1/auth/logout` router, guarded by `CurrentUserDep` | `backend/app/api/v1/auth.py` | Open |
-| T-04 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_ss_us_02_logout.py` | Open |
+| T-01 | `schemas/auth.py`: add `LogoutResult` | `backend/app/schemas/auth.py` | Done |
+| T-02 | `auth_service.py`: add `logout()` | `backend/app/services/auth_service.py` | Done |
+| T-03 | `POST /api/v1/auth/logout` router, guarded by `CurrentUserDep` | `backend/app/api/v1/auth.py` | Done |
+| T-04 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_ss_us_02_logout.py` | Done |
 
 ---
 

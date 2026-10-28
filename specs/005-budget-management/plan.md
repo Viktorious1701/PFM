@@ -369,16 +369,16 @@ All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, cons
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `BudgetModel` (`id`, `wallet_id` FK indexed, `category_id` FK indexed, `amount_limit`, `period` — no `user_id`/`status`/`created_at`, A7/A8/A11) plus `uq_budgets_wallet_category_period` | `backend/app/models/budget.py` | Open |
-| T-02 | Alembic revision creating `budgets` with its two FKs, two indexes, and the composite unique constraint, `down_revision = 81bfb85427ed` | `backend/migrations/versions/` | Open |
-| T-03 | Schemas `BudgetCreate`, `BudgetRead` | `backend/app/schemas/budget.py` | Open |
-| T-04 | Add `wallet_repo.get_owned_by_id(db, *, wallet_id, user_id)` | `backend/app/repositories/wallet_repo.py` | Open |
-| T-05 | Add `category_repo.get_owned_by_id(db, *, category_id, user_id)` | `backend/app/repositories/category_repo.py` | Open |
-| T-06 | `budget_repo.get_by_wallet_category_period(...)`, `budget_repo.add_budget(...)` | `backend/app/repositories/budget_repo.py` | Open |
-| T-07 | `budget_service.create_budget(db, *, owner, wallet_id, category_id, amount_limit)` — fixed check order (FR-13) | `backend/app/services/budget_service.py` | Open |
-| T-08 | Add `BudgetWalletNotFoundError`, `BudgetCategoryNotFoundError`, `BudgetAlreadyExistsError` | `backend/app/core/errors.py` | Open |
-| T-09 | `POST /api/v1/budgets` router; mount `budgets.router` in `api/v1/router.py` | `backend/app/api/v1/budgets.py`, `backend/app/api/v1/router.py` | Open |
-| T-10 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_01_create_budget.py` | Open |
+| T-01 | `BudgetModel` (`id`, `wallet_id` FK indexed, `category_id` FK indexed, `amount_limit`, `period` — no `user_id`/`status`/`created_at`, A7/A8/A11) plus `uq_budgets_wallet_category_period` | `backend/app/models/budget.py` | Done |
+| T-02 | Alembic revision creating `budgets` with its two FKs, two indexes, and the composite unique constraint, `down_revision = 81bfb85427ed` | `backend/migrations/versions/` | Done |
+| T-03 | Schemas `BudgetCreate`, `BudgetRead` | `backend/app/schemas/budget.py` | Done |
+| T-04 | Add `wallet_repo.get_owned_by_id(db, *, wallet_id, user_id)` | `backend/app/repositories/wallet_repo.py` | Done |
+| T-05 | Add `category_repo.get_owned_by_id(db, *, category_id, user_id)` | `backend/app/repositories/category_repo.py` | Done |
+| T-06 | `budget_repo.get_by_wallet_category_period(...)`, `budget_repo.add_budget(...)` | `backend/app/repositories/budget_repo.py` | Done |
+| T-07 | `budget_service.create_budget(db, *, owner, wallet_id, category_id, amount_limit)` — fixed check order (FR-13) | `backend/app/services/budget_service.py` | Done |
+| T-08 | Add `BudgetWalletNotFoundError`, `BudgetCategoryNotFoundError`, `BudgetAlreadyExistsError` | `backend/app/core/errors.py` | Done |
+| T-09 | `POST /api/v1/budgets` router; mount `budgets.router` in `api/v1/router.py` | `backend/app/api/v1/budgets.py`, `backend/app/api/v1/router.py` | Done |
+| T-10 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_01_create_budget.py` | Done |
 
 ---
 
@@ -759,13 +759,13 @@ role restriction) and no `404`/`409` (a read has nothing to find-by-id or confli
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `BudgetProgressRead` (seven fields), `BudgetListRead` envelope (A2) | `backend/app/schemas/budget.py` | Open |
-| T-02 | Alembic revision adding an index on `budgets.period`, `down_revision = 2187429f50ce` (A6) | `backend/migrations/versions/` | Open |
-| T-03 | `budget_repo.list_owned(db, *, user_id, period, page, page_size)` — join on `wallets`, filter on `period` (A1, A3, A5) | `backend/app/repositories/budget_repo.py` | Open |
-| T-04 | `transaction_repo.get_expense_totals_by_wallet_category(db, *, user_id, period_start, period_end)` (A4) | `backend/app/repositories/transaction_repo.py` | Open |
-| T-05 | `budget_service.list_budgets(db, *, owner, page, page_size) -> BudgetListRead`, plus local `_month_bounds()` helper (A2, A4, A5, A7, A11, A12) | `backend/app/services/budget_service.py` | Open |
-| T-06 | `GET /api/v1/budgets` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `CurrentUserDep`, no `db.commit()` (A8, A10) | `backend/app/api/v1/budgets.py` | Open |
-| T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_02_list_budgets.py` | Open |
+| T-01 | `BudgetProgressRead` (seven fields), `BudgetListRead` envelope (A2) | `backend/app/schemas/budget.py` | Done |
+| T-02 | Alembic revision adding an index on `budgets.period`, `down_revision = 2187429f50ce` (A6) | `backend/migrations/versions/` | Done |
+| T-03 | `budget_repo.list_owned(db, *, user_id, period, page, page_size)` — join on `wallets`, filter on `period` (A1, A3, A5) | `backend/app/repositories/budget_repo.py` | Done |
+| T-04 | `transaction_repo.get_expense_totals_by_wallet_category(db, *, user_id, period_start, period_end)` (A4) | `backend/app/repositories/transaction_repo.py` | Done |
+| T-05 | `budget_service.list_budgets(db, *, owner, page, page_size) -> BudgetListRead`, plus local `_month_bounds()` helper (A2, A4, A5, A7, A11, A12) | `backend/app/services/budget_service.py` | Done |
+| T-06 | `GET /api/v1/budgets` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `CurrentUserDep`, no `db.commit()` (A8, A10) | `backend/app/api/v1/budgets.py` | Done |
+| T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_02_list_budgets.py` | Done |
 
 ---
 
@@ -993,10 +993,10 @@ in `core/errors.py`, reused as-is, identical to BM-US-02's own table. All in the
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `_classify_status(progress_percentage) -> Literal["NORMAL", "WARNING", "EXCEEDED"]` (A1, A6, A9) | `backend/app/services/budget_service.py` | Open |
-| T-02 | Add `status` field to `BudgetProgressRead`, wire `list_budgets()`'s comprehension to call `_classify_status()` (A2, A3) | `backend/app/schemas/budget.py`, `backend/app/services/budget_service.py` | Open |
-| T-03 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_03_budget_status.py` | Open |
-| T-04 | Update the **pytest function body** of BM-US-02's `test_response_item_exposes_exactly_seven_fields_wrapped_in_paginated_envelope` (TC-28) to assert eight fields and the presence of `status` — `test_cases.md`'s own TC-28 prose stays unchanged per `CLAUDE.md` §1.1; only the automation file changes (A4) | `backend/tests/integration/test_bm_us_02_list_budgets.py` | Open |
+| T-01 | `_classify_status(progress_percentage) -> Literal["NORMAL", "WARNING", "EXCEEDED"]` (A1, A6, A9) | `backend/app/services/budget_service.py` | Done |
+| T-02 | Add `status` field to `BudgetProgressRead`, wire `list_budgets()`'s comprehension to call `_classify_status()` (A2, A3) | `backend/app/schemas/budget.py`, `backend/app/services/budget_service.py` | Done |
+| T-03 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_03_budget_status.py` | Done |
+| T-04 | Update the **pytest function body** of BM-US-02's `test_response_item_exposes_exactly_seven_fields_wrapped_in_paginated_envelope` (TC-28) to assert eight fields and the presence of `status` — `test_cases.md`'s own TC-28 prose stays unchanged per `CLAUDE.md` §1.1; only the automation file changes (A4) | `backend/tests/integration/test_bm_us_02_list_budgets.py` | Done |
 
 ---
 
@@ -1566,7 +1566,7 @@ path parameter, which either resolves to an owned budget or does not).
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `budget_repo.delete_budget(db, *, budget)` (A2, A6) | `backend/app/repositories/budget_repo.py` | Open |
-| T-02 | `budget_service.delete_budget(db, *, owner, budget_id)` — ownership lookup reused from BM-US-04, then delete; no active-period branch (A1, A7, A8) | `backend/app/services/budget_service.py` | Open |
-| T-03 | `DELETE /api/v1/budgets/{budget_id}` router — `204`, `response_model=None` (A4, A5, A9) | `backend/app/api/v1/budgets.py` | Open |
-| T-04 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_05_delete_budget.py` | Open |
+| T-01 | `budget_repo.delete_budget(db, *, budget)` (A2, A6) | `backend/app/repositories/budget_repo.py` | Done |
+| T-02 | `budget_service.delete_budget(db, *, owner, budget_id)` — ownership lookup reused from BM-US-04, then delete; no active-period branch (A1, A7, A8) | `backend/app/services/budget_service.py` | Done |
+| T-03 | `DELETE /api/v1/budgets/{budget_id}` router — `204`, `response_model=None` (A4, A5, A9) | `backend/app/api/v1/budgets.py` | Done |
+| T-04 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_bm_us_05_delete_budget.py` | Done |

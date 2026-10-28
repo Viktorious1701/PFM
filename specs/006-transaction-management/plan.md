@@ -496,15 +496,15 @@ All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, cons
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `TransactionModel` (`id`, `wallet_id` FK indexed, `category_id` FK indexed, `amount`, `type`, `timestamp`, `note` — no `user_id`, A11) plus `TransactionType` enum | `backend/app/models/transaction.py` | Open |
-| T-02 | Alembic revision creating `transactions` with its two FKs and two indexes, `down_revision = 003e5ae90a36` | `backend/migrations/versions/` | Open |
-| T-03 | Schemas `TransactionCreate`, `TransactionRead` | `backend/app/schemas/transaction.py` | Open |
-| T-04 | Add `wallet_repo.decrement_balance(db, *, wallet_id, amount)` (conditional UPDATE, A9) and `wallet_repo.increment_balance(db, *, wallet_id, amount)` (unconditional) | `backend/app/repositories/wallet_repo.py` | Open |
-| T-05 | `transaction_repo.add_transaction(...)` | `backend/app/repositories/transaction_repo.py` | Open |
-| T-06 | `transaction_service.create_transaction(db, *, owner, wallet_id, category_id, amount, type, note)` — fixed check order (FR-18, A4) | `backend/app/services/transaction_service.py` | Open |
-| T-07 | Add `TransactionWalletNotFoundError`, `TransactionCategoryNotFoundError`, `TransactionCategoryTypeMismatchError`, `TransactionInsufficientBalanceError` | `backend/app/core/errors.py` | Open |
-| T-08 | `POST /api/v1/transactions` router; mount `transactions.router` in `api/v1/router.py` | `backend/app/api/v1/transactions.py`, `backend/app/api/v1/router.py` | Open |
-| T-09 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_01_create_transaction.py` | Open |
+| T-01 | `TransactionModel` (`id`, `wallet_id` FK indexed, `category_id` FK indexed, `amount`, `type`, `timestamp`, `note` — no `user_id`, A11) plus `TransactionType` enum | `backend/app/models/transaction.py` | Done |
+| T-02 | Alembic revision creating `transactions` with its two FKs and two indexes, `down_revision = 003e5ae90a36` | `backend/migrations/versions/` | Done |
+| T-03 | Schemas `TransactionCreate`, `TransactionRead` | `backend/app/schemas/transaction.py` | Done |
+| T-04 | Add `wallet_repo.decrement_balance(db, *, wallet_id, amount)` (conditional UPDATE, A9) and `wallet_repo.increment_balance(db, *, wallet_id, amount)` (unconditional) | `backend/app/repositories/wallet_repo.py` | Done |
+| T-05 | `transaction_repo.add_transaction(...)` | `backend/app/repositories/transaction_repo.py` | Done |
+| T-06 | `transaction_service.create_transaction(db, *, owner, wallet_id, category_id, amount, type, note)` — fixed check order (FR-18, A4) | `backend/app/services/transaction_service.py` | Done |
+| T-07 | Add `TransactionWalletNotFoundError`, `TransactionCategoryNotFoundError`, `TransactionCategoryTypeMismatchError`, `TransactionInsufficientBalanceError` | `backend/app/core/errors.py` | Done |
+| T-08 | `POST /api/v1/transactions` router; mount `transactions.router` in `api/v1/router.py` | `backend/app/api/v1/transactions.py`, `backend/app/api/v1/router.py` | Done |
+| T-09 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_01_create_transaction.py` | Done |
 
 **Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`, scratch install per `CLAUDE.md` §3) before this gate was claimed. It parses cleanly. By eye/grep: no `Repo`/`DB` lane (four lanes only — `UI`, `API`, `Svc`, `Store`), no `SELECT`/`INSERT`/`UPDATE … WHERE`/`rowcount`/table-and-column syntax in any arrow label (the conditional-UPDATE mechanism is described in prose in a `Note`, per DG-04's own allowance, not spelled out as SQL), and every `UI→API` request (there is exactly one: `POST /transactions`) is answered by exactly one of the eight terminal branches, each carrying an HTTP status back to `UI`.
 
@@ -914,12 +914,12 @@ resource — A3), and no `409` (a read has nothing to conflict on).
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `TransactionListRead` envelope (A8) | `backend/app/schemas/transaction.py` | Open |
-| T-02 | Alembic revision: drop `ix_transactions_wallet_id`, add composite `ix_transactions_wallet_id_timestamp` on (`wallet_id`, `timestamp`) (A5), `down_revision = e33a7c97dab4` | `backend/migrations/versions/` | Open |
-| T-03 | `transaction_repo.list_owned(db, *, user_id, page, page_size, wallet_id, category_id, date_from, date_to)` — join-based ownership scope, shared predicate list for both queries (A2, A3) | `backend/app/repositories/transaction_repo.py` | Open |
-| T-04 | `transaction_service.list_transactions(db, *, owner, page, page_size, wallet_id, category_id, date_from, date_to) -> TransactionListRead` — UTC normalisation, inverted-range rejection (A6, A7, A8) | `backend/app/services/transaction_service.py` | Open |
-| T-05 | `GET /api/v1/transactions` router — `Query()` for `page`/`page_size`/`wallet_id`/`category_id`/`date_from`/`date_to`, guarded by `CurrentUserDep`, no `db.commit()` (A9, A11) | `backend/app/api/v1/transactions.py` | Open |
-| T-06 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_02_list_transactions.py` | Open |
+| T-01 | `TransactionListRead` envelope (A8) | `backend/app/schemas/transaction.py` | Done |
+| T-02 | Alembic revision: drop `ix_transactions_wallet_id`, add composite `ix_transactions_wallet_id_timestamp` on (`wallet_id`, `timestamp`) (A5), `down_revision = e33a7c97dab4` | `backend/migrations/versions/` | Done |
+| T-03 | `transaction_repo.list_owned(db, *, user_id, page, page_size, wallet_id, category_id, date_from, date_to)` — join-based ownership scope, shared predicate list for both queries (A2, A3) | `backend/app/repositories/transaction_repo.py` | Done |
+| T-04 | `transaction_service.list_transactions(db, *, owner, page, page_size, wallet_id, category_id, date_from, date_to) -> TransactionListRead` — UTC normalisation, inverted-range rejection (A6, A7, A8) | `backend/app/services/transaction_service.py` | Done |
+| T-05 | `GET /api/v1/transactions` router — `Query()` for `page`/`page_size`/`wallet_id`/`category_id`/`date_from`/`date_to`, guarded by `CurrentUserDep`, no `db.commit()` (A9, A11) | `backend/app/api/v1/transactions.py` | Done |
+| T-06 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_02_list_transactions.py` | Done |
 
 **Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram
 above was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`, scratch install
@@ -1191,11 +1191,11 @@ constraint, A1), and no `409` (a read has nothing to conflict on, mirrors TM-US-
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `transaction_repo.get_owned_by_id(db, *, transaction_id, user_id)` — single join on `wallets` (A1) | `backend/app/repositories/transaction_repo.py` | Open |
-| T-02 | `transaction_service.get_transaction(db, *, owner, transaction_id) -> TransactionRead` (A1) | `backend/app/services/transaction_service.py` | Open |
-| T-03 | Add `TransactionNotFoundError` | `backend/app/core/errors.py` | Open |
-| T-04 | `GET /api/v1/transactions/{transaction_id}` route (A2, A5, A7) | `backend/app/api/v1/transactions.py` | Open |
-| T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_03_view_transaction.py` | Open |
+| T-01 | `transaction_repo.get_owned_by_id(db, *, transaction_id, user_id)` — single join on `wallets` (A1) | `backend/app/repositories/transaction_repo.py` | Done |
+| T-02 | `transaction_service.get_transaction(db, *, owner, transaction_id) -> TransactionRead` (A1) | `backend/app/services/transaction_service.py` | Done |
+| T-03 | Add `TransactionNotFoundError` | `backend/app/core/errors.py` | Done |
+| T-04 | `GET /api/v1/transactions/{transaction_id}` route (A2, A5, A7) | `backend/app/api/v1/transactions.py` | Done |
+| T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_tm_us_03_view_transaction.py` | Done |
 
 **Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram
 above was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`, scratch install

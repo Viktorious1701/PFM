@@ -40,7 +40,7 @@ There is no Android SDK, no `adb`, no emulator here (constitution ENV-04). Andro
 npx expo start --web --clear     # then open http://localhost:8081 in Windows
 ```
 
-`testID` renders as `data-testid`, so `src/constants/elementIds.ts` doubles as a selector registry.
+`testID` renders as `data-testid`, so the `testID` strings written in the components are the e2e selectors (`mobile/e2e/` finds them with `getByTestId`). Each epic's `plan.md` lists its element IDs.
 
 **Metro file-watching on `/mnt/d` is unreliable** — the 9p/drvfs mount does not deliver inotify events dependably, and the dev server has silently served stale code for a whole route tree. Always verify against a freshly restarted server, or press `r` in the Metro terminal. Never trust a render you didn't get from a clean start.
 

@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-07 · SDS §5.7 (FR)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** FR-US-01 *(planned)* · FR-US-03 *(planned)*
+> **Stories in this file:** FR-US-01 *(implemented, verified — TC-01…TC-28, 28/28 PASS)* · FR-US-03 *(implemented, verified — TC-29…TC-54, 26/26 PASS)*
 
 > **Naming note carried from `spec.md`:** this epic's code (`FR`) collides in spelling with `SRS
 > FR-07` (the requirement) and with this file's own local `FR-NN` numbering in `spec.md`. This
@@ -406,11 +406,11 @@ for why this catalogue is deliberately this short, not incomplete.
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `SummaryReportRead`, `CategorySpendingRead` | `backend/app/schemas/report.py` | Open |
-| T-02 | `transaction_repo.get_summary_totals(...)`, `transaction_repo.get_top_expense_categories(...)` — import `CategoryModel` | `backend/app/repositories/transaction_repo.py` | Open |
-| T-03 | `report_service._month_bounds(...)`, `TOP_CATEGORIES_LIMIT`, `report_service.get_summary_report(db, *, owner)` | `backend/app/services/report_service.py` | Open |
-| T-04 | `GET /api/v1/reports/summary` router; mount `reports.router` in `api/v1/router.py` | `backend/app/api/v1/reports.py`, `backend/app/api/v1/router.py` | Open |
-| T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_fr_us_01_view_summary_report.py` | Open |
+| T-01 | `SummaryReportRead`, `CategorySpendingRead` | `backend/app/schemas/report.py` | Done |
+| T-02 | `transaction_repo.get_summary_totals(...)`, `transaction_repo.get_top_expense_categories(...)` — import `CategoryModel` | `backend/app/repositories/transaction_repo.py` | Done — superseded by FR-US-03 T-02 (per-currency queries) |
+| T-03 | `report_service._month_bounds(...)`, `TOP_CATEGORIES_LIMIT`, `report_service.get_summary_report(db, *, owner)` | `backend/app/services/report_service.py` | Done |
+| T-04 | `GET /api/v1/reports/summary` router; mount `reports.router` in `api/v1/router.py` | `backend/app/api/v1/reports.py`, `backend/app/api/v1/router.py` | Done |
+| T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_fr_us_01_view_summary_report.py` | Done |
 
 ---
 

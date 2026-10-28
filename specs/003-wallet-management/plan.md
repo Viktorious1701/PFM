@@ -200,13 +200,13 @@ All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, cons
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `WalletModel` (`id`, `user_id` FK indexed, `name`, `type`, `currency`, `balance` — no `created_at`, A5) | `backend/app/models/wallet.py` | Open |
-| T-02 | Alembic revision creating `wallets` with its FK and index | `backend/migrations/versions/` | Open |
-| T-03 | Schemas `WalletCreate`, `WalletRead` | `backend/app/schemas/wallet.py` | Open |
-| T-04 | `wallet_repo.add_wallet(db, *, user_id, name, wallet_type, currency, balance)` | `backend/app/repositories/wallet_repo.py` | Open |
-| T-05 | `wallet_service.create_wallet(db, *, owner, name, wallet_type, currency, initial_balance)` | `backend/app/services/wallet_service.py` | Open |
-| T-06 | `POST /api/v1/wallets` router; mount `wallets.router` in `api/v1/router.py` | `backend/app/api/v1/wallets.py`, `backend/app/api/v1/router.py` | Open |
-| T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_01_create_wallet.py` | Open |
+| T-01 | `WalletModel` (`id`, `user_id` FK indexed, `name`, `type`, `currency`, `balance` — no `created_at`, A5) | `backend/app/models/wallet.py` | Done |
+| T-02 | Alembic revision creating `wallets` with its FK and index | `backend/migrations/versions/` | Done |
+| T-03 | Schemas `WalletCreate`, `WalletRead` | `backend/app/schemas/wallet.py` | Done |
+| T-04 | `wallet_repo.add_wallet(db, *, user_id, name, wallet_type, currency, balance)` | `backend/app/repositories/wallet_repo.py` | Done |
+| T-05 | `wallet_service.create_wallet(db, *, owner, name, wallet_type, currency, initial_balance)` | `backend/app/services/wallet_service.py` | Done |
+| T-06 | `POST /api/v1/wallets` router; mount `wallets.router` in `api/v1/router.py` | `backend/app/api/v1/wallets.py`, `backend/app/api/v1/router.py` | Done |
+| T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_01_create_wallet.py` | Done |
 
 ---
 
@@ -477,11 +477,11 @@ in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitu
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `WalletListRead` envelope (A2) | `backend/app/schemas/wallet.py` | Open |
-| T-02 | `wallet_repo.list_owned(db, *, user_id, page, page_size)` — ownership-scoped page + total (A1, A3) | `backend/app/repositories/wallet_repo.py` | Open |
-| T-03 | `wallet_service.list_wallets(db, *, owner, page, page_size) -> WalletListRead` (A2, A3) | `backend/app/services/wallet_service.py` | Open |
-| T-04 | `GET /api/v1/wallets` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `CurrentUserDep`, no `db.commit()` (A4, A6) | `backend/app/api/v1/wallets.py` | Open |
-| T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_02_list_wallets.py` | Open |
+| T-01 | `WalletListRead` envelope (A2) | `backend/app/schemas/wallet.py` | Done |
+| T-02 | `wallet_repo.list_owned(db, *, user_id, page, page_size)` — ownership-scoped page + total (A1, A3) | `backend/app/repositories/wallet_repo.py` | Done |
+| T-03 | `wallet_service.list_wallets(db, *, owner, page, page_size) -> WalletListRead` (A2, A3) | `backend/app/services/wallet_service.py` | Done |
+| T-04 | `GET /api/v1/wallets` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `CurrentUserDep`, no `db.commit()` (A4, A6) | `backend/app/api/v1/wallets.py` | Done |
+| T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_02_list_wallets.py` | Done |
 
 ---
 
@@ -819,12 +819,12 @@ to reopen (WM-US-01 BR-05), so this endpoint produces only `200`, `401`, `404`, 
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `WalletUpdate` schema — two optional fields, `name`/`type`, plus an at-least-one-required model validator (A4) | `backend/app/schemas/wallet.py` | Open |
-| T-02 | `wallet_repo.update_wallet(db, *, wallet, name, wallet_type)` — write only the submitted field(s) (A3) | `backend/app/repositories/wallet_repo.py` | Open |
-| T-03 | Add `WalletNotFoundError` (A5) | `backend/app/core/errors.py` | Open |
-| T-04 | `wallet_service.update_wallet(db, *, owner, wallet_id, name, wallet_type)` — ownership lookup via existing `get_owned_by_id()`, then update | `backend/app/services/wallet_service.py` | Open |
-| T-05 | `PATCH /api/v1/wallets/{wallet_id}` router; no new mount (router already exists) (A2, A6) | `backend/app/api/v1/wallets.py` | Open |
-| T-06 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_04_update_wallet.py` | Open |
+| T-01 | `WalletUpdate` schema — two optional fields, `name`/`type`, plus an at-least-one-required model validator (A4) | `backend/app/schemas/wallet.py` | Done |
+| T-02 | `wallet_repo.update_wallet(db, *, wallet, name, wallet_type)` — write only the submitted field(s) (A3) | `backend/app/repositories/wallet_repo.py` | Done |
+| T-03 | Add `WalletNotFoundError` (A5) | `backend/app/core/errors.py` | Done |
+| T-04 | `wallet_service.update_wallet(db, *, owner, wallet_id, name, wallet_type)` — ownership lookup via existing `get_owned_by_id()`, then update | `backend/app/services/wallet_service.py` | Done |
+| T-05 | `PATCH /api/v1/wallets/{wallet_id}` router; no new mount (router already exists) (A2, A6) | `backend/app/api/v1/wallets.py` | Done |
+| T-06 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_04_update_wallet.py` | Done |
 
 ---
 
@@ -1050,9 +1050,9 @@ and no `409` (a read has nothing to conflict on, mirrors WM-US-02/TM-US-03).
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `wallet_service.get_wallet(db, *, owner, wallet_id) -> WalletRead` — ownership lookup via existing `get_owned_by_id()` (A2, A3) | `backend/app/services/wallet_service.py` | Open |
-| T-02 | `GET /api/v1/wallets/{wallet_id}` route (A1, A4, A6) | `backend/app/api/v1/wallets.py` | Open |
-| T-03 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_03_view_wallet.py` | Open |
+| T-01 | `wallet_service.get_wallet(db, *, owner, wallet_id) -> WalletRead` — ownership lookup via existing `get_owned_by_id()` (A2, A3) | `backend/app/services/wallet_service.py` | Done |
+| T-02 | `GET /api/v1/wallets/{wallet_id}` route (A1, A4, A6) | `backend/app/api/v1/wallets.py` | Done |
+| T-03 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_wm_us_03_view_wallet.py` | Done |
 
 **Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
 was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`) before this gate was claimed —
@@ -1493,17 +1493,17 @@ are produced by `POST /transactions`/`POST /budgets`, not by `DELETE /wallets/{w
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | Alembic revision — add `wallets.archived_at`, nullable `DateTime(timezone=True)` (A1, A12) | `backend/migrations/versions/` | Open |
-| T-02 | `WalletModel.archived_at` column (A1) | `backend/app/models/wallet.py` | Open |
-| T-03 | `WalletArchiveRead` schema (A5) | `backend/app/schemas/wallet.py` | Open |
-| T-04 | `wallet_repo.archive_wallet(db, *, wallet)` — idempotent stamp (A1, A6, A8) | `backend/app/repositories/wallet_repo.py` | Open |
-| T-05 | `wallet_repo.list_owned()` — add `archived_at IS NULL` predicate to both queries (A3) | `backend/app/repositories/wallet_repo.py` | Open |
-| T-06 | Add `TransactionWalletArchivedError`, `BudgetWalletArchivedError` (A2, A9) | `backend/app/core/errors.py` | Open |
-| T-07 | `wallet_service.archive_wallet(db, *, owner, wallet_id) -> WalletArchiveRead` (A1, A2, A5, A6, A8) | `backend/app/services/wallet_service.py` | Open |
-| T-08 | `transaction_service.create_transaction()` — insert archived-wallet check after the existing wallet-ownership check, new fixed order (A2) | `backend/app/services/transaction_service.py` | Open |
-| T-09 | `budget_service.create_budget()` — insert archived-wallet check after the existing wallet-ownership check, new fixed order (A2) | `backend/app/services/budget_service.py` | Open |
-| T-10 | `DELETE /api/v1/wallets/{wallet_id}` router — `200`, `WalletArchiveRead` (A5, A10) | `backend/app/api/v1/wallets.py` | Open |
-| T-11 | Integration tests written from `test_cases.md`, including the archived-wallet-block cases against the already-existing `POST /transactions`/`POST /budgets` endpoints (A2) | `backend/tests/integration/test_wm_us_05_delete_wallet.py` | Open |
+| T-01 | Alembic revision — add `wallets.archived_at`, nullable `DateTime(timezone=True)` (A1, A12) | `backend/migrations/versions/` | Done |
+| T-02 | `WalletModel.archived_at` column (A1) | `backend/app/models/wallet.py` | Done |
+| T-03 | `WalletArchiveRead` schema (A5) | `backend/app/schemas/wallet.py` | Done |
+| T-04 | `wallet_repo.archive_wallet(db, *, wallet)` — idempotent stamp (A1, A6, A8) | `backend/app/repositories/wallet_repo.py` | Done |
+| T-05 | `wallet_repo.list_owned()` — add `archived_at IS NULL` predicate to both queries (A3) | `backend/app/repositories/wallet_repo.py` | Done |
+| T-06 | Add `TransactionWalletArchivedError`, `BudgetWalletArchivedError` (A2, A9) | `backend/app/core/errors.py` | Done |
+| T-07 | `wallet_service.archive_wallet(db, *, owner, wallet_id) -> WalletArchiveRead` (A1, A2, A5, A6, A8) | `backend/app/services/wallet_service.py` | Done |
+| T-08 | `transaction_service.create_transaction()` — insert archived-wallet check after the existing wallet-ownership check, new fixed order (A2) | `backend/app/services/transaction_service.py` | Done |
+| T-09 | `budget_service.create_budget()` — insert archived-wallet check after the existing wallet-ownership check, new fixed order (A2) | `backend/app/services/budget_service.py` | Done |
+| T-10 | `DELETE /api/v1/wallets/{wallet_id}` router — `200`, `WalletArchiveRead` (A5, A10) | `backend/app/api/v1/wallets.py` | Done |
+| T-11 | Integration tests written from `test_cases.md`, including the archived-wallet-block cases against the already-existing `POST /transactions`/`POST /budgets` endpoints (A2) | `backend/tests/integration/test_wm_us_05_delete_wallet.py` | Done |
 
 **Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
 was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`) before this gate was claimed —

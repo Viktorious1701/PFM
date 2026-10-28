@@ -2,7 +2,7 @@
 
 > **Feature:** SRS §6 Feature-01 · SDS §5.2 (UM)
 > **Spec:** [spec.md](spec.md)
-> **Stories in this file:** UM-US-01 *(implemented, verified — plus F1's `T-18`, added and verified during UM-US-02's implementation)* · UM-US-02 *(implemented, verified — `120 passed`, 98% coverage)* · UM-US-03 *(planned)*
+> **Stories in this file:** UM-US-01 *(implemented, verified — plus F1's `T-18`, added and verified during UM-US-02's implementation)* · UM-US-02 *(implemented, verified — `120 passed`, 98% coverage)* · UM-US-03 *(implemented, verified — TC-57…TC-72, 16/16 PASS)*
 
 ---
 
@@ -697,9 +697,9 @@ same way it covers a body validation failure — no new wiring needed.
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | Alembic revision adding an index on `users.created_at` (backs the default sort, A3, PF-02) | `backend/migrations/versions/` | Open |
-| T-02 | `schemas/user.py`: `UserRead` (restored per UM-US-01 plan.md F2) + `UserListRead` envelope (A6) | `backend/app/schemas/user.py` | Open |
-| T-03 | `user_repo.py`: `list_users(db, *, page, page_size)` — `ORDER BY created_at DESC`, `LIMIT`/`OFFSET`, plus an unfiltered total count (A1, A3) | `backend/app/repositories/user_repo.py` | Open |
-| T-04 | `user_service.py` (NEW): `list_users(db, *, page, page_size) -> UserListRead` — maps repository rows into the DTO | `backend/app/services/user_service.py` | Open |
-| T-05 | `GET /api/v1/users` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `AdminDep`, no `db.commit()` (A2, A4) | `backend/app/api/v1/users.py` | Open |
-| T-06 | Integration tests written from `test_cases.md` (next TC number onward) | `backend/tests/integration/test_um_us_03_list_users.py` | Open |
+| T-01 | Alembic revision adding an index on `users.created_at` (backs the default sort, A3, PF-02) | `backend/migrations/versions/` | Done |
+| T-02 | `schemas/user.py`: `UserRead` (restored per UM-US-01 plan.md F2) + `UserListRead` envelope (A6) | `backend/app/schemas/user.py` | Done |
+| T-03 | `user_repo.py`: `list_users(db, *, page, page_size)` — `ORDER BY created_at DESC`, `LIMIT`/`OFFSET`, plus an unfiltered total count (A1, A3) | `backend/app/repositories/user_repo.py` | Done |
+| T-04 | `user_service.py` (NEW): `list_users(db, *, page, page_size) -> UserListRead` — maps repository rows into the DTO | `backend/app/services/user_service.py` | Done |
+| T-05 | `GET /api/v1/users` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `AdminDep`, no `db.commit()` (A2, A4) | `backend/app/api/v1/users.py` | Done |
+| T-06 | Integration tests written from `test_cases.md` (next TC number onward) | `backend/tests/integration/test_um_us_03_list_users.py` | Done |

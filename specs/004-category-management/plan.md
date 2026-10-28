@@ -190,13 +190,13 @@ All in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, cons
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `CategoryType` enum + `CategoryModel` (`id`, `user_id` FK indexed, `name`, `type` — no `icon`, A4) | `backend/app/models/category.py` | Open |
-| T-02 | Alembic revision creating `categories` with its FK and index, `down_revision = 022fc9649eb5` | `backend/migrations/versions/` | Open |
-| T-03 | Schemas `CategoryCreate`, `CategoryRead` | `backend/app/schemas/category.py` | Open |
-| T-04 | `category_repo.add_category(db, *, user_id, name, category_type)` | `backend/app/repositories/category_repo.py` | Open |
-| T-05 | `category_service.create_category(db, *, owner, name, category_type)` | `backend/app/services/category_service.py` | Open |
-| T-06 | `POST /api/v1/categories` router; mount `categories.router` in `api/v1/router.py` | `backend/app/api/v1/categories.py`, `backend/app/api/v1/router.py` | Open |
-| T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_01_create_category.py` | Open |
+| T-01 | `CategoryType` enum + `CategoryModel` (`id`, `user_id` FK indexed, `name`, `type` — no `icon`, A4) | `backend/app/models/category.py` | Done |
+| T-02 | Alembic revision creating `categories` with its FK and index, `down_revision = 022fc9649eb5` | `backend/migrations/versions/` | Done |
+| T-03 | Schemas `CategoryCreate`, `CategoryRead` | `backend/app/schemas/category.py` | Done |
+| T-04 | `category_repo.add_category(db, *, user_id, name, category_type)` | `backend/app/repositories/category_repo.py` | Done |
+| T-05 | `category_service.create_category(db, *, owner, name, category_type)` | `backend/app/services/category_service.py` | Done |
+| T-06 | `POST /api/v1/categories` router; mount `categories.router` in `api/v1/router.py` | `backend/app/api/v1/categories.py`, `backend/app/api/v1/router.py` | Done |
+| T-07 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_01_create_category.py` | Done |
 
 ---
 
@@ -480,11 +480,11 @@ in the flat envelope `{"error_code", "message", "details"}` (SDS §6.6, constitu
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `CategoryListRead` envelope (A2) | `backend/app/schemas/category.py` | Open |
-| T-02 | `category_repo.list_owned(db, *, user_id, page, page_size)` — ownership-scoped page + total (A1, A3) | `backend/app/repositories/category_repo.py` | Open |
-| T-03 | `category_service.list_categories(db, *, owner, page, page_size) -> CategoryListRead` (A2, A3) | `backend/app/services/category_service.py` | Open |
-| T-04 | `GET /api/v1/categories` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `CurrentUserDep`, no `db.commit()` (A4, A6) | `backend/app/api/v1/categories.py` | Open |
-| T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_02_list_categories.py` | Open |
+| T-01 | `CategoryListRead` envelope (A2) | `backend/app/schemas/category.py` | Done |
+| T-02 | `category_repo.list_owned(db, *, user_id, page, page_size)` — ownership-scoped page + total (A1, A3) | `backend/app/repositories/category_repo.py` | Done |
+| T-03 | `category_service.list_categories(db, *, owner, page, page_size) -> CategoryListRead` (A2, A3) | `backend/app/services/category_service.py` | Done |
+| T-04 | `GET /api/v1/categories` router — `Query(page, ge=1)` / `Query(page_size, ge=1, le=100)`, guarded by `CurrentUserDep`, no `db.commit()` (A4, A6) | `backend/app/api/v1/categories.py` | Done |
+| T-05 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_02_list_categories.py` | Done |
 
 ---
 
@@ -874,15 +874,15 @@ ownership (A13).
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | Alembic revision adding nullable `icon` column (`String(50)`), `down_revision = f3a9c1d4e8b2` (A5) | `backend/migrations/versions/` | Open |
-| T-02 | `CategoryModel.icon: Mapped[str \| None]` field addition (A5) | `backend/app/models/category.py` | Open |
-| T-03 | `CategoryRead` gains `icon`; new `CategoryUpdate` DTO (A1, A6, A11, A12) | `backend/app/schemas/category.py` | Open |
-| T-04 | `category_repo.update_category(db, *, category, name, category_type, icon)` (A4); `get_owned_by_id()` reused unchanged (A3) | `backend/app/repositories/category_repo.py` | Open |
-| T-05 | Add `CategoryNotFoundError` (A7) | `backend/app/core/errors.py` | Open |
-| T-06 | `category_service.update_category(db, *, owner, category_id, name, category_type, icon)` — ownership lookup, then partial update (A1, A3, A4) | `backend/app/services/category_service.py` | Open |
-| T-07 | Update `create_category()`/`list_categories()` to map `icon` into `CategoryRead`; update `test_cm_us_01_create_category.py`'s `TC-14` test and `test_cm_us_02_list_categories.py`'s `TC-19` test to expect the added `icon` key (A6) | `backend/app/services/category_service.py`, `backend/tests/integration/test_cm_us_01_create_category.py`, `backend/tests/integration/test_cm_us_02_list_categories.py` | Open |
-| T-08 | `PATCH /api/v1/categories/{category_id}` router; no new mount (router already exists) | `backend/app/api/v1/categories.py` | Open |
-| T-09 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_04_update_category.py` | Open |
+| T-01 | Alembic revision adding nullable `icon` column (`String(50)`), `down_revision = f3a9c1d4e8b2` (A5) | `backend/migrations/versions/` | Done |
+| T-02 | `CategoryModel.icon: Mapped[str \| None]` field addition (A5) | `backend/app/models/category.py` | Done |
+| T-03 | `CategoryRead` gains `icon`; new `CategoryUpdate` DTO (A1, A6, A11, A12) | `backend/app/schemas/category.py` | Done |
+| T-04 | `category_repo.update_category(db, *, category, name, category_type, icon)` (A4); `get_owned_by_id()` reused unchanged (A3) | `backend/app/repositories/category_repo.py` | Done |
+| T-05 | Add `CategoryNotFoundError` (A7) | `backend/app/core/errors.py` | Done |
+| T-06 | `category_service.update_category(db, *, owner, category_id, name, category_type, icon)` — ownership lookup, then partial update (A1, A3, A4) | `backend/app/services/category_service.py` | Done |
+| T-07 | Update `create_category()`/`list_categories()` to map `icon` into `CategoryRead`; update `test_cm_us_01_create_category.py`'s `TC-14` test and `test_cm_us_02_list_categories.py`'s `TC-19` test to expect the added `icon` key (A6) | `backend/app/services/category_service.py`, `backend/tests/integration/test_cm_us_01_create_category.py`, `backend/tests/integration/test_cm_us_02_list_categories.py` | Done |
+| T-08 | `PATCH /api/v1/categories/{category_id}` router; no new mount (router already exists) | `backend/app/api/v1/categories.py` | Done |
+| T-09 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_04_update_category.py` | Done |
 
 ---
 
@@ -1103,9 +1103,9 @@ constraint), and no `409` (a read has nothing to conflict on, mirrors CM-US-02/W
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | `category_service.get_category(db, *, owner, category_id) -> CategoryRead` — ownership lookup via existing `get_owned_by_id()` (A2, A3) | `backend/app/services/category_service.py` | Open |
-| T-02 | `GET /api/v1/categories/{category_id}` route (A1, A4, A6) | `backend/app/api/v1/categories.py` | Open |
-| T-03 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_03_view_category.py` | Open |
+| T-01 | `category_service.get_category(db, *, owner, category_id) -> CategoryRead` — ownership lookup via existing `get_owned_by_id()` (A2, A3) | `backend/app/services/category_service.py` | Done |
+| T-02 | `GET /api/v1/categories/{category_id}` route (A1, A4, A6) | `backend/app/api/v1/categories.py` | Done |
+| T-03 | Integration tests written from `test_cases.md` | `backend/tests/integration/test_cm_us_03_view_category.py` | Done |
 
 **Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
 was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`) before this gate was claimed —
@@ -1553,17 +1553,17 @@ are produced by `POST /transactions`/`POST /budgets`, not by `DELETE /categories
 
 | ID | Task | File | Status |
 |----|------|------|--------|
-| T-01 | Alembic revision — add `categories.archived_at`, nullable `DateTime(timezone=True)`, `down_revision = b4f1e7a2c6d9` (A1, A12) | `backend/migrations/versions/` | Open |
-| T-02 | `CategoryModel.archived_at` column (A1) | `backend/app/models/category.py` | Open |
-| T-03 | `CategoryArchiveRead` schema (A5) | `backend/app/schemas/category.py` | Open |
-| T-04 | `category_repo.archive_category(db, *, category)` — idempotent stamp (A1, A6, A8) | `backend/app/repositories/category_repo.py` | Open |
-| T-05 | `category_repo.list_owned()` — add `archived_at IS NULL` predicate to both queries (A3) | `backend/app/repositories/category_repo.py` | Open |
-| T-06 | Add `TransactionCategoryArchivedError`, `BudgetCategoryArchivedError` (A2, A9) | `backend/app/core/errors.py` | Open |
-| T-07 | `category_service.archive_category(db, *, owner, category_id) -> CategoryArchiveRead` (A1, A2, A5, A6, A8) | `backend/app/services/category_service.py` | Open |
-| T-08 | `transaction_service.create_transaction()` — insert archived-category check after the existing category-ownership check (and after the existing WM-US-05 wallet-archived check), new fixed order (A2) | `backend/app/services/transaction_service.py` | Open |
-| T-09 | `budget_service.create_budget()` — insert archived-category check after the existing category-ownership check (and after the existing WM-US-05 wallet-archived check), new fixed order (A2) | `backend/app/services/budget_service.py` | Open |
-| T-10 | `DELETE /api/v1/categories/{category_id}` router — `200`, `CategoryArchiveRead` (A5, A10) | `backend/app/api/v1/categories.py` | Open |
-| T-11 | Integration tests written from `test_cases.md`, including the archived-category-block cases against the already-existing `POST /transactions`/`POST /budgets` endpoints (A2) | `backend/tests/integration/test_cm_us_05_delete_category.py` | Open |
+| T-01 | Alembic revision — add `categories.archived_at`, nullable `DateTime(timezone=True)`, `down_revision = b4f1e7a2c6d9` (A1, A12) | `backend/migrations/versions/` | Done |
+| T-02 | `CategoryModel.archived_at` column (A1) | `backend/app/models/category.py` | Done |
+| T-03 | `CategoryArchiveRead` schema (A5) | `backend/app/schemas/category.py` | Done |
+| T-04 | `category_repo.archive_category(db, *, category)` — idempotent stamp (A1, A6, A8) | `backend/app/repositories/category_repo.py` | Done |
+| T-05 | `category_repo.list_owned()` — add `archived_at IS NULL` predicate to both queries (A3) | `backend/app/repositories/category_repo.py` | Done |
+| T-06 | Add `TransactionCategoryArchivedError`, `BudgetCategoryArchivedError` (A2, A9) | `backend/app/core/errors.py` | Done |
+| T-07 | `category_service.archive_category(db, *, owner, category_id) -> CategoryArchiveRead` (A1, A2, A5, A6, A8) | `backend/app/services/category_service.py` | Done |
+| T-08 | `transaction_service.create_transaction()` — insert archived-category check after the existing category-ownership check (and after the existing WM-US-05 wallet-archived check), new fixed order (A2) | `backend/app/services/transaction_service.py` | Done |
+| T-09 | `budget_service.create_budget()` — insert archived-category check after the existing category-ownership check (and after the existing WM-US-05 wallet-archived check), new fixed order (A2) | `backend/app/services/budget_service.py` | Done |
+| T-10 | `DELETE /api/v1/categories/{category_id}` router — `200`, `CategoryArchiveRead` (A5, A10) | `backend/app/api/v1/categories.py` | Done |
+| T-11 | Integration tests written from `test_cases.md`, including the archived-category-block cases against the already-existing `POST /transactions`/`POST /budgets` endpoints (A2) | `backend/tests/integration/test_cm_us_05_delete_category.py` | Done |
 
 **Verification note (constitution `CLAUDE.md` §3, mermaid diagram check).** The sequence diagram above
 was extracted and run through `mermaid.parse()` (`mermaid@11` + `jsdom`) before this gate is claimed —
